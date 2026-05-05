@@ -1,0 +1,36 @@
+# Binary / large files
+*.exe
+*.csv
+*.png
+*.pdf
+*.json
+*.tif
+*.joblib
+*.npz
+*.aux.xml
+
+# Folders we don't version
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.github/
+
+# Project-local outputs we don't track
+Thesis_LR/Code/output/
+Thesis_RF/Code/output/
+Thesis_RF/Code/models/
+Thesis_RF/Code/dataFiles/
+Thesis_RF/Code/processedData/
+Thesis_LR/Code/_obsolete/
+Thesis_LR/Code/sandbox_kent/output/
+Thesis_LR/Code/processedData/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+
+# Quirky old patterns kept from original .gitignore
+*./OperatingSystem
+*./Notes

@@ -1,0 +1,52 @@
+environment:
+  raster_dir: "processedData/raster/raster"
+  slope_file: "stack_slope_final.tif"
+  proximity_file: "stack_proximity.tif"
+  buildings_file: "stack_buildings.tif"
+  materials_file: "stack_materials.tif"
+  nodata_value: -9999
+
+simulation:
+  max_timesteps: 100
+  seed: 42
+  ignition_points:
+    - [606748.78, 1141695.77]    # Sitio Santa Maria, Dec 12 2023 (per Kent)
+  early_stop: true
+
+wind:
+  speed_kmh: 10.0
+  direction_deg: 315.0           # NW (per Kent's config)
+
+flammability_weights:
+  base_weight: 0.5
+  slope_weight: 0.3
+  proximity_weight: 0.2
+
+placeholder_transition:
+  base_ignition_prob: 0.12
+  slope_weight: 0.20
+  building_weight: 0.10
+  proximity_weight: 0.20
+  wind_weight: 0.20
+  burnout_prob: 0.04
+  material_weight: 0.35
+
+ml_model:
+  enabled: true
+  model_path: "models/fire_lr_stage_c.joblib"   # Stage C: LR trained on unified 11 features (material_class + wind_weighted_score)
+  proba_threshold: 0.30                          # selective inference (zeros out probs < 0.30)
+
+output:
+  output_dir: "output"
+  save_every_n_steps: 10
+  save_final_state: true
+
+dataset_generation:
+  roi:
+    row_start: 1800
+    row_end: 2600
+    col_start: 2400
+    col_end: 3200
+  n_ignition_points: 5
+  timesteps_to_record: 40
+  output_csv: "dataFiles/synthetic_fire_dataset.csv"
