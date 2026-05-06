@@ -7,7 +7,7 @@ environment:
   nodata_value: -9999
 
 simulation:
-  max_timesteps: 100
+  max_timesteps: 200
   seed: 42
   ignition_points:
     - [606748.78, 1141695.77]    # Sitio Santa Maria, Dec 12 2023 (per Kent)
@@ -30,11 +30,13 @@ placeholder_transition:
   wind_weight: 0.20
   burnout_prob: 0.04
   material_weight: 0.35
+  T_3_to_4: 1
+  T_4_to_5: 4
 
 ml_model:
   enabled: true
-  model_path: "models/fire_lr_stage_c.joblib"   # Stage C: LR trained on unified 11 features (material_class + wind_weighted_score)
-  proba_threshold: 0.30                          # selective inference (zeros out probs < 0.30)
+  model_path: "models/fire_rf_stage_a.joblib"   # Stage A: RF trained on multi_scenario_dataset_stage_a
+  proba_threshold: 0.50                           # 0.0 = off; >0 zeros out probs below cutoff
 
 output:
   output_dir: "output"

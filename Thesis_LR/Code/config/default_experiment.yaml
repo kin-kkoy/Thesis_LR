@@ -33,8 +33,8 @@ placeholder_transition:
 
 ml_model:
   enabled: true
-  model_path: "models/fire_lr_windweighted.joblib"        # Stage B: LR with wind_weighted_score
-  proba_threshold: 0.45                                   # 0.0 = off; >0 zeros out probs below cutoff (more selective, fewer FPs)
+  model_path: "models/fire_rf_stage_a.joblib"            # Stage A RF model
+  proba_threshold: 0.40                                   # 0.0 = off; >0 zeros out probs below cutoff (more selective, fewer FPs)
 
 output:
   output_dir: "output"

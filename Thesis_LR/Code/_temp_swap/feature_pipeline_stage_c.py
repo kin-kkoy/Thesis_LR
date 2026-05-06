@@ -22,6 +22,7 @@ class FeatureAssembler:
 		"wind_cos",
 		"neighbor_burning_count",
 		"composite_flammability",
+		"wind_weighted_score",
 	]
 
 	def __init__(self, environment: dict, wind_config: dict, flammability_weights: dict | None = None):
@@ -77,7 +78,11 @@ class FeatureAssembler:
 
 		self.feature_names = list(self.FEATURE_NAMES)
 
-	def assemble_grid_features(self, blazing_neighbor_count: np.ndarray) -> np.ndarray:
+	def assemble_grid_features(
+		self,
+		blazing_neighbor_count: np.ndarray,
+		wind_weighted_score: np.ndarray | None = None,
+	) -> np.ndarray:
 		if blazing_neighbor_count.shape != self.grid_shape:
 			raise ValueError(
 				"blazing_neighbor_count shape mismatch: "
@@ -85,6 +90,18 @@ class FeatureAssembler:
 			)
 
 		blazing_neighbor_count = np.asarray(blazing_neighbor_count, dtype=np.float32)
+
+		# Stage C: 11th feature. Defaults to zeros if not provided so legacy
+		# 10-feature callers still work.
+		if wind_weighted_score is None:
+			wind_weighted_score = np.zeros(self.grid_shape, dtype=np.float32)
+		else:
+			if wind_weighted_score.shape != self.grid_shape:
+				raise ValueError(
+					"wind_weighted_score shape mismatch: "
+					f"{wind_weighted_score.shape} != {self.grid_shape}"
+				)
+			wind_weighted_score = np.asarray(wind_weighted_score, dtype=np.float32)
 
 		n_cells = int(np.prod(self.grid_shape))
 		wind_speed_col = np.full(n_cells, self.wind_speed, dtype=np.float32)
@@ -103,6 +120,7 @@ class FeatureAssembler:
 				wind_cos_col,
 				blazing_neighbor_count.ravel(),
 				self.composite_flammability.ravel(),
+				wind_weighted_score.ravel(),
 			]
 		).astype(np.float32)
 

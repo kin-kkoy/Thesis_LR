@@ -23,7 +23,8 @@ class FireAutomata:
 		self.slope_risk = environment["slope_risk"]
 		self.proximity_risk = environment["proximity_risk"]
 		self.building_presence = environment["building_presence"]
-		self.material_risk = environment["material_risk"]
+		self.material_class = np.asarray(environment["material_class"], dtype=np.int8)
+		self.material_risk = FeatureAssembler.MATERIAL_CLASS_TO_RISK[self.material_class]
 		self.burnable_mask = environment["burnable_mask"]
 		self.nodata_mask = environment["nodata_mask"]
 		self.grid_shape = environment["grid_shape"]
@@ -35,6 +36,7 @@ class FireAutomata:
 		self.transition_cfg = config.get("placeholder_transition", {})
 		self.ml_cfg = config.get("ml_model", {})
 		self.flammability_weights = config.get("flammability_weights", {})
+		self.output_cfg = config.get("output", {})
 
 		self.grid = np.full(self.grid_shape, STATE_NOT_YET_BURNING, dtype=np.int8)
 		self.grid[~self.burnable_mask] = STATE_NON_BURNABLE
@@ -49,7 +51,6 @@ class FireAutomata:
 		self.timestep = 0
 
 		self._precompute_base_probability()
-		self.wind_kernel = self._compute_wind_kernel()
 		self.feature_assembler = FeatureAssembler(
 			environment,
 			self.wind_cfg,
@@ -73,56 +74,6 @@ class FireAutomata:
 			1.0,
 		).astype(np.float32)
 
-	def _compute_wind_kernel(self) -> np.ndarray:
-		"""Build a 3x3 directional kernel that weights blazing neighbors by wind alignment.
-
-		In real fire: wind pushes flames in a direction. A blazing cell UPWIND of
-		a candidate cell contributes MORE to ignition (wind carries fire toward it).
-		A blazing cell DOWNWIND contributes LESS (fire would need to travel against wind).
-
-		Grounding: Alexandridis et al. (2011), Gao et al. (2008) — wind speed and
-		direction directly modulate spread probability in CA fire models.
-
-		Returns a 3x3 float32 kernel where each cell is the wind-adjusted weight
-		for that neighbor position. Center cell is always 0.
-		"""
-		speed_kmh = float(self.wind_cfg.get("speed_kmh", 0.0))
-		direction_deg = float(self.wind_cfg.get("direction_deg", 0.0))
-		c_wind = float(self.transition_cfg.get("wind_weight", 0.20))
-
-		# Normalize speed: 10 km/h → factor 1.0, 25 km/h → 2.5
-		speed_factor = speed_kmh / 10.0
-
-		# Wind blow direction in grid coords (row increases southward, col increases eastward).
-		# direction_deg is compass bearing of where wind COMES FROM.
-		# Wind BLOWS TOWARD (direction_deg + 180) degrees compass.
-		blow_rad = np.deg2rad((direction_deg + 180.0) % 360.0)
-		blow_dr = -np.cos(blow_rad)   # row component (north = -row, south = +row)
-		blow_dc = np.sin(blow_rad)    # col component (west = -col, east = +col)
-		blow_norm = np.sqrt(blow_dr ** 2 + blow_dc ** 2)
-		if blow_norm > 0:
-			blow_dr /= blow_norm
-			blow_dc /= blow_norm
-
-		kernel = np.zeros((3, 3), dtype=np.float32)
-		for dr in (-1, 0, 1):
-			for dc in (-1, 0, 1):
-				if dr == 0 and dc == 0:
-					continue
-				# Fire travels FROM neighbor (dr, dc) TO center (0, 0): direction is (-dr, -dc)
-				dist = np.sqrt(float(dr * dr + dc * dc))
-				travel_r = -dr / dist
-				travel_c = -dc / dist
-
-				# Dot product: +1 = fire travels WITH wind, -1 = AGAINST wind
-				alignment = travel_r * blow_dr + travel_c * blow_dc
-
-				# Weight: base 1.0, adjusted by wind. Clamped to stay positive.
-				weight = max(1.0 + c_wind * speed_factor * alignment, 0.05)
-				kernel[dr + 1, dc + 1] = np.float32(weight)
-
-		return kernel
-
 	def set_ignition(self, points: list[tuple[int, int]]) -> None:
 		rows, cols = self.grid_shape
 		for row, col in points:
@@ -136,64 +87,60 @@ class FireAutomata:
 				self.grid[row, col] = STATE_BLAZING
 
 	def step(self) -> None:
-		uniform_kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.int8)
+		try:
+			kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.int8)
+			wind_weight = float(self.transition_cfg.get("wind_weight", 0.0))
+			wind_multiplier = 1.0 + wind_weight
 
-		current_grid = self.grid
-		next_grid = current_grid.copy()
+			current_grid = self.grid
+			next_grid = current_grid.copy()
 
-		ignited_now = current_grid == STATE_IGNITED
-		blazing_now = current_grid == STATE_BLAZING
+			ignited_now = current_grid == STATE_IGNITED
+			blazing_now = current_grid == STATE_BLAZING
 
-		self.ignition_timers[ignited_now] += np.int16(1)
-		self.blazing_timers[blazing_now] += np.int16(1)
+			self.ignition_timers[ignited_now] += np.int16(1)
+			self.blazing_timers[blazing_now] += np.int16(1)
 
-		ignite_to_blazing = ignited_now & (self.ignition_timers >= self.t_3_to_4)
-		next_grid[ignite_to_blazing] = STATE_BLAZING
-		self.ignition_timers[ignite_to_blazing] = np.int16(0)
-		self.blazing_timers[ignite_to_blazing] = np.int16(0)
+			ignite_to_blazing = ignited_now & (self.ignition_timers >= self.t_3_to_4)
+			next_grid[ignite_to_blazing] = STATE_BLAZING
+			self.ignition_timers[ignite_to_blazing] = np.int16(0)
+			self.blazing_timers[ignite_to_blazing] = np.int16(0)
 
-		blazing_to_extinguished = blazing_now & (self.blazing_timers >= self.t_4_to_5)
-		next_grid[blazing_to_extinguished] = STATE_EXTINGUISHED
-		self.blazing_timers[blazing_to_extinguished] = np.int16(0)
+			blazing_to_extinguished = blazing_now & (self.blazing_timers >= self.t_4_to_5)
+			next_grid[blazing_to_extinguished] = STATE_EXTINGUISHED
+			self.blazing_timers[blazing_to_extinguished] = np.int16(0)
 
-		# Raw neighbor count (uniform) — used for susceptibility check
-		blazing_neighbor_count = convolve(
-			blazing_now.astype(np.int8),
-			uniform_kernel,
-			mode="constant",
-			cval=0,
-		)
-		susceptible = (current_grid == STATE_NOT_YET_BURNING) & (blazing_neighbor_count > 0)
+			blazing_neighbor_count = convolve(
+				blazing_now.astype(np.int8),
+				kernel,
+				mode="constant",
+				cval=0,
+			)
+			susceptible = (current_grid == STATE_NOT_YET_BURNING) & (blazing_neighbor_count > 0)
 
-		if np.any(susceptible):
-			if self.model is not None:
-				p_ignite = self._predict_with_model()
-			else:
-				# Directional wind kernel: neighbors upwind contribute more,
-				# downwind contribute less. Replaces the old flat wind_multiplier.
-				wind_weighted_score = convolve(
-					blazing_now.astype(np.float32),
-					self.wind_kernel,
-					mode="constant",
-					cval=0.0,
-				)
-				max_kernel_sum = float(self.wind_kernel.sum())
-				p_ignite = self.p_base * (wind_weighted_score / max_kernel_sum)
+			if np.any(susceptible):
+				if self.model is not None:
+					p_ignite = self._predict_with_model(blazing_neighbor_count, susceptible)
+				else:
+					p_ignite = self.p_base * (blazing_neighbor_count.astype(np.float32) / np.float32(8.0))
 
-			p_effective = np.clip(p_ignite, 0.0, 1.0)
-			ignition_draw = self.rng.random(self.grid_shape)
-			ignite_mask = susceptible & (ignition_draw < p_effective)
-			next_grid[ignite_mask] = STATE_IGNITED
-			self.ignition_timers[ignite_mask] = np.int16(0)
-			self.blazing_timers[ignite_mask] = np.int16(0)
+				p_effective = np.clip(p_ignite * wind_multiplier, 0.0, 1.0)
+				ignition_draw = self.rng.random(self.grid_shape)
+				ignite_mask = susceptible & (ignition_draw < p_effective)
+				next_grid[ignite_mask] = STATE_IGNITED
+				self.ignition_timers[ignite_mask] = np.int16(0)
+				self.blazing_timers[ignite_mask] = np.int16(0)
 
-		self.grid = next_grid
-		self.timestep += 1
+			self.grid = next_grid
+			self.timestep += 1
+		except Exception as exc:
+			checkpoint_path = self._save_emergency_checkpoint()
+			raise RuntimeError(
+				"Simulation step failed and an emergency checkpoint was saved at "
+				f"{checkpoint_path}. Configure simulation.resume_checkpoint to continue."
+			) from exc
 
 	def load_model(self, model_path: str) -> None:
-		model_path = Path(model_path)
-		if model_path.suffix.lower() not in {".joblib", ".pkl"}:
-			raise ValueError("Model file must be a .joblib or .pkl")
 		loaded_model = joblib.load(model_path)
 		predict_proba = getattr(loaded_model, "predict_proba", None)
 		if predict_proba is None or not callable(predict_proba):
@@ -212,6 +159,15 @@ class FireAutomata:
 			blazing_timers=blazing_timers_to_save,
 			timestep=np.int64(self.timestep),
 		)
+
+	def _save_emergency_checkpoint(self) -> str:
+		output_dir = Path(self.output_cfg.get("output_dir", "output"))
+		if not output_dir.is_absolute():
+			output_dir = Path(__file__).resolve().parents[1] / output_dir
+		output_dir.mkdir(parents=True, exist_ok=True)
+		checkpoint_path = output_dir / f"emergency_checkpoint_step_{self.timestep:06d}.npz"
+		self.save_checkpoint(str(checkpoint_path))
+		return str(checkpoint_path)
 
 	def load_checkpoint(self, filepath: str) -> None:
 		with np.load(filepath, allow_pickle=False) as checkpoint:
@@ -262,47 +218,71 @@ class FireAutomata:
 		self.blazing_timers = loaded_blazing_timers.copy()
 		self.timestep = int(np.asarray(loaded_timestep).item())
 
-	def _predict_with_model(self) -> np.ndarray:
-		kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.int8)
-		blazing_now = (self.grid == STATE_BLAZING).astype(np.float32)
+	def _predict_with_model(
+		self,
+		blazing_neighbor_count: np.ndarray,
+		susceptible_mask: np.ndarray,
+	) -> np.ndarray:
+		flat_susceptible = susceptible_mask.ravel().astype(bool)
+		susceptible_indices = np.flatnonzero(flat_susceptible)
 
-		blazing_neighbor_count = convolve(
-			blazing_now.astype(np.int8),
-			kernel,
-			mode="constant",
-			cval=0,
+		ignition_proba_flat = np.zeros(flat_susceptible.shape[0], dtype=np.float32)
+		if susceptible_indices.size == 0:
+			return ignition_proba_flat.reshape(self.grid_shape)
+
+		slope_flat = self.slope_risk.ravel()
+		proximity_flat = self.proximity_risk.ravel()
+		building_flat = self.building_presence.ravel()
+		material_risk_flat = self.feature_assembler.material_risk.ravel()
+		material_class_flat = self.feature_assembler.material_class.ravel()
+		blazing_neighbors_flat = blazing_neighbor_count.ravel().astype(np.float32)
+		composite_flat = self.feature_assembler.composite_flammability.ravel()
+
+		chunk_size = int(self.ml_cfg.get("inference_chunk_size", 200_000))
+		if chunk_size <= 0:
+			chunk_size = 200_000
+
+		model_feature_names = getattr(self.model, "feature_names_in_", None)
+		feature_names = list(self.feature_assembler.feature_names)
+		use_named_input = (
+			model_feature_names is not None
+			and len(model_feature_names) == len(feature_names)
 		)
+		if use_named_input:
+			import pandas as pd
 
-		# Provide the same directional wind-weighted score the CA uses,
-		# so the ML model sees the same information as the rule-based path.
-		max_kernel_sum = float(self.wind_kernel.sum())
-		wind_weighted_score = convolve(
-			blazing_now,
-			self.wind_kernel,
-			mode="constant",
-			cval=0.0,
-		) / max_kernel_sum
+		chunk_probabilities: list[np.ndarray] = []
+		for start in range(0, susceptible_indices.size, chunk_size):
+			end = min(start + chunk_size, susceptible_indices.size)
+			idx = susceptible_indices[start:end]
+			n_rows = idx.size
 
-		features = self.feature_assembler.assemble_grid_features(
-			blazing_neighbor_count, wind_weighted_score
-		)
-		proba = self.model.predict_proba(features)
-		ignition_proba_flat = proba[:, 1]
-		ignition_proba_grid = ignition_proba_flat.reshape(self.grid_shape).astype(np.float32)
+			features_chunk = np.column_stack(
+				[
+					slope_flat[idx],
+					proximity_flat[idx],
+					building_flat[idx],
+					material_risk_flat[idx],
+					material_class_flat[idx].astype(np.float32),
+					np.full(n_rows, self.feature_assembler.wind_speed, dtype=np.float32),
+					np.full(n_rows, self.feature_assembler.wind_sin, dtype=np.float32),
+					np.full(n_rows, self.feature_assembler.wind_cos, dtype=np.float32),
+					blazing_neighbors_flat[idx],
+					composite_flat[idx],
+				]
+			).astype(np.float32)
 
-		# Optional inference-time threshold: zero out probabilities below the
-		# configured cutoff. This makes the simulation more selective and
-		# trades recall for precision; useful for spatial validation where
-		# the default-threshold model over-predicts burn area.
-		# Configured via YAML key `ml_model.proba_threshold`. 0.0 = no effect.
-		proba_threshold = float(self.ml_cfg.get("proba_threshold", 0.0))
-		if proba_threshold > 0.0:
-			ignition_proba_grid = np.where(
-				ignition_proba_grid >= proba_threshold,
-				ignition_proba_grid,
-				np.float32(0.0),
-			)
-		return ignition_proba_grid
+			if use_named_input:
+				features_chunk_df = pd.DataFrame(features_chunk, columns=feature_names)
+				features_input = features_chunk_df.loc[:, list(model_feature_names)]
+			else:
+				features_input = features_chunk
+
+			proba_chunk = self.model.predict_proba(features_input)
+			chunk_probabilities.append(proba_chunk[:, 1].astype(np.float32))
+
+		ignition_proba_flat[susceptible_indices] = np.concatenate(chunk_probabilities)
+		return ignition_proba_flat.reshape(self.grid_shape)
 
 	def is_active(self) -> bool:
 		return bool(np.any((self.grid == STATE_IGNITED) | (self.grid == STATE_BLAZING)))

@@ -93,18 +93,33 @@ class SyntheticDatasetGenerator:
         automata.set_ignition(self._choose_ignition_points(cropped_environment))
 
         kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.int8)
+        wind_kernel = automata.wind_kernel
+        max_kernel_sum = float(wind_kernel.sum())
         recorded_blocks: list[np.ndarray] = []
 
         for _ in range(self.timesteps_to_record):
             grid_before = automata.get_grid()
+            blazing_now = (grid_before == STATE_BLAZING).astype(np.float32)
 
             blazing_neighbor_count = convolve(
-                (grid_before == STATE_BLAZING).astype(np.int8),
+                blazing_now.astype(np.int8),
                 kernel,
                 mode="constant",
                 cval=0,
             )
-            grid_features = self.feature_assembler.assemble_grid_features(blazing_neighbor_count)
+
+            # Stage C: also record the directional wind-weighted score so the
+            # ML model has access to the same information the CA uses.
+            wind_weighted_score = convolve(
+                blazing_now,
+                wind_kernel,
+                mode="constant",
+                cval=0.0,
+            ) / max_kernel_sum
+
+            grid_features = self.feature_assembler.assemble_grid_features(
+                blazing_neighbor_count, wind_weighted_score
+            )
 
             # CRITICAL FIX: Only record cells that have at least 1 blazing neighbor. 
             # Cells with 0 neighbors have mathematically 0% chance of ignition, so recording them 

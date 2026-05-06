@@ -1,7 +1,5 @@
 """Cellular automata fire spread engine with vectorized timestep updates."""
 
-from pathlib import Path
-
 import joblib
 import numpy as np
 from scipy.ndimage import convolve
@@ -191,9 +189,6 @@ class FireAutomata:
 		self.timestep += 1
 
 	def load_model(self, model_path: str) -> None:
-		model_path = Path(model_path)
-		if model_path.suffix.lower() not in {".joblib", ".pkl"}:
-			raise ValueError("Model file must be a .joblib or .pkl")
 		loaded_model = joblib.load(model_path)
 		predict_proba = getattr(loaded_model, "predict_proba", None)
 		if predict_proba is None or not callable(predict_proba):
