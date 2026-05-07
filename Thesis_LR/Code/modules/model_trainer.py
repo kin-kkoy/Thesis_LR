@@ -214,7 +214,7 @@ class ModelTrainer:
 
 if __name__ == "__main__":
 	code_dir = Path(__file__).resolve().parents[1]
-	default_csv = code_dir / "dataFiles" / "synthetic_fire_dataset.csv"
+	default_csv = code_dir / "dataFiles" / "multi_scenario_dataset.csv"
 	default_output_dir = code_dir / "models"
 
 	trainer = ModelTrainer(csv_path=str(default_csv), output_dir=str(default_output_dir), seed=42)
