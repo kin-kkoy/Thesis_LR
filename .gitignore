@@ -8,6 +8,7 @@
 *.joblib
 *.npz
 *.aux.xml
+*.xml
 
 # Folders we don't version
 .venv/
