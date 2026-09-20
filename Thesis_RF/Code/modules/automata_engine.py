@@ -4,9 +4,16 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from scipy.ndimage import convolve
 
-from .feature_pipeline import FeatureAssembler
+from .feature_pipeline import (
+	CANONICAL_FEATURE_NAMES,
+	FeatureAssembler,
+	compute_moore_neighbor_count,
+	positive_class_index,
+	predict_positive_probability,
+	validate_model_feature_schema,
+)
+from .wind_convention import WindContract, compute_wind_weighted_score
 
 
 STATE_NON_BURNABLE = np.int8(1)
@@ -22,19 +29,33 @@ class FireAutomata:
 
 		self.slope_risk = environment["slope_risk"]
 		self.proximity_risk = environment["proximity_risk"]
-		self.building_presence = environment["building_presence"]
+		self.building_presence = np.asarray(environment["building_presence"], dtype=np.float32)
 		self.material_class = np.asarray(environment["material_class"], dtype=np.int8)
 		self.material_risk = FeatureAssembler.MATERIAL_CLASS_TO_RISK[self.material_class]
-		self.burnable_mask = environment["burnable_mask"]
-		self.nodata_mask = environment["nodata_mask"]
 		self.grid_shape = environment["grid_shape"]
+		incoming_burnable = np.asarray(environment["burnable_mask"], dtype=bool)
+		self.nodata_mask = np.asarray(environment["nodata_mask"], dtype=bool)
+		for name, array in (
+			("building_presence", self.building_presence),
+			("burnable_mask", incoming_burnable),
+			("nodata_mask", self.nodata_mask),
+		):
+			if array.shape != self.grid_shape:
+				raise ValueError(f"{name} shape mismatch: {array.shape} != {self.grid_shape}")
+		self.burnable_mask = (
+			incoming_burnable
+			& (~self.nodata_mask)
+			& (self.building_presence > 0)
+		)
 		self.transform = environment["transform"]
 		self.crs = environment["crs"]
 
 		self.simulation_cfg = config.get("simulation", {})
 		self.wind_cfg = config.get("wind", {})
+		self.wind = WindContract.from_config(self.wind_cfg)
 		self.transition_cfg = config.get("placeholder_transition", {})
 		self.ml_cfg = config.get("ml_model", {})
+		self._validate_ml_inference_config()
 		self.flammability_weights = config.get("flammability_weights", {})
 		self.output_cfg = config.get("output", {})
 
@@ -75,39 +96,24 @@ class FireAutomata:
 			1.0,
 		).astype(np.float32)
 
+	def _validate_ml_inference_config(self) -> None:
+		mode = self.ml_cfg.get("inference_mode", "stochastic_probability")
+		if mode != "stochastic_probability":
+			raise ValueError(
+				"Only stochastic_probability ML inference is approved for the CA"
+			)
+		if int(self.ml_cfg.get("positive_label", 1)) != 1:
+			raise ValueError("ml_model.positive_label must be integer 1")
+		for threshold_name in ("threshold", "inference_threshold"):
+			if self.ml_cfg.get(threshold_name) is not None:
+				raise ValueError(
+					f"ml_model.{threshold_name} must be absent or null for stochastic CA inference"
+				)
+
 	def _compute_wind_kernel(self) -> np.ndarray:
-		"""Build a 3x3 directional kernel that weights blazing neighbors by wind alignment.
-
-		A blazing cell upwind of a candidate cell contributes more to ignition,
-		while downwind neighbors contribute less.
-		"""
-		speed_kmh = float(self.wind_cfg.get("speed_kmh", 0.0))
-		direction_deg = float(self.wind_cfg.get("direction_deg", 0.0))
+		"""Return the centralized from-bearing kernel for blazing neighbors."""
 		c_wind = float(self.transition_cfg.get("wind_weight", 0.20))
-
-		speed_factor = speed_kmh / 10.0
-
-		blow_rad = np.deg2rad((direction_deg + 180.0) % 360.0)
-		blow_dr = -np.cos(blow_rad)
-		blow_dc = np.sin(blow_rad)
-		blow_norm = np.sqrt(blow_dr ** 2 + blow_dc ** 2)
-		if blow_norm > 0:
-			blow_dr /= blow_norm
-			blow_dc /= blow_norm
-
-		kernel = np.zeros((3, 3), dtype=np.float32)
-		for dr in (-1, 0, 1):
-			for dc in (-1, 0, 1):
-				if dr == 0 and dc == 0:
-					continue
-				dist = np.sqrt(float(dr * dr + dc * dc))
-				travel_r = -dr / dist
-				travel_c = -dc / dist
-				alignment = travel_r * blow_dr + travel_c * blow_dc
-				weight = max(1.0 + c_wind * speed_factor * alignment, 0.05)
-				kernel[dr + 1, dc + 1] = np.float32(weight)
-
-		return kernel
+		return self.wind.directional_kernel(c_wind)
 
 	def set_ignition(self, points: list[tuple[int, int]]) -> None:
 		rows, cols = self.grid_shape
@@ -123,9 +129,7 @@ class FireAutomata:
 
 	def step(self) -> None:
 		try:
-			kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.int8)
 			wind_weight = float(self.transition_cfg.get("wind_weight", 0.0))
-			wind_multiplier = 1.0 + wind_weight
 
 			current_grid = self.grid
 			next_grid = current_grid.copy()
@@ -145,21 +149,30 @@ class FireAutomata:
 			next_grid[blazing_to_extinguished] = STATE_EXTINGUISHED
 			self.blazing_timers[blazing_to_extinguished] = np.int16(0)
 
-			blazing_neighbor_count = convolve(
-				blazing_now.astype(np.int8),
-				kernel,
-				mode="constant",
-				cval=0,
+			blazing_state = blazing_now.astype(np.int8)
+			blazing_neighbor_count = compute_moore_neighbor_count(blazing_state)
+			wind_weighted_score, _ = compute_wind_weighted_score(
+				blazing_state,
+				self.wind,
+				wind_weight,
 			)
 			susceptible = (current_grid == STATE_NOT_YET_BURNING) & (blazing_neighbor_count > 0)
 
 			if np.any(susceptible):
 				if self.model is not None:
-					p_ignite = self._predict_with_model(blazing_neighbor_count, susceptible)
+					# The calibrated model probability is the Bernoulli parameter.
+					# Wind is already represented in the approved feature schema.
+					p_effective = self._predict_with_model(
+						blazing_neighbor_count,
+						susceptible,
+						wind_weighted_score,
+					)
 				else:
-					p_ignite = self.p_base * (blazing_neighbor_count.astype(np.float32) / np.float32(8.0))
-
-				p_effective = np.clip(p_ignite * wind_multiplier, 0.0, 1.0)
+					p_effective = np.clip(
+						self.p_base * wind_weighted_score,
+						0.0,
+						1.0,
+					)
 				ignition_draw = self.rng.random(self.grid_shape)
 				ignite_mask = susceptible & (ignition_draw < p_effective)
 				next_grid[ignite_mask] = STATE_IGNITED
@@ -177,6 +190,11 @@ class FireAutomata:
 
 	def load_model(self, model_path: str) -> None:
 		loaded_model = joblib.load(model_path)
+		validate_model_feature_schema(loaded_model)
+		classes = getattr(loaded_model, "classes_", None)
+		if classes is None:
+			raise ValueError("Loaded model must expose classes_")
+		positive_class_index(classes)
 		predict_proba = getattr(loaded_model, "predict_proba", None)
 		if predict_proba is None or not callable(predict_proba):
 			raise TypeError("Loaded model must provide a callable predict_proba attribute")
@@ -257,6 +275,7 @@ class FireAutomata:
 		self,
 		blazing_neighbor_count: np.ndarray,
 		susceptible_mask: np.ndarray,
+		wind_weighted_score: np.ndarray | None = None,
 	) -> np.ndarray:
 		flat_susceptible = susceptible_mask.ravel().astype(bool)
 		susceptible_indices = np.flatnonzero(flat_susceptible)
@@ -265,16 +284,12 @@ class FireAutomata:
 		if susceptible_indices.size == 0:
 			return ignition_proba_flat.reshape(self.grid_shape)
 
-		blazing_now = (self.grid == STATE_BLAZING).astype(np.float32)
-		max_kernel_sum = float(self.wind_kernel.sum())
-		wind_weighted_score = convolve(
-			blazing_now,
-			self.wind_kernel,
-			mode="constant",
-			cval=0.0,
-		)
-		if max_kernel_sum > 0.0:
-			wind_weighted_score = wind_weighted_score / max_kernel_sum
+		if wind_weighted_score is None:
+			wind_weighted_score, _ = compute_wind_weighted_score(
+				(self.grid == STATE_BLAZING).astype(np.int8),
+				self.wind,
+				float(self.transition_cfg.get("wind_weight", 0.0)),
+			)
 
 		features_full = self.feature_assembler.assemble_grid_features(
 			blazing_neighbor_count,
@@ -286,14 +301,12 @@ class FireAutomata:
 		if chunk_size <= 0:
 			chunk_size = 200_000
 
-		model_feature_names = getattr(self.model, "feature_names_in_", None)
-		feature_names = list(self.feature_assembler.feature_names)
-		use_named_input = (
-			model_feature_names is not None
-			and len(model_feature_names) == len(feature_names)
-		)
-		if use_named_input:
-			import pandas as pd
+		validate_model_feature_schema(self.model)
+		classes = getattr(self.model, "classes_", None)
+		if classes is None:
+			raise ValueError("Model must expose classes_")
+		positive_class_index(classes)
+		import pandas as pd
 
 		chunk_probabilities: list[np.ndarray] = []
 		for start in range(0, susceptible_indices.size, chunk_size):
@@ -302,14 +315,12 @@ class FireAutomata:
 
 			features_chunk = features_full[idx]
 
-			if use_named_input:
-				features_chunk_df = pd.DataFrame(features_chunk, columns=feature_names)
-				features_input = features_chunk_df.loc[:, list(model_feature_names)]
-			else:
-				features_input = features_chunk
-
-			proba_chunk = self.model.predict_proba(features_input)
-			chunk_probabilities.append(proba_chunk[:, 1].astype(np.float32))
+			features_input = pd.DataFrame(
+				features_chunk,
+				columns=CANONICAL_FEATURE_NAMES,
+			)
+			proba_chunk = predict_positive_probability(self.model, features_input)
+			chunk_probabilities.append(proba_chunk.astype(np.float32))
 
 		ignition_proba_flat[susceptible_indices] = np.concatenate(chunk_probabilities)
 		return ignition_proba_flat.reshape(self.grid_shape)

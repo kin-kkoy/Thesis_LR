@@ -1,238 +1,453 @@
-"""Train and evaluate ML models for synthetic fire ignition data."""
+"""Train and evaluate RF models under the approved grouped-split contract."""
 
 from __future__ import annotations
 
+from hashlib import sha256
+import json
 import pickle
 from pathlib import Path
+import re
+import shutil
+import tempfile
 from typing import Literal
 
 import joblib
+import numpy as np
 import pandas as pd
-import yaml
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
-	confusion_matrix,
-	f1_score,
-	jaccard_score,
-	precision_score,
-	recall_score,
-	roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    jaccard_score,
+    log_loss,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
+
+from .feature_pipeline import (
+    CANONICAL_FEATURE_NAMES,
+    MODEL_MANIFEST_VERSION,
+    OBSERVATION_METADATA_NAMES,
+    POSITIVE_LABEL,
+    PROVENANCE_METADATA_NAMES,
+    SET_C_SCHEMA_VERSION,
+    SPLIT_ROLES,
+    SPLIT_ASSIGNMENT_KEY_NAMES,
+    TARGET_NAME,
+    TARGET_VERSION,
+    positive_class_index,
+    predict_positive_probability,
+    validate_feature_columns,
+    validate_feature_values,
+    validate_model_feature_schema,
+)
+
+
+SUPPORTED_CLASS_WEIGHT_STRATEGIES = ("none", "balanced", "balanced_subsample")
+
+
+def class_weight_for_estimator(configured: str | None) -> str | None:
+    """Map an approved explicit token to the scikit-learn parameter value."""
+    if configured not in SUPPORTED_CLASS_WEIGHT_STRATEGIES:
+        raise ValueError(
+            "class_weight_strategy must be explicitly 'none', 'balanced', or "
+            "'balanced_subsample'"
+        )
+    return None if configured == "none" else configured
 
 
 class ModelTrainer:
-	SUPPORTED_MODEL_EXTENSIONS = {".joblib", ".pkl"}
+    """Consume an explicitly grouped dataset without constructing row-level splits."""
 
-	def __init__(self, csv_path: str, output_dir: str, seed: int = 42):
-		self.csv_path = str(csv_path)
-		self.output_dir = Path(output_dir)
-		self.seed = int(seed)
+    SUPPORTED_MODEL_EXTENSIONS = {".joblib", ".pkl"}
+    GROUP_FIELDS = ("scenario_id", "spatial_block_id", "duplicate_group_id")
 
-		data = pd.read_csv(self.csv_path)
-		if "Ignited" not in data.columns:
-			raise ValueError("Input CSV must contain an 'Ignited' target column")
+    def __init__(
+        self,
+        csv_path: str,
+        split_manifest_path: str,
+        output_dir: str,
+        seed: int = 42,
+    ):
+        self.csv_path = str(csv_path)
+        self.output_dir = Path(output_dir)
+        self.seed = int(seed)
+        observations = pd.read_csv(self.csv_path)
+        assignments = pd.read_csv(split_manifest_path)
+        data = self.merge_split_assignments(observations, assignments)
+        self._validate_dataset_contract(data)
+        self.data = data
+        self.feature_names = list(CANONICAL_FEATURE_NAMES)
+        self.model: object | None = None
+        self.model_name: str | None = None
 
-		if "neighbor_burning_count" in data.columns:
-			filtered = data[data["neighbor_burning_count"] > 0].copy()
-			if not filtered.empty:
-				data = filtered
-				print(
-					"[Dataset] Filtered to susceptible cells only "
-					f"(neighbor_burning_count > 0). Rows remaining: {len(data)}"
-				)
-			else:
-				print(
-					"[Dataset] neighbor_burning_count > 0 produced 0 rows. "
-					"Using full dataset instead."
-				)
+        self.X_train, self.y_train = self.get_partition("train")
+        self.X_validation, self.y_validation = self.get_partition("validation")
+        self.X_calibration, self.y_calibration = self.get_partition("calibration")
+        self.X_test, self.y_test = self.get_partition("test")
 
-		if data.empty:
-			raise ValueError("Training dataset is empty after preprocessing")
+    @staticmethod
+    def merge_split_assignments(
+        observations: pd.DataFrame,
+        assignments: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Join a separate immutable split manifest to immutable observations."""
+        if "split_role" in observations.columns:
+            raise ValueError("Observation dataset must not embed split_role")
+        observation_required = (
+            set(OBSERVATION_METADATA_NAMES)
+            | set(CANONICAL_FEATURE_NAMES)
+            | {TARGET_NAME, "feature_schema_version", "target_version"}
+        )
+        missing_observations = sorted(observation_required.difference(observations.columns))
+        if missing_observations:
+            raise ValueError(f"Observation dataset is missing columns: {missing_observations}")
+        assignment_required = set(SPLIT_ASSIGNMENT_KEY_NAMES) | {"split_role"}
+        missing_assignments = sorted(assignment_required.difference(assignments.columns))
+        if missing_assignments:
+            raise ValueError(f"Split manifest is missing columns: {missing_assignments}")
+        keys = list(SPLIT_ASSIGNMENT_KEY_NAMES)
+        if observations.duplicated(keys).any():
+            raise ValueError("Observation identity keys are not unique")
+        if assignments.duplicated(keys).any():
+            raise ValueError("Split-manifest identity keys are not unique")
+        key_membership = observations.loc[:, keys].merge(
+            assignments.loc[:, keys],
+            on=keys,
+            how="outer",
+            indicator=True,
+            validate="one_to_one",
+        )
+        if not key_membership["_merge"].eq("both").all():
+            observation_only = int(key_membership["_merge"].eq("left_only").sum())
+            assignment_only = int(key_membership["_merge"].eq("right_only").sum())
+            raise ValueError(
+                "Split manifest and observation identities must match exactly "
+                f"(observation_only={observation_only}, assignment_only={assignment_only})"
+            )
+        merged = observations.merge(
+            assignments.loc[:, keys + ["split_role"]],
+            on=keys,
+            how="inner",
+            validate="one_to_one",
+        )
+        if len(merged) != len(observations) or merged["split_role"].isna().any():
+            raise ValueError("Split manifest does not assign every observation exactly once")
+        return merged
 
-		x = data.drop(columns=["Ignited"])
-		y = data["Ignited"].astype(int)
+    @classmethod
+    def _validate_dataset_contract(cls, data: pd.DataFrame) -> None:
+        required = set(PROVENANCE_METADATA_NAMES) | set(CANONICAL_FEATURE_NAMES) | {
+            TARGET_NAME,
+            "feature_schema_version",
+            "target_version",
+        }
+        missing = sorted(required.difference(data.columns))
+        if missing:
+            raise ValueError(f"Dataset is missing contract columns: {', '.join(missing)}")
+        predictor_set = set(CANONICAL_FEATURE_NAMES)
+        ordered_predictors = [name for name in data.columns if name in predictor_set]
+        validate_feature_columns(ordered_predictors)
+        validate_feature_values(data.loc[:, list(CANONICAL_FEATURE_NAMES)].to_numpy())
 
-		self.feature_names = list(x.columns)
-		self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-			x,
-			y,
-			test_size=0.2,
-			stratify=y,
-			random_state=self.seed,
-		)
+        if data.empty:
+            raise ValueError("Training dataset is empty")
+        if set(data["set_id"].astype(str)) != {"SetC"}:
+            raise ValueError("Training data must belong only to the SetC provenance chain")
+        if set(data["feature_schema_version"].astype(str)) != {SET_C_SCHEMA_VERSION}:
+            raise ValueError("Dataset feature_schema_version does not match Set C")
+        if set(data["target_version"].astype(str)) != {TARGET_VERSION}:
+            raise ValueError("Dataset target_version does not match next-timestep ignition")
+        target = data[TARGET_NAME]
+        if (
+            target.isna().any()
+            or not pd.api.types.is_integer_dtype(target.dtype)
+            or not target.isin((0, POSITIVE_LABEL)).all()
+        ):
+            raise ValueError(f"{TARGET_NAME} must contain only integer labels 0 and 1")
 
-		self.model = None
-		self.model_name = None
+        roles = data["split_role"].astype(str)
+        invalid_roles = sorted(set(roles).difference(SPLIT_ROLES))
+        if invalid_roles:
+            raise ValueError(f"Invalid or unassigned split_role values: {invalid_roles}")
+        missing_roles = [role for role in SPLIT_ROLES if role not in set(roles)]
+        if missing_roles:
+            raise ValueError(f"Dataset is missing required split roles: {missing_roles}")
+        for role in SPLIT_ROLES:
+            role_classes = set(data.loc[roles.eq(role), TARGET_NAME].astype(int))
+            if role_classes != {0, POSITIVE_LABEL}:
+                raise ValueError(
+                    f"Split role {role!r} must contain both target classes 0 and 1"
+                )
 
-	def train_model(
-		self,
-		algorithm: str = "random_forest",
-		class_weight_strategy: Literal["balanced", "balanced_subsample"] = "balanced_subsample",
-		**model_kwargs,
-	) -> object:
-		algorithm_name = str(algorithm).strip().lower()
-		if class_weight_strategy not in {"balanced", "balanced_subsample"}:
-			raise ValueError("class_weight_strategy must be 'balanced' or 'balanced_subsample'")
+        metadata = data.loc[:, list(PROVENANCE_METADATA_NAMES)]
+        if metadata.isna().any().any():
+            raise ValueError("Grouping/provenance metadata cannot contain missing values")
+        empty_text = metadata.select_dtypes(include=["object", "string"]).apply(
+            lambda column: column.astype(str).str.strip().eq("").any()
+        )
+        if bool(empty_text.any()):
+            raise ValueError("Grouping/provenance metadata cannot contain empty values")
+        for field in ("seed", "timestep_t", "cell_row", "cell_col"):
+            if not pd.api.types.is_integer_dtype(data[field].dtype):
+                raise ValueError(f"Grouping/provenance field {field!r} must be integer")
 
-		if algorithm_name == "random_forest":
-			params = {
-				"n_estimators": 200,
-				"max_depth": 15,
-				"random_state": self.seed,
-				"class_weight": class_weight_strategy,
-				"n_jobs": -1,
-			}
-			params.update(model_kwargs)
-			model = RandomForestClassifier(**params)
-		else:
-			raise ValueError(f"Unsupported algorithm: {algorithm}")
+        for field in cls.GROUP_FIELDS:
+            role_counts = data.groupby(field, dropna=False)["split_role"].nunique()
+            if bool((role_counts > 1).any()):
+                raise ValueError(f"{field} crosses split roles")
 
-		model.fit(self.X_train, self.y_train)
-		self._ensure_predict_proba(model, context="Trained model")
+        conflicting_duplicates = data.groupby(
+            "duplicate_group_id", dropna=False
+        )[TARGET_NAME].nunique()
+        if bool((conflicting_duplicates > 1).any()):
+            raise ValueError(
+                "Conflicting-label duplicate feature groups require investigation"
+            )
 
-		self.model = model
-		self.model_name = algorithm_name
-		return self.model
+        cell_roles = data.groupby(
+            ["grid_id", "cell_row", "cell_col"], dropna=False
+        )["split_role"].nunique()
+        if bool((cell_roles > 1).any()):
+            raise ValueError("A spatial cell crosses split roles")
 
-	def train_random_forest(
-		self,
-		n_estimators: int = 200,
-		max_depth: int | None = 15,
-		class_weight_strategy: Literal["balanced", "balanced_subsample"] = "balanced_subsample",
-	) -> object:
-		return self.train_model(
-			algorithm="random_forest",
-			class_weight_strategy=class_weight_strategy,
-			n_estimators=n_estimators,
-			max_depth=max_depth,
-		)
+        if data["event_id"].nunique(dropna=False) > 1:
+            event_roles = data.groupby("event_id", dropna=False)["split_role"].nunique()
+            if bool((event_roles > 1).any()):
+                raise ValueError("event_id crosses split roles")
 
-	def evaluate(self) -> dict:
-		if self.model is None:
-			raise RuntimeError("No trained model found. Call train_model() first.")
+    def get_partition(self, role: str) -> tuple[pd.DataFrame, pd.Series]:
+        if role not in SPLIT_ROLES:
+            raise ValueError(f"Unknown split role: {role}")
+        partition = self.data[self.data["split_role"] == role]
+        if partition.empty:
+            raise ValueError(f"Split role {role!r} is empty")
+        x = partition.loc[:, list(CANONICAL_FEATURE_NAMES)].copy()
+        y = partition[TARGET_NAME].astype(int).copy()
+        return x, y
 
-		y_proba = self.model.predict_proba(self.X_test)[:, 1]
+    def train_model(
+        self,
+        algorithm: str = "random_forest",
+        class_weight_strategy: Literal[
+            "none", "balanced", "balanced_subsample"
+        ]
+        | None = None,
+        **model_kwargs,
+    ) -> object:
+        algorithm_name = str(algorithm).strip().lower()
+        class_weight = class_weight_for_estimator(class_weight_strategy)
+        if algorithm_name != "random_forest":
+            raise ValueError(f"Unsupported algorithm: {algorithm}")
 
-		# Find the optimal threshold for F1-score
-		import numpy as np
-		best_f1 = 0.0
-		best_threshold = 0.6
-		for t in np.arange(0.1, 0.9, 0.05):
-			preds = (y_proba >= t).astype(int)
-			f = f1_score(self.y_test, preds, zero_division=0)
-			if f > best_f1:
-				best_f1 = f
-				best_threshold = t
+        params = {
+            "n_estimators": 200,
+            "max_depth": 15,
+            "random_state": self.seed,
+            "class_weight": class_weight,
+            "n_jobs": -1,
+        }
+        params.update(model_kwargs)
+        model = RandomForestClassifier(**params)
+        model.fit(self.X_train, self.y_train)
+        self._validate_model_contract(model, context="Trained model")
+        self.model = model
+        self.model_name = algorithm_name
+        return model
 
-		print(f"\nEvaluating with optimized threshold: {best_threshold:.2f}")
-		y_pred = (y_proba >= best_threshold).astype(int)
+    def train_random_forest(
+        self,
+        n_estimators: int = 200,
+        max_depth: int | None = 15,
+        class_weight_strategy: Literal[
+            "none", "balanced", "balanced_subsample"
+        ]
+        | None = None,
+    ) -> object:
+        return self.train_model(
+            algorithm="random_forest",
+            class_weight_strategy=class_weight_strategy,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+        )
 
-		cm = confusion_matrix(self.y_test, y_pred)
-		precision = precision_score(self.y_test, y_pred, zero_division=0)
-		recall = recall_score(self.y_test, y_pred, zero_division=0)
-		f1 = f1_score(self.y_test, y_pred, zero_division=0)
-		auc_roc = roc_auc_score(self.y_test, y_proba)
-		jaccard = jaccard_score(self.y_test, y_pred, zero_division=0)
+    def set_model(self, model: object, model_name: str = "calibrated_model") -> None:
+        """Attach a fitted model or calibrator after external non-test calibration."""
+        self._validate_model_contract(model, context="Configured model")
+        self.model = model
+        self.model_name = str(model_name)
 
-		print("Confusion Matrix:")
-		print(cm)
-		print(f"Precision: {precision:.6f}")
-		print(f"Recall: {recall:.6f}")
-		print(f"F1-Score: {f1:.6f}")
-		print(f"AUC-ROC: {auc_roc:.6f}")
-		print(f"Jaccard Index: {jaccard:.6f}")
+    def evaluate(
+        self,
+        split_role: Literal["validation", "calibration", "test"] = "test",
+        threshold_record: dict | None = None,
+    ) -> dict:
+        """Evaluate without selecting a threshold on the evaluated partition."""
+        if self.model is None:
+            raise RuntimeError("No trained model found. Call train_model() or set_model() first.")
+        x, y = self.get_partition(split_role)
+        y_proba = predict_positive_probability(self.model, x)
+        if np.unique(y).size != 2:
+            raise ValueError(f"{split_role} evaluation requires both target classes")
 
-		return {
-			"precision": float(precision),
-			"recall": float(recall),
-			"f1": float(f1),
-			"auc_roc": float(auc_roc),
-			"jaccard": float(jaccard),
-		}
+        metrics = {
+            "split_role": split_role,
+            "observation_count": int(len(y)),
+            "roc_auc": float(roc_auc_score(y, y_proba)),
+            "pr_auc": float(average_precision_score(y, y_proba)),
+            "brier_score": float(brier_score_loss(y, y_proba, pos_label=POSITIVE_LABEL)),
+            "log_loss": float(log_loss(y, y_proba, labels=[0, POSITIVE_LABEL])),
+        }
+        if threshold_record is None:
+            return metrics
+        threshold = self._validate_threshold_record(threshold_record)
+        y_pred = (y_proba >= threshold).astype(int)
+        metrics.update(
+            classification_threshold=threshold,
+            confusion_matrix=confusion_matrix(y, y_pred, labels=[0, 1]).tolist(),
+            precision=float(precision_score(y, y_pred, zero_division=0)),
+            recall=float(recall_score(y, y_pred, zero_division=0)),
+            f1=float(f1_score(y, y_pred, zero_division=0)),
+            jaccard=float(jaccard_score(y, y_pred, zero_division=0)),
+        )
+        return metrics
 
-	def save_model(self, filename: str = "fire_rf_model.joblib") -> str:
-		if self.model is None:
-			raise RuntimeError("No trained model found. Call train_model() first.")
+    @staticmethod
+    def _validate_threshold_record(record: dict) -> float:
+        if record.get("selected_on") != "calibration":
+            raise ValueError("Classification threshold must be selected on calibration data")
+        if not str(record.get("objective", "")).strip():
+            raise ValueError("Classification threshold requires an approved objective record")
+        if record.get("value") is None:
+            raise ValueError("Classification threshold record is missing value")
+        threshold = float(record["value"])
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError("classification_threshold must be within [0, 1]")
+        return threshold
 
-		self._ensure_predict_proba(self.model, context="Model to export")
-		self.output_dir.mkdir(parents=True, exist_ok=True)
-		model_path = self.output_dir / filename
-		self._validate_model_path(model_path)
-		self._save_serialized_model(self.model, model_path)
-		return str(model_path.resolve())
+    def save_model(
+        self,
+        filename: str,
+        artifact_version: str,
+        provenance_manifest: dict,
+    ) -> str:
+        if self.model is None:
+            raise RuntimeError("No trained model found. Call train_model() or set_model() first.")
+        self._validate_model_contract(self.model, context="Model to export")
+        if Path(filename).name != filename:
+            raise ValueError("Model filename must not contain directory components")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", artifact_version):
+            raise ValueError("artifact_version must be a safe, path-free identifier")
+        final_dir = self.output_dir / artifact_version
+        model_path = final_dir / filename
+        self._validate_model_path(model_path)
+        if not artifact_version or artifact_version not in model_path.stem:
+            raise ValueError("Versioned model filename must include artifact_version")
+        required_manifest = {
+            "manifest_schema_version",
+            "artifact_kind",
+            "set_id",
+            "experiment_id",
+            "dataset_sha256",
+            "dataset_manifest_sha256",
+            "split_assignment_sha256",
+            "split_membership_sha256",
+            "calibration_selection_record_sha256",
+            "source_revision",
+            "source_dirty_state",
+            "calibration_method",
+            "feature_schema_version",
+            "target_version",
+            "positive_label",
+        }
+        missing = sorted(required_manifest.difference(provenance_manifest))
+        if missing:
+            raise ValueError(f"Model provenance manifest is incomplete: {missing}")
+        if (
+            provenance_manifest["manifest_schema_version"] != MODEL_MANIFEST_VERSION
+            or provenance_manifest["artifact_kind"] != "set_c_rf_model"
+            or provenance_manifest["set_id"] != "SetC"
+            or provenance_manifest["feature_schema_version"] != SET_C_SCHEMA_VERSION
+            or provenance_manifest["target_version"] != TARGET_VERSION
+            or provenance_manifest["positive_label"] != POSITIVE_LABEL
+        ):
+            raise ValueError("Model provenance manifest violates the Set C contract")
+        if final_dir.exists():
+            raise FileExistsError(f"Refusing to overwrite immutable artifact set: {final_dir}")
+        manifest_path = model_path.with_suffix(model_path.suffix + ".manifest.json")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        staging_dir = Path(
+            tempfile.mkdtemp(prefix=f".{artifact_version}.staging-", dir=self.output_dir)
+        )
+        try:
+            staged_model = staging_dir / filename
+            staged_manifest = staged_model.with_suffix(staged_model.suffix + ".manifest.json")
+            self._save_serialized_model(self.model, staged_model)
+            digest = sha256()
+            with staged_model.open("rb") as file_obj:
+                for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            complete_manifest = dict(provenance_manifest)
+            complete_manifest.update(
+                artifact_version=artifact_version,
+                model_path=str(model_path),
+                model_sha256=digest.hexdigest(),
+                feature_names=list(CANONICAL_FEATURE_NAMES),
+                positive_label=POSITIVE_LABEL,
+                model_classes=[int(value) for value in getattr(self.model, "classes_")],
+            )
+            staged_manifest.write_text(
+                json.dumps(complete_manifest, indent=2), encoding="utf-8"
+            )
+            if final_dir.exists():
+                raise FileExistsError(
+                    f"Refusing to overwrite immutable artifact set: {final_dir}"
+                )
+            staging_dir.rename(final_dir)
+        except Exception:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+            raise
+        return str(model_path.resolve())
 
-	@classmethod
-	def _validate_model_path(cls, model_path: Path) -> None:
-		suffix = model_path.suffix.lower()
-		if suffix not in cls.SUPPORTED_MODEL_EXTENSIONS:
-			supported = ", ".join(sorted(cls.SUPPORTED_MODEL_EXTENSIONS))
-			raise ValueError(
-				"Model file must use one of the supported extensions: "
-				f"{supported}"
-			)
+    @classmethod
+    def _validate_model_path(cls, model_path: Path) -> None:
+        if model_path.suffix.lower() not in cls.SUPPORTED_MODEL_EXTENSIONS:
+            supported = ", ".join(sorted(cls.SUPPORTED_MODEL_EXTENSIONS))
+            raise ValueError(f"Model file must use a supported extension: {supported}")
 
-	@staticmethod
-	def _save_serialized_model(model: object, model_path: Path) -> None:
-		suffix = model_path.suffix.lower()
-		if suffix == ".joblib":
-			joblib.dump(model, model_path)
-			return
+    @staticmethod
+    def _save_serialized_model(model: object, model_path: Path) -> None:
+        if model_path.suffix.lower() == ".joblib":
+            joblib.dump(model, model_path)
+            return
+        with model_path.open("wb") as file_obj:
+            pickle.dump(model, file_obj)
 
-		with model_path.open("wb") as file_obj:
-			pickle.dump(model, file_obj)
+    @staticmethod
+    def _validate_model_contract(model: object, context: str) -> None:
+        predict_proba = getattr(model, "predict_proba", None)
+        if predict_proba is None or not callable(predict_proba):
+            raise TypeError(f"{context} must provide a callable predict_proba() method")
+        validate_model_feature_schema(model)
+        classes = getattr(model, "classes_", None)
+        if classes is None:
+            raise ValueError(f"{context} must expose classes_")
+        positive_class_index(classes)
 
-	@staticmethod
-	def _ensure_predict_proba(model: object, context: str) -> None:
-		predict_proba = getattr(model, "predict_proba", None)
-		if predict_proba is None or not callable(predict_proba):
-			raise TypeError(f"{context} must provide a callable predict_proba() method")
-
-	def feature_importance_report(self) -> None:
-		if self.model is None:
-			raise RuntimeError("No trained model found. Call train_model() first.")
-		if not hasattr(self.model, "feature_importances_"):
-			raise TypeError("Current model does not expose feature_importances_")
-
-		importance_pairs = sorted(
-			zip(self.feature_names, self.model.feature_importances_),
-			key=lambda pair: pair[1],
-			reverse=True,
-		)
-
-		print("Feature Importances:")
-		print(f"{'Feature':<30}Importance")
-		for feature_name, score in importance_pairs:
-			print(f"{feature_name:<30}{score:.6f}")
-
-
-if __name__ == "__main__":
-	code_dir = Path(__file__).resolve().parents[1]
-	config_path = code_dir / "config" / "default_experiment.yaml"
-	with config_path.open("r", encoding="utf-8") as file_obj:
-		config = yaml.safe_load(file_obj)
-
-	dataset_cfg = config.get("dataset_generation", {})
-	ml_cfg = config.get("ml_model", {})
-	simulation_cfg = config.get("simulation", {})
-
-	dataset_path = Path(str(dataset_cfg.get("output_csv", "dataFiles/revised_dataset_5tier.csv")))
-	if not dataset_path.is_absolute():
-		dataset_path = code_dir / dataset_path
-
-	model_path = Path(str(ml_cfg.get("model_path", "models/fire_rf_model.joblib")))
-	if not model_path.is_absolute():
-		model_path = code_dir / model_path
-
-	trainer = ModelTrainer(
-		csv_path=str(dataset_path),
-		output_dir=str(model_path.parent),
-		seed=int(simulation_cfg.get("seed", 42)),
-	)
-	trainer.train_random_forest(class_weight_strategy="balanced_subsample")
-	metrics = trainer.evaluate()
-	saved_path = trainer.save_model(filename=model_path.name)
-
-	print("Saved model:", saved_path)
-	print("Metrics:", metrics)
-	trainer.feature_importance_report()
+    def feature_importance_report(self) -> None:
+        if self.model is None:
+            raise RuntimeError("No trained model found")
+        if not hasattr(self.model, "feature_importances_"):
+            raise TypeError("Current model does not expose feature_importances_")
+        pairs = sorted(
+            zip(self.feature_names, self.model.feature_importances_),
+            key=lambda pair: pair[1],
+            reverse=True,
+        )
+        print("Feature Importances:")
+        for feature_name, score in pairs:
+            print(f"{feature_name:<30}{score:.6f}")

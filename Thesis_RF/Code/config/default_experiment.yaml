@@ -17,7 +17,12 @@ simulation:
 
 wind:
   speed_kmh: 10.0              # placeholder static global
-  direction_deg: 315.0         # compass degrees (315 = NW)
+  direction_deg: 315.0         # meteorological from-bearing, clockwise from projected grid north
+  direction_convention: "meteorological_from"
+  direction_units: "degrees_clockwise"
+  north_reference: "projected_grid_north"
+  schema_version: "simulated_wind.v1"
+  calm_representation: "speed_zero_direction_zero"  # calm requires speed=0 and direction=0
 
 flammability_weights:
   base_weight: 0.5
@@ -36,6 +41,30 @@ placeholder_transition:
 ml_model:
   enabled: true
   model_path: "models/fire_rf_model.joblib"               # path to .pkl or .joblib when ready
+  training_csv: null                                      # immutable Set C transition dataset
+  artifact_version: null
+  dataset_manifest_path: null
+  split_manifest_path: null
+  calibration_selection_record_path: null                # immutable grouped non-test method-selection evidence
+  class_weight_candidates:                               # selected using grouped train/validation evidence
+    - "none"
+    - "balanced"
+    - "balanced_subsample"
+  source_revision: null
+  source_dirty_state: null
+  training_command: null
+  environment_record: null
+  artifact_write_enabled: false                           # separate artifact-producing approval required
+  n_trials: 100
+  positive_label: 1
+  inference_mode: "stochastic_probability"
+  classification_threshold: null                          # reporting only; requires separate owner approval
+  calibration_method: null                                # selected using grouped non-test data
+
+rf_contract:
+  feature_schema_version: "set_c.v1"
+  target_version: "ignition_t_plus_1.v1"
+  split_allocation: null                                  # deferred until independent-group inventory
 
 output:
   output_dir: "output"
@@ -43,11 +72,33 @@ output:
   save_final_state: true
 
 dataset_generation:
-  roi:
-    row_start: 1800
-    row_end: 2600
-    col_start: 2400
-    col_end: 3200
-  n_ignition_points: 5
-  timesteps_to_record: 40
-  output_csv: "dataFiles/revised_dataset_5tier.csv"
+  artifact_write_enabled: false                           # separate dataset-generation approval required
+  scenario_records: []                                    # explicit simulator-produced adjacent-state records only
+  roi: null                                             # null means the full aligned raster domain; no crop is approved
+  sampling_policy: "all_eligible"                       # preserve eligible-population prevalence for calibration
+  target:
+    mode: "next_timestep_ignition"
+    state_encoding: "binary_burning_0_1"
+    state_t_file: null                                    # simulator-produced binary state at timestep_t
+    state_t1_file: null                                   # simulator-produced binary state at timestep_t + 1
+  provenance:
+    set_id: "SetC"
+    experiment_id: null
+    event_id: null
+    scenario_id: null
+    run_id: null
+    seed: 42
+    timestep_t: null
+    grid_id: null
+    source_revision: null
+    source_dirty_state: null
+    generation_command: null
+    environment_record: null
+    transition_source_type: "authorized_simulated"       # Set C accepts simulated transitions only
+    transition_source_provenance: null                   # simulator/version/revision/config/input/authorization evidence
+  spatial_block:
+    origin_row: 0
+    origin_col: 0
+    size_rows: null                                       # requires spatial-correlation/feasibility evidence
+    size_cols: null
+  output_csv: null                                        # immutable, versioned path requires separate approval
