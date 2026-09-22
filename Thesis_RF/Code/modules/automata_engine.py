@@ -5,6 +5,13 @@ from pathlib import Path
 import joblib
 import numpy as np
 
+from .ca_state import (
+	STATE_BLAZING,
+	STATE_EXTINGUISHED,
+	STATE_IGNITED,
+	STATE_NON_BURNABLE,
+	STATE_NOT_YET_BURNING,
+)
 from .feature_pipeline import (
 	CANONICAL_FEATURE_NAMES,
 	FeatureAssembler,
@@ -14,41 +21,69 @@ from .feature_pipeline import (
 	validate_model_feature_schema,
 )
 from .wind_convention import WindContract, compute_wind_weighted_score
-
-
-STATE_NON_BURNABLE = np.int8(1)
-STATE_NOT_YET_BURNING = np.int8(2)
-STATE_IGNITED = np.int8(3)
-STATE_BLAZING = np.int8(4)
-STATE_EXTINGUISHED = np.int8(5)
+from .transition_observer import (
+	TransitionObserver,
+	build_transition_observation,
+	canonical_metadata_hash,
+	mask_sha256,
+	validate_grid_provenance,
+	validate_transition_provenance,
+)
 
 class FireAutomata:
-	def __init__(self, environment: dict, config: dict):
+	def __init__(
+		self,
+		environment: dict,
+		config: dict,
+		*,
+		transition_observer: TransitionObserver | None = None,
+		transition_provenance: dict | None = None,
+	):
 		self.environment = environment
 		self.config = config
 
 		self.slope_risk = environment["slope_risk"]
 		self.proximity_risk = environment["proximity_risk"]
-		self.building_presence = np.asarray(environment["building_presence"], dtype=np.float32)
+		raw_building_presence = np.asarray(environment["building_presence"])
+		self.building_presence = raw_building_presence.astype(np.float32, copy=False)
 		self.material_class = np.asarray(environment["material_class"], dtype=np.int8)
 		self.material_risk = FeatureAssembler.MATERIAL_CLASS_TO_RISK[self.material_class]
 		self.grid_shape = environment["grid_shape"]
-		incoming_burnable = np.asarray(environment["burnable_mask"], dtype=bool)
-		self.nodata_mask = np.asarray(environment["nodata_mask"], dtype=bool)
+		raw_burnable = np.asarray(environment["burnable_mask"])
+		raw_nodata = np.asarray(environment["nodata_mask"])
 		for name, array in (
-			("building_presence", self.building_presence),
-			("burnable_mask", incoming_burnable),
-			("nodata_mask", self.nodata_mask),
+			("building_presence", raw_building_presence),
+			("burnable_mask", raw_burnable),
+			("nodata_mask", raw_nodata),
 		):
 			if array.shape != self.grid_shape:
 				raise ValueError(f"{name} shape mismatch: {array.shape} != {self.grid_shape}")
+		if transition_observer is not None:
+			for name, array in (
+				("burnable_mask", raw_burnable),
+				("nodata_mask", raw_nodata),
+			):
+				if array.dtype != np.dtype(bool):
+					raise TypeError(f"{name} must be a boolean array without coercion")
+			if not np.all(np.isfinite(raw_building_presence)) or not np.all(
+				np.isin(raw_building_presence, (0, 1))
+			):
+				raise ValueError(
+					"building_presence must contain only mapped values 0 and 1 "
+					"when transition observation is enabled"
+				)
+		incoming_burnable = raw_burnable.astype(bool, copy=False)
+		self.nodata_mask = raw_nodata.astype(bool, copy=False)
+		self.simulation_valid_mask = incoming_burnable & (~self.nodata_mask)
+		self.mapped_building_mask = self.building_presence > 0
 		self.burnable_mask = (
-			incoming_burnable
-			& (~self.nodata_mask)
-			& (self.building_presence > 0)
+			self.simulation_valid_mask
+			& self.mapped_building_mask
 		)
 		self.transform = environment["transform"]
 		self.crs = environment["crs"]
+		if transition_observer is not None:
+			validate_grid_provenance(self.crs, self.transform)
 
 		self.simulation_cfg = config.get("simulation", {})
 		self.wind_cfg = config.get("wind", {})
@@ -70,6 +105,34 @@ class FireAutomata:
 		self.model = None
 		self._ml_enabled = False
 		self.timestep = 0
+		if transition_observer is not None and not callable(transition_observer):
+			raise TypeError("transition_observer must be callable")
+		if transition_observer is None and transition_provenance is not None:
+			raise ValueError(
+				"transition_provenance is accepted only when an observer is enabled"
+			)
+		self._transition_observer = transition_observer
+		self._transition_provenance = None
+		self._transition_source_type = None
+		if transition_observer is not None:
+			self._transition_provenance = validate_transition_provenance(
+				transition_provenance,
+				expected_configuration_hash=canonical_metadata_hash(config),
+				expected_seed=int(self.simulation_cfg["seed"]),
+				expected_wind_manifest=self.wind.to_manifest(),
+				expected_wind_weight=float(
+					self.transition_cfg.get("wind_weight", 0.0)
+				),
+				expected_simulation_valid_mask_sha256=mask_sha256(
+					self.simulation_valid_mask
+				),
+				expected_mapped_building_mask_sha256=mask_sha256(
+					self.mapped_building_mask
+				),
+			)
+			self._transition_source_type = self._transition_provenance[
+				"transition_source_type"
+			]
 
 		self._precompute_base_probability()
 		self.wind_kernel = self._compute_wind_kernel()
@@ -128,6 +191,10 @@ class FireAutomata:
 				self.grid[row, col] = STATE_BLAZING
 
 	def step(self) -> None:
+		state_t = (
+			self.grid.copy() if self._transition_observer is not None else None
+		)
+		timestep_t = self.timestep
 		try:
 			wind_weight = float(self.transition_cfg.get("wind_weight", 0.0))
 
@@ -182,11 +249,35 @@ class FireAutomata:
 			self.grid = next_grid
 			self.timestep += 1
 		except Exception as exc:
+			if self._transition_observer is not None:
+				raise RuntimeError(
+					"Source-only simulation step failed; no emergency checkpoint was "
+					"written. Explicit caller action is required before continuing."
+				) from exc
 			checkpoint_path = self._save_emergency_checkpoint()
 			raise RuntimeError(
 				"Simulation step failed and an emergency checkpoint was saved at "
 				f"{checkpoint_path}. Configure simulation.resume_checkpoint to continue."
 			) from exc
+
+		# Observer construction and dispatch remain outside the checkpoint path.
+		if self._transition_observer is not None:
+			observation = build_transition_observation(
+				state_t=state_t,
+				state_t1=self.grid,
+				transition_source_type=self._transition_source_type,
+				timestep_t=timestep_t,
+				timestep_t1=self.timestep,
+				simulation_valid_mask=self.simulation_valid_mask,
+				mapped_building_mask=self.mapped_building_mask,
+				wind_manifest=self.wind.to_manifest(),
+				wind_weight=float(self.transition_cfg.get("wind_weight", 0.0)),
+				seed=int(self.simulation_cfg["seed"]),
+				provenance=self._transition_provenance,
+				grid_crs=self.crs,
+				grid_transform=self.transform,
+			)
+			self._transition_observer(observation)
 
 	def load_model(self, model_path: str) -> None:
 		loaded_model = joblib.load(model_path)

@@ -2,11 +2,15 @@
 
 Running this module creates a new immutable dataset and therefore requires
 separate artifact-generation approval. The state-at-t and state-at-t+1 inputs
-are simulator-produced binary CA states, not observed temporal fire rasters.
+used by ``SyntheticDatasetGenerator`` are a deprecated legacy binary raster
+contract. They are not interchangeable with the authoritative five-state,
+in-memory transition observations defined by D-013.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -32,10 +36,106 @@ from modules.feature_pipeline import (
     validate_binary_ca_state,
 )
 from modules.wind_convention import WindContract, compute_wind_weighted_score
+from modules.transition_observer import (
+    AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
+    TransitionObservation,
+    validate_transition_observation,
+)
+
+
+TRANSITION_ROW_BATCH_SCHEMA_VERSION = "ca_transition_rows.v1"
+TRANSITION_DYNAMIC_FEATURE_NAMES = (
+    "blazing_neighbor_count_t",
+    "wind_weighted_score_t",
+)
+TRANSITION_TARGET_VERSION = "ignition_t_plus_1.v1"
+LEGACY_BINARY_STATE_ENCODING = "binary_burning_0_1"
+LEGACY_BINARY_STATE_CONTRACT_STATUS = "deprecated_non_authoritative"
+
+
+def _read_only_array(values: object, dtype: object) -> np.ndarray:
+    array = np.array(values, dtype=dtype, copy=True)
+    array.setflags(write=False)
+    return array
+
+
+@dataclass(frozen=True, slots=True)
+class InMemoryTransitionRows:
+    """Pure in-memory eligible rows derived from one five-state observation."""
+
+    schema_version: str
+    source_observation_schema_version: str
+    transition_source_type: str
+    state_encoding: str
+    feature_names: tuple[str, ...]
+    target_version: str
+    features: np.ndarray
+    labels: np.ndarray
+    cell_rows: np.ndarray
+    cell_cols: np.ndarray
+    timestep_t: int
+    timestep_t1: int
+    seed: int
+    event_id: str
+    scenario_id: str
+    run_id: str
+    grid_id: str
+    grid_crs: str
+    grid_transform: tuple[float, ...]
+    wind_manifest: Mapping[str, object]
+    wind_weight: float
+    domain_mask_hashes: Mapping[str, str]
+    provenance: Mapping[str, object]
+
+
+def build_in_memory_transition_rows(
+    observation: TransitionObservation,
+) -> InMemoryTransitionRows:
+    """Construct eligible dynamic-feature rows without publishing an artifact."""
+    validated = validate_transition_observation(observation)
+    selected = np.flatnonzero(validated.eligible_mask_t.ravel())
+    rows, cols = np.unravel_index(selected, validated.grid_shape)
+    features = np.column_stack(
+        (
+            validated.blazing_neighbor_count_t.ravel()[selected],
+            validated.wind_weighted_score_t.ravel()[selected],
+        )
+    ).astype(np.float32, copy=False)
+    labels = validated.newly_ignited_mask_t1.ravel()[selected].astype(
+        np.int8, copy=False
+    )
+    return InMemoryTransitionRows(
+        schema_version=TRANSITION_ROW_BATCH_SCHEMA_VERSION,
+        source_observation_schema_version=validated.schema_version,
+        transition_source_type=AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
+        state_encoding=validated.state_encoding,
+        feature_names=TRANSITION_DYNAMIC_FEATURE_NAMES,
+        target_version=TRANSITION_TARGET_VERSION,
+        features=_read_only_array(features, np.float32),
+        labels=_read_only_array(labels, np.int8),
+        cell_rows=_read_only_array(rows, np.int64),
+        cell_cols=_read_only_array(cols, np.int64),
+        timestep_t=validated.timestep_t,
+        timestep_t1=validated.timestep_t1,
+        seed=validated.seed,
+        event_id=str(validated.provenance["event_id"]),
+        scenario_id=str(validated.provenance["scenario_id"]),
+        run_id=str(validated.provenance["run_id"]),
+        grid_id=str(validated.provenance["grid_id"]),
+        grid_crs=validated.grid_crs,
+        grid_transform=validated.grid_transform,
+        wind_manifest=validated.wind_manifest,
+        wind_weight=validated.wind_weight,
+        domain_mask_hashes=validated.domain_mask_hashes,
+        provenance=validated.provenance,
+    )
 
 
 class SyntheticDatasetGenerator:
-    """Generate immutable, provenance-bearing Set C transition observations."""
+    """Legacy binary-raster publisher; non-authoritative for active Set C."""
+
+    LEGACY_STATE_ENCODING = LEGACY_BINARY_STATE_ENCODING
+    LEGACY_STATE_CONTRACT_STATUS = LEGACY_BINARY_STATE_CONTRACT_STATUS
 
     REQUIRED_PROVENANCE = (
         "set_id",
@@ -70,10 +170,17 @@ class SyntheticDatasetGenerator:
                 "dataset_generation.target.mode must be 'next_timestep_ignition'; "
                 "final-burn labels are not valid transition targets"
             )
-        if self.target_cfg.get("state_encoding") != "binary_burning_0_1":
+        if self.target_cfg.get("state_encoding") != LEGACY_BINARY_STATE_ENCODING:
             raise ValueError(
-                "dataset_generation.target.state_encoding must be 'binary_burning_0_1'"
+                "dataset_generation.target.state_encoding must identify the explicit "
+                "legacy 'binary_burning_0_1' contract"
             )
+        raise PermissionError(
+            "Legacy binary_burning_0_1 artifact publication is disabled because "
+            "it is non-authoritative for active Set C. Use the pure in-memory "
+            "build_in_memory_transition_rows() adapter with a validated five-state "
+            "TransitionObservation; no artifact publisher is authorized."
+        )
         self.state_t_file = self._required_text(self.target_cfg, "state_t_file")
         self.state_t1_file = self._required_text(self.target_cfg, "state_t1_file")
         self.output_csv = self._required_text(self.dataset_cfg, "output_csv")

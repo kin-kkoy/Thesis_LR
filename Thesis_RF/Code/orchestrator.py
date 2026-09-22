@@ -8,9 +8,11 @@ import yaml
 try:
 	from modules.automata_engine import FireAutomata
 	from modules.data_loader import EnvironmentManager
+	from modules.transition_observer import TransitionObserver
 except ModuleNotFoundError:
 	from Code.modules.automata_engine import FireAutomata
 	from Code.modules.data_loader import EnvironmentManager
+	from Code.modules.transition_observer import TransitionObserver
 
 
 DEFAULT_FLAMMABILITY_WEIGHTS = {
@@ -115,7 +117,25 @@ def _convert_geographic_ignition_points(
 	return converted
 
 
-def run_simulation(config: dict) -> None:
+def run_simulation(
+	config: dict,
+	*,
+	transition_observer: TransitionObserver | None = None,
+	transition_provenance: dict | None = None,
+) -> None:
+	"""Run the existing simulation with optional source-only observation.
+
+	The observation boundary is disabled unless a callback is supplied. It adds
+	no persistence path; all existing simulation output behavior is unchanged.
+	"""
+	if transition_observer is None and transition_provenance is not None:
+		raise ValueError(
+			"transition_provenance is accepted only when an observer is enabled"
+		)
+	if transition_observer is not None and transition_provenance is None:
+		raise ValueError(
+			"transition_provenance is required when an observer is enabled"
+		)
 	config = apply_pipeline_defaults(config)
 	sim_cfg = config.get("simulation", {})
 
@@ -126,7 +146,15 @@ def run_simulation(config: dict) -> None:
 	env_manager.summary()
 
 	# FireAutomata passes flammability_weights into FeatureAssembler during setup.
-	automata = FireAutomata(env_manager.get_environment(), config)
+	if transition_observer is None:
+		automata = FireAutomata(env_manager.get_environment(), config)
+	else:
+		automata = FireAutomata(
+			env_manager.get_environment(),
+			config,
+			transition_observer=transition_observer,
+			transition_provenance=transition_provenance,
+		)
 
 	model_path = Path("models") / "fire_rf_model.joblib"
 	try:
@@ -139,11 +167,17 @@ def run_simulation(config: dict) -> None:
 
 	output_cfg = config.get("output", {})
 	output_dir = Path(output_cfg.get("output_dir", "output"))
-	if not output_dir.is_absolute():
-		output_dir = Path(__file__).resolve().parent / output_dir
-	output_dir.mkdir(parents=True, exist_ok=True)
+	observation_only = transition_observer is not None
+	if not observation_only:
+		if not output_dir.is_absolute():
+			output_dir = Path(__file__).resolve().parent / output_dir
+		output_dir.mkdir(parents=True, exist_ok=True)
 
 	resume_checkpoint_cfg = str(sim_cfg.get("resume_checkpoint", "")).strip()
+	if observation_only and resume_checkpoint_cfg:
+		raise ValueError(
+			"Source-only transition observation cannot resume from a checkpoint"
+		)
 	is_resumed = False
 	if resume_checkpoint_cfg:
 		resume_checkpoint_path = Path(resume_checkpoint_cfg)
@@ -176,7 +210,7 @@ def run_simulation(config: dict) -> None:
 	max_timesteps = int(sim_cfg.get("max_timesteps", 0))
 	checkpoint_interval_cfg = sim_cfg.get("checkpoint_interval", 0)
 	checkpoint_interval = int(checkpoint_interval_cfg) if checkpoint_interval_cfg is not None else 0
-	checkpoint_enabled = checkpoint_interval > 0
+	checkpoint_enabled = (not observation_only) and checkpoint_interval > 0
 
 	start_step = int(automata.timestep) + 1
 	for step in range(start_step, max_timesteps + 1):
@@ -194,6 +228,10 @@ def run_simulation(config: dict) -> None:
 		if not automata.is_active():
 			print(f"Simulation stopped early at step {step}: no active fire cells remain.")
 			break
+
+	if observation_only:
+		print("Source-only transition observation completed without artifact output.")
+		return
 
 	final_grid = automata.get_grid().astype(np.int8)
 	# output_path = output_dir / "final_state.tif"

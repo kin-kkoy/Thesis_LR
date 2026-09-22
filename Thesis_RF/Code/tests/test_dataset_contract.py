@@ -47,6 +47,24 @@ def _simulated_source(
     }
 
 
+def test_legacy_binary_artifact_publisher_remains_fail_closed():
+    disabled = {"dataset_generation": {"artifact_write_enabled": False}}
+    with pytest.raises(PermissionError, match="requires separate approval"):
+        SyntheticDatasetGenerator(disabled)
+
+    legacy_enabled = {
+        "dataset_generation": {
+            "artifact_write_enabled": True,
+            "target": {
+                "mode": "next_timestep_ignition",
+                "state_encoding": "binary_burning_0_1",
+            },
+        }
+    }
+    with pytest.raises(PermissionError, match="non-authoritative for active Set C"):
+        SyntheticDatasetGenerator(legacy_enabled)
+
+
 def test_transition_target_uses_state_t_to_state_t_plus_one():
     state_t = np.array([[1, 0, 0]], dtype=np.int8)
     state_t1 = np.array([[1, 1, 0]], dtype=np.int8)
