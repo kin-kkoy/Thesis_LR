@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import modules.automata_engine as automata_engine_module
 from modules.automata_engine import (
     STATE_BLAZING,
     STATE_NOT_YET_BURNING,
@@ -97,3 +98,61 @@ def test_stochastic_ml_mode_rejects_a_ca_threshold():
     config["ml_model"]["threshold"] = 0.5
     with pytest.raises(ValueError, match="must be absent or null"):
         FireAutomata(_environment(), config)
+
+
+def test_model_free_probability_does_not_reapply_wind(monkeypatch):
+    config = _config()
+    config["placeholder_transition"]["base_ignition_prob"] = 0.2
+    automata = FireAutomata(_environment(), config, model_free=True)
+    automata.grid[0, 0] = STATE_BLAZING
+
+    class FixedDraw:
+        def random(self, shape):
+            assert shape == (1, 2)
+            return np.array([[0.99, 0.03]], dtype=np.float64)
+
+    automata.rng = FixedDraw()
+    monkeypatch.setattr(
+        automata_engine_module,
+        "compute_wind_weighted_score",
+        lambda *_args, **_kwargs: (
+            np.array([[0.0, 0.1]], dtype=np.float32),
+            np.zeros((3, 3), dtype=np.float32),
+        ),
+    )
+
+    automata.step()
+
+    # D-014 gives p_effective = 0.2 * 0.1 = 0.02. Reapplying the
+    # configured wind_weight of 3.0 would incorrectly ignite this cell.
+    assert automata.grid[0, 1] == STATE_NOT_YET_BURNING
+    assert automata.grid.dtype == np.int8
+
+
+def test_model_free_engine_rejects_all_estimator_boundaries(monkeypatch, tmp_path):
+    automata = FireAutomata(_environment(), _config(), model_free=True)
+    joblib_calls = []
+    monkeypatch.setattr(
+        automata_engine_module.joblib,
+        "load",
+        lambda path: joblib_calls.append(path),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot attach"):
+        automata.model = object()
+    with pytest.raises(RuntimeError, match="cannot load"):
+        automata.load_model("forbidden.joblib")
+    with pytest.raises(RuntimeError, match="cannot invoke"):
+        automata._predict_with_model(
+            np.zeros((1, 2), dtype=np.int8),
+            np.zeros((1, 2), dtype=bool),
+        )
+    with pytest.raises(RuntimeError, match="cannot write checkpoints"):
+        automata.save_checkpoint(str(tmp_path / "forbidden.npz"))
+    with pytest.raises(RuntimeError, match="cannot load checkpoints"):
+        automata.load_checkpoint(str(tmp_path / "forbidden.npz"))
+
+    assert joblib_calls == []
+    assert not (tmp_path / "forbidden.npz").exists()
+    assert automata.model is None
+    assert automata.model_free is True

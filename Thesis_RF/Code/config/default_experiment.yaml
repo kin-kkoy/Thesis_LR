@@ -15,6 +15,14 @@ simulation:
 
   early_stop: true             # stop when no IGNITED or BLAZING cells remain
 
+# Explicit source-only gate for the D-014 teacher. A numeric safety limit and
+# production authorization remain unset; normal CA+ML execution is separate.
+model_free_teacher:
+  enabled: false
+  runner_schema_version: "model_free_teacher_run.v1"
+  safety_limit_timesteps: null
+  persistent_output_enabled: false
+
 wind:
   speed_kmh: 10.0              # placeholder static global
   direction_deg: 315.0         # meteorological from-bearing, clockwise from projected grid north
@@ -73,6 +81,16 @@ output:
 
 dataset_generation:
   artifact_write_enabled: false                           # separate dataset-generation approval required
+  set_c_collector:
+    enabled: false                                        # explicit future collection approval required
+    batch_rows: null                                      # explicit bounded-memory value required
+    max_buffer_rows: null                                 # no pressure dropping; caller must drain/retry
+    max_buffer_bytes: null                                # retained NumPy row payload only, not peak process memory
+    backpressure_policy: null                             # runner_owned_exact_retry.v1 requires explicit approval
+  set_c_publisher:
+    enabled: false                                        # production publication remains unauthorized
+    mode: null                                            # only synthetic_test_only exists for focused tests
+    authorization_reference: null
   scenario_records: []                                    # explicit simulator-produced adjacent-state records only
   roi: null                                             # null means the full aligned raster domain; no crop is approved
   sampling_policy: "all_eligible"                       # preserve eligible-population prevalence for calibration

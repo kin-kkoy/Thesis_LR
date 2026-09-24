@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from dataset_generator import SyntheticDatasetGenerator
-from generate_multi_scenario import build_scenarios
+from generate_multi_scenario import build_scenarios, run_all_scenarios
 from modules.feature_pipeline import CANONICAL_FEATURE_NAMES
 from modules.wind_convention import (
     CALM_REPRESENTATION,
@@ -63,6 +63,15 @@ def test_legacy_binary_artifact_publisher_remains_fail_closed():
     }
     with pytest.raises(PermissionError, match="non-authoritative for active Set C"):
         SyntheticDatasetGenerator(legacy_enabled)
+
+
+def test_legacy_multi_scenario_publication_fails_before_any_generator(monkeypatch):
+    monkeypatch.setattr(
+        "generate_multi_scenario.SyntheticDatasetGenerator",
+        lambda _config: pytest.fail("legacy generator must not be constructed"),
+    )
+    with pytest.raises(PermissionError, match="bounded five-state SetCCollector"):
+        run_all_scenarios([{"synthetic": "scenario"}], "forbidden.csv")
 
 
 def test_transition_target_uses_state_t_to_state_t_plus_one():

@@ -91,3 +91,11 @@ No RF experiment result is established. On 2026-09-22, all 109 synthetic RF cont
 4. Append to `DECISIONS.md` only when a durable choice, approval, or supersession occurred.
 5. Review the implementation diff and memory diff together.
 6. Keep detailed logs, output tables, citations, and experiment artifacts in their evidence locations and link them here.
+
+## Phase 7 acceptance checkpoint — 2026-09-24
+
+- `VERIFIED` — The thesis owner formally accepted Phase 7 after the RF Engineer implementations, RF Validator Task 7.2 and Task 7.4 acceptance-gate passes, ownership review, and a full source-only run of 160 synthetic RF tests with Python bytecode and the pytest cache disabled.
+- `VERIFIED` — The accepted source provides the fail-closed model-free stochastic teacher, D-014 ignition law, five-state `np.int8` transitions, ignition and termination identities, canonical 11-feature `all_eligible` collection, bounded lossless backpressure, and a disabled synthetic-test-only atomic publisher that rejects incomplete, censored, corrupted, partial, legacy, and overwrite attempts.
+- **Evidence boundary:** This acceptance establishes source behavior only. It does not establish a real Set C dataset, final spatial blocks or split assignments, a trained or calibrated model, CA result rasters, or real-world predictive accuracy.
+- **Next authorized scope:** Phase 8 may proceed only under a separately defined bounded feasibility-pilot contract. It must not load an RF model, publish row-level training data, create CA rasters or checkpoints, use `stack_ground_truth.tif`, assign final split roles, train, calibrate, publish models/results, change manuscripts, or write under `Thesis_LR/**`.
+- **Open planning evidence:** Numeric collection bounds, scenario/run/seed inventory, spatial-block feasibility, pilot termination limits, and the Phase 8 evidence package remain unset pending the bounded pilot contract.

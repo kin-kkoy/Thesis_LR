@@ -9,7 +9,7 @@ import modules.automata_engine as automata_engine_module
 from dataset_generator import (
 	LEGACY_BINARY_STATE_CONTRACT_STATUS,
 	LEGACY_BINARY_STATE_ENCODING,
-	TRANSITION_DYNAMIC_FEATURE_NAMES,
+	TRANSITION_FEATURE_NAMES,
 	TRANSITION_ROW_BATCH_SCHEMA_VERSION,
 	TRANSITION_TARGET_VERSION,
 	build_in_memory_transition_rows,
@@ -68,6 +68,21 @@ def _config() -> dict:
 			"inference_mode": "stochastic_probability",
 			"threshold": None,
 		},
+		"dataset_generation": {
+			"sampling_policy": "all_eligible",
+			"set_c_collector": {
+				"enabled": True,
+				"max_buffer_rows": 100,
+				"max_buffer_bytes": 100_000,
+				"batch_rows": 100,
+			},
+			"spatial_block": {
+				"origin_row": 0,
+				"origin_col": 0,
+				"size_rows": 2,
+				"size_cols": 2,
+			},
+		},
 	}
 
 
@@ -101,6 +116,7 @@ def _provenance(
 		"experiment_id": "synthetic-experiment",
 		"event_id": "synthetic-event",
 		"scenario_id": "synthetic-scenario",
+		"scenario_family_id": "synthetic-scenario-family",
 		"run_id": "synthetic-run",
 		"grid_id": "synthetic-grid",
 		"simulation_valid_mask_id": "synthetic-environment-valid",
@@ -115,6 +131,7 @@ def _provenance(
 		"authorization_reference": "D-012/D-013 source-only approval",
 		"transition_source_type": AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
 		"seed": config["simulation"]["seed"],
+		"rng_bit_generator": "PCG64",
 		"wind_manifest": WindContract.from_config(config["wind"]).to_manifest(),
 		"wind_weight": config["placeholder_transition"]["wind_weight"],
 		"simulation_valid_mask_sha256": mask_sha256(simulation_valid_mask),
@@ -122,6 +139,9 @@ def _provenance(
 		"environment_id": "synthetic-environment",
 		"execution_id": "synthetic-execution",
 		"capture_source_id": "synthetic-live-ca-step",
+		"ignition_coordinate_system": "grid_row_col",
+		"ignition_coordinates": ((1, 1),),
+		"ignition_set_sha256": canonical_metadata_hash(((1, 1),)),
 	}
 
 
@@ -397,30 +417,46 @@ def test_enabled_observer_rejects_mismatched_capture_provenance_before_step(
 
 
 def test_in_memory_row_adapter_selects_only_eligible_cells_without_mutation():
-	record = build_transition_observation(**_direct_observation_inputs())
+	inputs = _direct_observation_inputs()
+	inputs["timestep_t"] = 0
+	inputs["timestep_t1"] = 1
+	record = build_transition_observation(**inputs)
 	state_t_before = record.state_t.copy()
-	rows = build_in_memory_transition_rows(record)
+	environment = _environment()
+	environment["burnable_mask"] = inputs["simulation_valid_mask"].copy()
+	environment["building_presence"] = inputs["mapped_building_mask"].astype(
+		np.float32
+	)
+	environment["material_class"] = inputs["mapped_building_mask"].astype(np.int8)
+	batches = build_in_memory_transition_rows(
+		record,
+		environment=environment,
+		config=_config(),
+	)
+	assert len(batches) == 1
+	rows = batches[0]
 	selected = np.flatnonzero(record.eligible_mask_t.ravel())
 	expected_rows, expected_cols = np.unravel_index(selected, record.grid_shape)
-	expected_features = np.column_stack(
-		(
-			record.blazing_neighbor_count_t.ravel()[selected],
-			record.wind_weighted_score_t.ravel()[selected],
-		)
-	).astype(np.float32)
 
 	assert rows.schema_version == TRANSITION_ROW_BATCH_SCHEMA_VERSION
-	assert rows.feature_names == TRANSITION_DYNAMIC_FEATURE_NAMES
+	assert rows.feature_names == TRANSITION_FEATURE_NAMES
 	assert rows.target_version == TRANSITION_TARGET_VERSION
 	assert rows.transition_source_type == AUTHORIZED_SIMULATED_TRANSITION_SOURCE
-	assert rows.features == pytest.approx(expected_features)
+	assert rows.features.shape == (selected.size, len(TRANSITION_FEATURE_NAMES))
+	assert rows.features.dtype == np.float32
+	assert rows.features[:, TRANSITION_FEATURE_NAMES.index("neighbor_burning_count")] == pytest.approx(
+		record.blazing_neighbor_count_t.ravel()[selected]
+	)
+	assert rows.features[:, TRANSITION_FEATURE_NAMES.index("wind_weighted_score")] == pytest.approx(
+		record.wind_weighted_score_t.ravel()[selected]
+	)
 	assert rows.labels.tolist() == record.newly_ignited_mask_t1.ravel()[
 		selected
 	].astype(np.int8).tolist()
 	assert rows.cell_rows.tolist() == expected_rows.tolist()
 	assert rows.cell_cols.tolist() == expected_cols.tolist()
 	assert rows.timestep_t1 == rows.timestep_t + 1
-	assert rows.run_id == "synthetic-run"
+	assert rows.provenance["run_id"] == "synthetic-run"
 	assert rows.provenance["simulator_id"] == "fire-automata"
 	assert rows.provenance["configuration_hash"] == canonical_metadata_hash(_config())
 	assert rows.provenance["authorization_reference"] == (
@@ -438,7 +474,11 @@ def test_legacy_binary_state_contract_is_explicitly_non_authoritative():
 	assert LEGACY_BINARY_STATE_ENCODING == "binary_burning_0_1"
 	assert LEGACY_BINARY_STATE_CONTRACT_STATUS == "deprecated_non_authoritative"
 	with pytest.raises(TypeError, match="TransitionObservation"):
-		build_in_memory_transition_rows(object())
+		build_in_memory_transition_rows(
+			object(),
+			environment=_environment(),
+			config=_config(),
+		)
 
 
 @pytest.mark.parametrize("missing_name", ["crs", "transform"])

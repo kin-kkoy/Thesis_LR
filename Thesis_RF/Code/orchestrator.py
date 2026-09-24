@@ -8,10 +8,20 @@ import yaml
 try:
 	from modules.automata_engine import FireAutomata
 	from modules.data_loader import EnvironmentManager
+	from modules.model_free_teacher import (
+		TEACHER_RUNNER_SCHEMA_VERSION,
+		TeacherTerminationRecord,
+		run_model_free_teacher as run_model_free_teacher_engine,
+	)
 	from modules.transition_observer import TransitionObserver
 except ModuleNotFoundError:
 	from Code.modules.automata_engine import FireAutomata
 	from Code.modules.data_loader import EnvironmentManager
+	from Code.modules.model_free_teacher import (
+		TEACHER_RUNNER_SCHEMA_VERSION,
+		TeacherTerminationRecord,
+		run_model_free_teacher as run_model_free_teacher_engine,
+	)
 	from Code.modules.transition_observer import TransitionObserver
 
 
@@ -76,7 +86,19 @@ def _convert_geographic_ignition_points(
 	automata: FireAutomata,
 	ignition_points: list,
 ) -> list[tuple[int, int]]:
-	rows, cols = automata.grid_shape
+	return _convert_geographic_ignition_points_for_grid(
+		automata.grid_shape,
+		automata.transform,
+		ignition_points,
+	)
+
+
+def _convert_geographic_ignition_points_for_grid(
+	grid_shape: tuple[int, int],
+	transform: object,
+	ignition_points: list,
+) -> list[tuple[int, int]]:
+	rows, cols = grid_shape
 	converted: list[tuple[int, int]] = []
 
 	for point in ignition_points:
@@ -90,12 +112,12 @@ def _convert_geographic_ignition_points(
 		y = float(point[1])
 
 		# Use rasterio rowcol for deterministic grid indices.
-		row_idx, col_idx = rowcol(automata.transform, x, y, op=np.floor)
+		row_idx, col_idx = rowcol(transform, x, y, op=np.floor)
 		row = int(row_idx)
 		col = int(col_idx)
 
 		# Cross-check with inverse affine transform to guard conversion drift.
-		col_affine, row_affine = ~automata.transform * (x, y)
+		col_affine, row_affine = ~transform * (x, y)
 		row_affine_idx = int(np.floor(row_affine))
 		col_affine_idx = int(np.floor(col_affine))
 		if row != row_affine_idx or col != col_affine_idx:
@@ -115,6 +137,58 @@ def _convert_geographic_ignition_points(
 		converted.append((row, col))
 
 	return converted
+
+
+def run_model_free_teacher(
+	config: dict,
+	*,
+	transition_observer: TransitionObserver,
+	transition_provenance: dict,
+) -> TeacherTerminationRecord:
+	"""Run the explicitly enabled teacher without model or artifact operations."""
+	teacher_cfg = config.get("model_free_teacher", {})
+	if not isinstance(teacher_cfg, dict) or teacher_cfg.get("enabled") is not True:
+		raise ValueError("model_free_teacher.enabled must be true for an explicit run")
+	if teacher_cfg.get("runner_schema_version") != TEACHER_RUNNER_SCHEMA_VERSION:
+		raise ValueError(
+			"model_free_teacher.runner_schema_version must be "
+			f"{TEACHER_RUNNER_SCHEMA_VERSION!r}"
+		)
+	if teacher_cfg.get("persistent_output_enabled", False) is not False:
+		raise ValueError(
+			"model_free_teacher.persistent_output_enabled must remain false"
+		)
+	if not callable(transition_observer):
+		raise TypeError("transition_observer must be callable")
+	if transition_provenance is None:
+		raise ValueError("transition_provenance is required for teacher mode")
+
+	ignition_points = config.get("simulation", {}).get("ignition_points", [])
+	if not ignition_points:
+		raise ValueError(
+			"Teacher mode requires explicit simulation.ignition_points; "
+			"random ignition selection is not authoritative"
+		)
+
+	config = apply_pipeline_defaults(config)
+	env_manager = EnvironmentManager(config["environment"])
+	env_manager.load_rasters()
+	env_manager.build_masks()
+	env_manager.normalize_layers()
+	environment = env_manager.get_environment()
+
+	ignition_tuples = _convert_geographic_ignition_points_for_grid(
+		environment["grid_shape"],
+		environment["transform"],
+		ignition_points,
+	)
+	return run_model_free_teacher_engine(
+		environment,
+		config,
+		ignition_points=ignition_tuples,
+		transition_observer=transition_observer,
+		transition_provenance=transition_provenance,
+	)
 
 
 def run_simulation(

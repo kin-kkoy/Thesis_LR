@@ -38,7 +38,12 @@ class FireAutomata:
 		*,
 		transition_observer: TransitionObserver | None = None,
 		transition_provenance: dict | None = None,
+		model_free: bool = False,
 	):
+		if not isinstance(model_free, bool):
+			raise TypeError("model_free must be boolean")
+		self._model_free = model_free
+		self._model = None
 		self.environment = environment
 		self.config = config
 
@@ -102,7 +107,6 @@ class FireAutomata:
 		self.t_4_to_5 = int(self.transition_cfg.get("T_4_to_5", 1))
 
 		self.rng = np.random.default_rng(self.simulation_cfg["seed"])
-		self.model = None
 		self._ml_enabled = False
 		self.timestep = 0
 		if transition_observer is not None and not callable(transition_observer):
@@ -191,6 +195,8 @@ class FireAutomata:
 				self.grid[row, col] = STATE_BLAZING
 
 	def step(self) -> None:
+		if self._model_free and self.model is not None:
+			raise RuntimeError("Model-free teacher mode cannot invoke an estimator")
 		state_t = (
 			self.grid.copy() if self._transition_observer is not None else None
 		)
@@ -249,9 +255,9 @@ class FireAutomata:
 			self.grid = next_grid
 			self.timestep += 1
 		except Exception as exc:
-			if self._transition_observer is not None:
+			if self._model_free or self._transition_observer is not None:
 				raise RuntimeError(
-					"Source-only simulation step failed; no emergency checkpoint was "
+					"In-memory simulation step failed; no emergency checkpoint was "
 					"written. Explicit caller action is required before continuing."
 				) from exc
 			checkpoint_path = self._save_emergency_checkpoint()
@@ -280,6 +286,8 @@ class FireAutomata:
 			self._transition_observer(observation)
 
 	def load_model(self, model_path: str) -> None:
+		if self._model_free:
+			raise RuntimeError("Model-free teacher mode cannot load an estimator")
 		loaded_model = joblib.load(model_path)
 		validate_model_feature_schema(loaded_model)
 		classes = getattr(loaded_model, "classes_", None)
@@ -292,7 +300,23 @@ class FireAutomata:
 		self.model = loaded_model
 		self._ml_enabled = True
 
+	@property
+	def model(self):
+		return self._model
+
+	@model.setter
+	def model(self, value) -> None:
+		if self._model_free and value is not None:
+			raise RuntimeError("Model-free teacher mode cannot attach an estimator")
+		self._model = value
+
+	@property
+	def model_free(self) -> bool:
+		return self._model_free
+
 	def save_checkpoint(self, filepath: str) -> None:
+		if self._model_free:
+			raise RuntimeError("Model-free teacher mode cannot write checkpoints")
 		grid_to_save = self.grid.astype(np.int8, copy=False)
 		ignition_timers_to_save = self.ignition_timers.astype(np.int16, copy=False)
 		blazing_timers_to_save = self.blazing_timers.astype(np.int16, copy=False)
@@ -314,6 +338,8 @@ class FireAutomata:
 		return str(checkpoint_path)
 
 	def load_checkpoint(self, filepath: str) -> None:
+		if self._model_free:
+			raise RuntimeError("Model-free teacher mode cannot load checkpoints")
 		with np.load(filepath, allow_pickle=False) as checkpoint:
 			if (
 				"grid" not in checkpoint
@@ -368,6 +394,8 @@ class FireAutomata:
 		susceptible_mask: np.ndarray,
 		wind_weighted_score: np.ndarray | None = None,
 	) -> np.ndarray:
+		if self._model_free:
+			raise RuntimeError("Model-free teacher mode cannot invoke an estimator")
 		flat_susceptible = susceptible_mask.ravel().astype(bool)
 		susceptible_indices = np.flatnonzero(flat_susceptible)
 

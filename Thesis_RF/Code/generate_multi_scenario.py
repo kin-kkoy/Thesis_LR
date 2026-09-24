@@ -166,7 +166,15 @@ def build_scenarios(base_config: dict) -> list[dict]:
 
 
 def run_all_scenarios(scenarios: list[dict], output_csv: str) -> str:
-    """Run each scenario and combine results into one dataset."""
+    """Reject the legacy binary-raster path for authoritative active Set C."""
+    raise PermissionError(
+        "Legacy multi-scenario binary state publication is non-authoritative for "
+        "active Set C. Use the bounded five-state SetCCollector path; production "
+        "publication remains separately unauthorized."
+    )
+
+    # Retained below as unreachable historical implementation evidence. It must
+    # not be re-enabled for active Set C without a separately approved migration.
     all_frames: list[pd.DataFrame] = []
     scenario_manifests: list[dict] = []
     total = len(scenarios)
