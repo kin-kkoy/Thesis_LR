@@ -129,7 +129,17 @@ class EnvironmentManager:
         self.buildings_raw = None
 
         materials = self.materials_raw
-        materials[self.nodata_mask] = 0
+        # Keep a valid material class even when another environmental layer is
+        # invalid.  The combined mask still excludes that cell from simulation
+        # and observation, while preserving the independently aligned full-grid
+        # building/material identity required by D-014.  Only material-specific
+        # invalid values are normalized to the no-material class.
+        material_invalid = (
+            ~np.isfinite(materials)
+            | (materials == self.nodata_value)
+            | (materials == -9999)
+        )
+        materials[material_invalid] = 0
         self.material_class = materials.astype(np.int8)
         self.materials_raw = None
 

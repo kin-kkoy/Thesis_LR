@@ -1,4 +1,4 @@
-"""Exact-equivalence and ownership tests for bounded raster preparation."""
+"""Value, domain, and ownership tests for bounded raster preparation."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _write_raster(path, values: np.ndarray) -> None:
 def _manager(tmp_path) -> tuple[EnvironmentManager, dict[str, np.ndarray]]:
     source = {
         "slope": np.array(
-            [[-9999.0, 0.0, 2.5], [11.0, 10.0, 4.25]], dtype=np.float32
+            [[-9999.0, 0.0, 2.5], [-9999.0, 10.0, 4.25]], dtype=np.float32
         ),
         "proximity": np.array(
             [[-9999.0, 0.0, 15.0], [20.0, 8.0, 2.5]], dtype=np.float32
@@ -61,7 +61,7 @@ def _manager(tmp_path) -> tuple[EnvironmentManager, dict[str, np.ndarray]]:
     return manager, source
 
 
-def _legacy_expected(source: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+def _expected_environment(source: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     slope_raw = source["slope"].astype(np.float32)
     proximity_raw = source["proximity"].astype(np.float32)
     buildings_raw = source["buildings"].astype(np.float32)
@@ -87,7 +87,12 @@ def _legacy_expected(source: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     proximity_risk = proximity_raw / 10.0
     proximity_risk[nodata] = 0
     building_presence = np.where(buildings_raw == 10, 1, 0).astype(np.int8)
-    material_class = np.where(nodata, 0.0, materials_raw).astype(np.int8)
+    material_invalid = (
+        ~np.isfinite(materials_raw)
+        | (materials_raw == -9999)
+    )
+    materials_raw[material_invalid] = 0
+    material_class = materials_raw.astype(np.int8)
     return {
         "slope_risk": slope_risk,
         "proximity_risk": proximity_risk,
@@ -98,9 +103,9 @@ def _legacy_expected(source: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     }
 
 
-def test_direct_dtype_read_and_in_place_normalization_are_exact(tmp_path):
+def test_direct_dtype_read_and_corrected_normalization_match_contract(tmp_path):
     manager, source = _manager(tmp_path)
-    expected = _legacy_expected(source)
+    expected = _expected_environment(source)
 
     manager.load_rasters()
     assert manager.materials_raw.dtype == np.dtype(np.float32)
@@ -115,6 +120,23 @@ def test_direct_dtype_read_and_in_place_normalization_are_exact(tmp_path):
     assert manager.proximity_risk is proximity_buffer
     for name, expected_values in expected.items():
         assert np.array_equal(environment[name], expected_values)
+
+    # The combined mask excludes this slope-invalid mapped building, but its
+    # independently valid material class remains intact for full-grid identity.
+    assert environment["nodata_mask"][1, 0]
+    assert not environment["burnable_mask"][1, 0]
+    assert environment["building_presence"][1, 0] == 1
+    assert environment["material_class"][1, 0] == 2
+    assert np.array_equal(
+        environment["building_presence"] > 0,
+        environment["material_class"] > 0,
+    )
+    authoritative = (
+        environment["burnable_mask"]
+        & (~environment["nodata_mask"])
+        & (environment["building_presence"] > 0)
+    )
+    assert not authoritative[1, 0]
 
 
 def test_raw_grids_and_redundant_material_risk_are_not_retained(tmp_path, capsys):
