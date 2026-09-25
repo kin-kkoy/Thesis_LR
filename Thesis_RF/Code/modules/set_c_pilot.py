@@ -50,15 +50,21 @@ from .transition_observer import (
 from .wind_convention import WindContract
 
 
-PILOT_ID = "phase8_set_c_feasibility_pilot_v1"
-AGGREGATE_SCHEMA_VERSION = "phase8_set_c_feasibility_aggregate.v1"
-APPROVAL_REFERENCE = "Phase 8 Task 8.1 owner approval: phase8_set_c_feasibility_pilot_v1"
+PILOT_ID = "phase8_set_c_feasibility_pilot_v2"
+AGGREGATE_SCHEMA_VERSION = "phase8_set_c_feasibility_aggregate.v2"
+APPROVAL_REFERENCE = "Phase 8 v2 owner approval: phase8_set_c_feasibility_pilot_v2"
 APPROVED_RELATIVE_DESTINATION = Path(
-    "output/phase8/phase8_set_c_feasibility_pilot_v1.aggregate.json"
+    "output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json"
 )
 MODEL_FREE_SOURCE = "model-free-fire-automata"
 GRID_ID = "lapu_lapu_epsg32651_3m_5489x6896_v1"
 EVENT_ID = "simulated_case_study_no_observed_event"
+V1_AGGREGATE_PAYLOAD_SHA256 = (
+    "23cd71ebca4837e094eabec2a02c95e3869e9b7ae5aac28b2b5eb40b3a98afc6"
+)
+V1_AGGREGATE_FILE_SHA256 = (
+    "e4c52c15ca14286ec8926898e082166b7481ad480970db74877d10b00b7bd332"
+)
 EXPECTED_GRID_SHAPE = (5489, 6896)
 EXPECTED_SIMULATION_VALID_COUNT = 3_959_768
 EXPECTED_MAPPED_BUILDING_COUNT = 1_077_802
@@ -75,12 +81,11 @@ EXPECTED_AUTHORITATIVE_DOMAIN_SHA256 = (
 APPROVED_GRID_IDENTITY_SHA256 = (
     "26e9da1104da2caf15039b5f9fbcf719fea506adcee95f9c2da247e8a9e2bc46"
 )
-SEEDS = (81001, 81002)
 SAFETY_LIMIT_TIMESTEPS = 256
 BATCH_ROWS = 16_384
 MAX_BUFFER_ROWS = 932_864
 MAX_BUFFER_BYTES = 176_311_296
-TOTAL_ROW_CEILING = 8_589_312
+TOTAL_ROW_CEILING = 20_557_824
 CANDIDATE_BLOCK_SIZES = ((32, 32), (64, 64), (128, 128))
 ACTIVE_BLOCK_SIZE = (32, 32)
 BLOCK_ORIGIN = (0, 0)
@@ -91,15 +96,19 @@ RSS_CEILING_BYTES = 6_442_450_944
 RUN_RUNTIME_LIMIT_SECONDS = 900.0
 PILOT_RUNTIME_LIMIT_SECONDS = 5_400.0
 MAX_RETRY_CYCLES_PER_OBSERVATION = 58
-APPROVED_WIND_MANIFEST = {
-    "speed_kmh": 10.0,
-    "direction_deg": 315.0,
-    "direction_convention": "meteorological_from",
-    "direction_units": "degrees_clockwise",
-    "north_reference": "projected_grid_north",
-    "schema_version": "simulated_wind.v1",
-    "calm_representation": "speed_zero_direction_zero",
-}
+def _approved_wind_manifest(direction_deg: float) -> dict[str, object]:
+    return {
+        "speed_kmh": 10.0,
+        "direction_deg": float(direction_deg),
+        "direction_convention": "meteorological_from",
+        "direction_units": "degrees_clockwise",
+        "north_reference": "projected_grid_north",
+        "schema_version": "simulated_wind.v1",
+        "calm_representation": "speed_zero_direction_zero",
+    }
+
+
+APPROVED_WIND_MANIFEST = _approved_wind_manifest(315.0)
 APPROVED_PLACEHOLDER_TRANSITION = {
     "base_ignition_prob": 0.12,
     "slope_weight": 0.20,
@@ -124,6 +133,12 @@ class PilotFamily:
     ignition_set_sha256: str
     component_size: int
     row_ceiling: int
+    wind_direction_deg: float
+    seeds: tuple[int, ...]
+
+    @property
+    def wind_manifest(self) -> dict[str, object]:
+        return _approved_wind_manifest(self.wind_direction_deg)
 
 
 FAMILIES = (
@@ -134,6 +149,8 @@ FAMILIES = (
         "0843f3c6db0284bb85efd670b65027ee11af833e7070f2221080a729ab6193af",
         3_976,
         1_017_856,
+        315.0,
+        (81001, 81002),
     ),
     PilotFamily(
         "p8f02_cluster_1052_m3",
@@ -142,6 +159,8 @@ FAMILIES = (
         "2a938c46cd01a87b49f312257257053c2dedc33773d538776397b3394de31f65",
         5_454,
         1_396_224,
+        315.0,
+        (81001, 81002),
     ),
     PilotFamily(
         "p8f03_cluster_4974_m2",
@@ -150,6 +169,8 @@ FAMILIES = (
         "4c649982c5844a54d3bb8dd7b7eb3d1fbc3d71fe9f67505c25a95fef7d0bb1b8",
         3_811,
         975_616,
+        315.0,
+        (81001, 81002),
     ),
     PilotFamily(
         "p8f04_cluster_160_m5",
@@ -158,7 +179,44 @@ FAMILIES = (
         "a23beb74a1d4a649446416e6ca8258b1cd315a774a8757b0b033a3496057bbaa",
         3_535,
         904_960,
+        315.0,
+        (81001, 81002, 82001, 82002, 82003, 82004, 82005, 82006, 82007, 82008),
     ),
+    PilotFamily(
+        "p8v2f05_cluster_4146_m3",
+        "p8v2f05_w045_s10",
+        ((1603, 2799),),
+        "01fb6b26993f5651fb070825c4fe7b9380a7d8fc852d977850f9e6c86063914f",
+        1_921,
+        491_776,
+        45.0,
+        (83001, 83002, 83003, 83004, 83005, 83006, 83007, 83008),
+    ),
+    PilotFamily(
+        "p8v2f06_cluster_6201_m5",
+        "p8v2f06_w135_s10",
+        ((1789, 2602),),
+        "084a8e3f06d0514c0c53a04d986248080a7271b769f0a09e464fa1d0f3a0c8d1",
+        388,
+        99_328,
+        135.0,
+        (84001, 84002, 84003, 84004, 84005, 84006, 84007, 84008),
+    ),
+)
+
+V1_REPLAY_EXPECTATIONS = {
+    "p8f01_w315_s10__seed_81001": (10, 1, 9, 3),
+    "p8f01_w315_s10__seed_81002": (33, 6, 27, 11),
+    "p8f02_w315_s10__seed_81001": (5, 0, 5, 1),
+    "p8f02_w315_s10__seed_81002": (10, 1, 9, 3),
+    "p8f03_w315_s10__seed_81001": (4, 0, 4, 1),
+    "p8f03_w315_s10__seed_81002": (10, 1, 9, 3),
+    "p8f04_w315_s10__seed_81001": (8, 0, 8, 1),
+    "p8f04_w315_s10__seed_81002": (8, 0, 8, 1),
+}
+V2_NEW_FAMILY_IDS = (
+    "p8v2f05_cluster_4146_m3",
+    "p8v2f06_cluster_6201_m5",
 )
 
 
@@ -178,7 +236,7 @@ RUN_MATRIX = tuple(
         run_id=f"{family.scenario_id}__seed_{seed}",
     )
     for index, (family, seed) in enumerate(
-        (family_seed for family in FAMILIES for family_seed in ((family, SEEDS[0]), (family, SEEDS[1])))
+        (family, seed) for family in FAMILIES for seed in family.seeds
     )
 )
 
@@ -376,8 +434,8 @@ def _require_exact_contract(config: Mapping[str, object]) -> None:
         raise PilotContractError("Active diagnostic block identity must be 32x32")
     if pilot.get("block_origin") != [0, 0]:
         raise PilotContractError("Diagnostic block origin must be (0,0)")
-    if pilot.get("seeds") != [81001, 81002]:
-        raise PilotContractError("Pilot seeds changed")
+    if pilot.get("run_count") != len(RUN_MATRIX):
+        raise PilotContractError("Pilot run count changed")
     if pilot.get("total_row_ceiling") != TOTAL_ROW_CEILING:
         raise PilotContractError("Pilot total row ceiling changed")
     configured_families = pilot.get("families")
@@ -389,6 +447,8 @@ def _require_exact_contract(config: Mapping[str, object]) -> None:
             "ignition_set_sha256": family.ignition_set_sha256,
             "component_size": family.component_size,
             "row_ceiling": family.row_ceiling,
+            "wind_manifest": family.wind_manifest,
+            "seeds": list(family.seeds),
         }
         for family in FAMILIES
     ]
@@ -407,6 +467,7 @@ def _require_exact_contract(config: Mapping[str, object]) -> None:
 def _run_config(config: Mapping[str, object], spec: PilotRunSpec) -> dict[str, Any]:
     run_config = deepcopy(dict(config))
     run_config["simulation"]["seed"] = spec.seed
+    run_config["wind"] = spec.family.wind_manifest
     run_config["model_free_teacher"].update(
         {
             "enabled": True,
@@ -817,6 +878,9 @@ class _PilotAccumulator:
                     "maximum_pending_bytes": run.max_pending_bytes,
                     "backpressure_drain_count": run.backpressure_drain_count,
                     "maximum_retry_cycles": run.max_retry_cycles,
+                    "no_progress_detected": run.no_progress_detected,
+                    "overflow_detected": run.overflow_detected,
+                    "retry_limit_exceeded": run.retry_limit_exceeded,
                     "minimum_available_memory_bytes": min(
                         (sample.available_memory_bytes for sample in run.resource_samples),
                         default=None,
@@ -972,6 +1036,152 @@ class _PilotAccumulator:
         }
 
 
+def _require_v1_replay_reconciliation(
+    run: _RunAccumulator, termination: object
+) -> None:
+    expected = V1_REPLAY_EXPECTATIONS.get(run.spec.run_id)
+    if expected is None:
+        return
+    observed = (
+        run.rows,
+        run.positive,
+        run.negative,
+        int(getattr(termination, "captured_transition_count", -1)),
+    )
+    if observed != expected:
+        raise PilotContractError(
+            f"V1 replay reconciliation failed for {run.spec.run_id}: "
+            f"expected {expected!r}, observed {observed!r}"
+        )
+    if (
+        getattr(termination, "termination_reason", None) != TERMINATION_INACTIVE
+        or getattr(termination, "completeness_status", None) != COMPLETENESS_COMPLETE
+        or getattr(termination, "authoritative", None) is not True
+        or int(getattr(termination, "expected_transition_count", -1)) != expected[3]
+    ):
+        raise PilotContractError(
+            f"V1 replay termination reconciliation failed for {run.spec.run_id}"
+        )
+
+
+def _v1_replay_summary(runs: list[dict[str, object]]) -> dict[str, object]:
+    by_id = {str(run["run_id"]): run for run in runs}
+    entries = []
+    for run_id, expected in V1_REPLAY_EXPECTATIONS.items():
+        run = by_id.get(run_id)
+        termination = run.get("termination", {}) if run is not None else {}
+        classes = run.get("class_counts", {}) if run is not None else {}
+        observed = {
+            "rows": run.get("rows") if run is not None else None,
+            "positive_1": classes.get("positive_1"),
+            "negative_0": classes.get("negative_0"),
+            "transition_count": termination.get("captured_transition_count"),
+            "expected_transition_count": termination.get("expected_transition_count"),
+            "termination_reason": termination.get("reason"),
+            "authoritative": termination.get("authoritative"),
+        }
+        passed = observed == {
+            "rows": expected[0],
+            "positive_1": expected[1],
+            "negative_0": expected[2],
+            "transition_count": expected[3],
+            "expected_transition_count": expected[3],
+            "termination_reason": TERMINATION_INACTIVE,
+            "authoritative": True,
+        }
+        entries.append({"run_id": run_id, "passed": passed, "observed": observed})
+    return {
+        "required_run_count": len(V1_REPLAY_EXPECTATIONS),
+        "all_reconciled": len(entries) == len(V1_REPLAY_EXPECTATIONS)
+        and all(entry["passed"] for entry in entries),
+        "runs": entries,
+    }
+
+
+def _acceptance_summary(
+    execution_status: str, sections: Mapping[str, object]
+) -> dict[str, object]:
+    runs = list(sections["runs"])
+    families = {
+        str(family["scenario_family_id"]): family
+        for family in sections["scenario_families"]
+    }
+    all_authoritative_inactive = len(runs) == len(RUN_MATRIX) and all(
+        run["termination"]["reason"] == TERMINATION_INACTIVE
+        and run["termination"]["completeness_status"] == COMPLETENESS_COMPLETE
+        and run["termination"]["authoritative"] is True
+        for run in runs
+    )
+    transition_counts_exact = len(runs) == len(RUN_MATRIX) and all(
+        run["termination"]["expected_transition_count"]
+        == run["termination"]["captured_transition_count"]
+        == run["observed_timestep_count"]
+        for run in runs
+    )
+    replay = _v1_replay_summary(runs)
+    new_family_coverage = {
+        family_id: bool(
+            family_id in families
+            and families[family_id]["class_counts"]["negative_0"] > 0
+            and families[family_id]["class_counts"]["positive_1"] > 0
+        )
+        for family_id in V2_NEW_FAMILY_IDS
+    }
+    blocks = list(sections["candidate_blocks"])
+    block_coverage = {
+        f"{block['size_rows']}x{block['size_cols']}": bool(
+            block["leakage_connectivity"]["authoritative_component_count"] >= 4
+            and block["leakage_connectivity"][
+                "authoritative_components_with_both_labels"
+            ]
+            >= 4
+            and block["leakage_connectivity"]["four_role_mathematically_feasible"]
+            is True
+        )
+        for block in blocks
+    }
+    operational_contract = (
+        execution_status == "complete"
+        and len(runs) == len(RUN_MATRIX)
+        and all(
+            run["termination"]["reason"] == TERMINATION_INACTIVE
+            and run["termination"]["completeness_status"] == COMPLETENESS_COMPLETE
+            and run["termination"]["authoritative"] is True
+            and run["memory_backpressure"]["no_progress_detected"] is False
+            and run["memory_backpressure"]["overflow_detected"] is False
+            and run["memory_backpressure"]["retry_limit_exceeded"] is False
+            for run in runs
+        )
+    )
+    gates = {
+        "all_32_runs_inactive_and_authoritative": all_authoritative_inactive,
+        "every_expected_transition_captured_once": transition_counts_exact,
+        "v1_replay_exactly_reconciled": bool(replay["all_reconciled"]),
+        "both_new_families_contain_both_labels": all(new_family_coverage.values()),
+        "four_qualifying_components_at_every_candidate_block_size": bool(
+            block_coverage and all(block_coverage.values())
+        ),
+        "no_backpressure_provenance_resource_censoring_or_partial_failure": operational_contract,
+        "no_split_roles_assigned": all(
+            block["leakage_connectivity"]["split_roles_assigned"] is False
+            for block in blocks
+        ),
+        "no_protected_output_operation": True,
+        "stack_ground_truth_never_accessed": True,
+        "v2_aggregate_is_sole_persistent_destination": True,
+    }
+    passed = execution_status == "complete" and all(gates.values())
+    return {
+        "status": "pass" if passed else "fail",
+        "all_gates_passed": passed,
+        "gates": gates,
+        "v1_replay_reconciliation": replay,
+        "new_family_both_label_coverage": new_family_coverage,
+        "candidate_block_coverage": block_coverage,
+        "split_roles_assigned": False,
+    }
+
+
 def _drain_collector(collector: SetCCollector, accumulator: _RunAccumulator) -> None:
     accumulator.max_pending_rows = max(accumulator.max_pending_rows, collector.pending_rows)
     accumulator.max_pending_bytes = max(accumulator.max_pending_bytes, collector.pending_bytes)
@@ -1003,15 +1213,7 @@ def _provenance(
         "mapped_building_mask_id": "phase8_mapped_building_mask_v1",
         "simulator_id": MODEL_FREE_SOURCE,
         "simulator_version": TEACHER_RUNNER_SCHEMA_VERSION,
-        "wind": {
-            "speed_kmh": 10.0,
-            "direction_deg": 315.0,
-            "direction_convention": "meteorological_from",
-            "direction_units": "degrees_clockwise",
-            "north_reference": "projected_grid_north",
-            "schema_version": "simulated_wind.v1",
-            "calm_representation": "speed_zero_direction_zero",
-        },
+        "wind": wind,
         "source_revision": source_context["source_revision"],
         "source_dirty": source_context["source_dirty"],
         "configuration_hash": canonical_metadata_hash(config),
@@ -1054,6 +1256,8 @@ def _aggregate_safe_teacher_contract(
                 "ignition_set_sha256": family["ignition_set_sha256"],
                 "component_size": family["component_size"],
                 "row_ceiling": family["row_ceiling"],
+                "wind_manifest": dict(family["wind_manifest"]),
+                "seeds": list(family["seeds"]),
             }
             for family in configured_families
         ],
@@ -1067,7 +1271,9 @@ def _contract_manifest(config: Mapping[str, object]) -> dict[str, object]:
         "simulator_version": TEACHER_RUNNER_SCHEMA_VERSION,
         "safety_limit_timesteps": SAFETY_LIMIT_TIMESTEPS,
         "inactive_early_stop": True,
-        "seeds": list(SEEDS),
+        "seeds_by_family": {
+            family.family_id: list(family.seeds) for family in FAMILIES
+        },
         "run_order": [spec.run_id for spec in RUN_MATRIX],
         "run_concurrency": 0,
         "sampling_policy": "all_eligible",
@@ -1082,6 +1288,22 @@ def _contract_manifest(config: Mapping[str, object]) -> dict[str, object]:
             family.family_id: family.row_ceiling for family in FAMILIES
         },
         "total_row_ceiling": TOTAL_ROW_CEILING,
+        "v1_replay_reconciliation": {
+            run_id: {
+                "rows": expected[0],
+                "positive_1": expected[1],
+                "negative_0": expected[2],
+                "transition_count": expected[3],
+                "termination_reason": TERMINATION_INACTIVE,
+                "authoritative": True,
+            }
+            for run_id, expected in V1_REPLAY_EXPECTATIONS.items()
+        },
+        "v1_parent_evidence": {
+            "pilot_id": "phase8_set_c_feasibility_pilot_v1",
+            "payload_sha256": V1_AGGREGATE_PAYLOAD_SHA256,
+            "file_sha256": V1_AGGREGATE_FILE_SHA256,
+        },
         "candidate_block_sizes": [list(size) for size in CANDIDATE_BLOCK_SIZES],
         "candidate_block_origin": list(BLOCK_ORIGIN),
         "candidate_blocks_diagnostic_only": True,
@@ -1286,7 +1508,7 @@ def run_set_c_pilot(
                 if run.rows > spec.family.row_ceiling:
                     raise PilotContractError("Per-run row ceiling exceeded")
                 if aggregate.total_rows + run.rows > TOTAL_ROW_CEILING:
-                    raise PilotContractError("Eight-run row ceiling exceeded")
+                    raise PilotContractError("Pilot total row ceiling exceeded")
                 snapshot = resource_probe(destination)
                 resource_samples.append(snapshot)
                 run.resource_samples.append(snapshot)
@@ -1359,6 +1581,7 @@ def run_set_c_pilot(
             resource_samples.append(after)
             run.resource_samples.append(after)
             _check_runtime(after, elapsed)
+            _require_v1_replay_reconciliation(run, termination)
             aggregate.merge(
                 run,
                 termination,
@@ -1397,6 +1620,7 @@ def run_set_c_pilot(
     available = [sample.available_memory_bytes for sample in resource_samples]
     rss = [sample.process_rss_bytes for sample in resource_samples]
     free_disk = [sample.free_disk_bytes for sample in resource_samples]
+    acceptance = _acceptance_summary(status, sections)
     report: dict[str, object] = {
         "aggregate_schema_version": AGGREGATE_SCHEMA_VERSION,
         "pilot_id": PILOT_ID,
@@ -1414,6 +1638,7 @@ def run_set_c_pilot(
             "grid_and_domain": environment_identity,
         },
         "aggregate": sections,
+        "acceptance": acceptance,
         "resource_summary": {
             "launch_memory_floor_bytes": LAUNCH_MEMORY_FLOOR_BYTES,
             "runtime_memory_floor_bytes": RUNTIME_MEMORY_FLOOR_BYTES,
@@ -1448,6 +1673,7 @@ def run_set_c_pilot(
         "payload_sha256": payload_hash,
         "status": status,
         "run_count": len(aggregate.runs),
+        "acceptance_status": acceptance["status"],
     }
 
 

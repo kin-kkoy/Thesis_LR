@@ -77,18 +77,37 @@ def _resource_probe(
     )
 
 
-def _observation(environment: dict, config: dict, provenance: dict):
-    state_t = np.full((3, 3), 2, dtype=np.int8)
+def _observation(
+    environment: dict,
+    config: dict,
+    provenance: dict,
+    *,
+    timestep: int = 0,
+    row_count: int = 8,
+    positive_count: int = 1,
+):
+    if not 0 <= positive_count <= row_count <= 8:
+        raise ValueError("synthetic observation counts are invalid")
+    state_t = np.full((3, 3), 5, dtype=np.int8)
     state_t[1, 1] = 4
+    eligible = [
+        (row, col)
+        for row in range(3)
+        for col in range(3)
+        if (row, col) != (1, 1)
+    ][:row_count]
+    for row, col in eligible:
+        state_t[row, col] = 2
     state_t1 = state_t.copy()
-    state_t1[0, 1] = 3
+    for row, col in eligible[:positive_count]:
+        state_t1[row, col] = 3
     domain = np.ones((3, 3), dtype=bool)
     return build_transition_observation(
         state_t=state_t,
         state_t1=state_t1,
         transition_source_type=AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
-        timestep_t=0,
-        timestep_t1=1,
+        timestep_t=timestep,
+        timestep_t1=timestep + 1,
         simulation_valid_mask=domain,
         mapped_building_mask=domain,
         wind_manifest=WindContract.from_config(config["wind"]).to_manifest(),
@@ -104,20 +123,40 @@ def _teacher(*args, censored_seed: int | None = None, **kwargs):
     environment, config = args
     collector = kwargs["set_c_collector"]
     observer = kwargs["transition_observer"]
-    observation = _observation(environment, config, kwargs["transition_provenance"])
-    collector(observation)
-    observer(observation)
+    run_id = kwargs["transition_provenance"]["run_id"]
+    expected = pilot.V1_REPLAY_EXPECTATIONS.get(run_id, (8, 1, 7, 1))
+    rows, positives, _negatives, transitions = expected
+    rows_remaining = rows
+    positives_remaining = positives
+    for timestep in range(transitions):
+        transitions_remaining = transitions - timestep
+        row_count = min(8, rows_remaining - (transitions_remaining - 1))
+        positive_count = min(positives_remaining, row_count)
+        observation = _observation(
+            environment,
+            config,
+            kwargs["transition_provenance"],
+            timestep=timestep,
+            row_count=row_count,
+            positive_count=positive_count,
+        )
+        collector(observation)
+        observer(observation)
+        rows_remaining -= row_count
+        positives_remaining -= positive_count
+    assert rows_remaining == 0
+    assert positives_remaining == 0
     censored = config["simulation"]["seed"] == censored_seed
     return TeacherTerminationRecord(
         schema_version="model_free_teacher_run.v1",
         termination_reason=(
             TERMINATION_SAFETY_LIMIT if censored else TERMINATION_INACTIVE
         ),
-        final_timestep=1,
+        final_timestep=transitions,
         final_ignited_count=1 if censored else 0,
         final_blazing_count=1 if censored else 0,
-        expected_transition_count=1,
-        captured_transition_count=1,
+        expected_transition_count=transitions,
+        captured_transition_count=transitions,
         completeness_status=(
             COMPLETENESS_CENSORED if censored else COMPLETENESS_COMPLETE
         ),
@@ -180,6 +219,8 @@ def _expected_aggregate_teacher_contract(config: dict) -> dict:
                 "ignition_set_sha256": family["ignition_set_sha256"],
                 "component_size": family["component_size"],
                 "row_ceiling": family["row_ceiling"],
+                "wind_manifest": family["wind_manifest"],
+                "seeds": family["seeds"],
             }
             for family in config["phase8_set_c_pilot"]["families"]
         ],
@@ -191,7 +232,7 @@ def test_exact_approved_matrix_and_checked_in_gate():
     assert config["simulation"]["max_timesteps"] == 300
     assert config["phase8_set_c_pilot"]["enabled"] is False
     assert config["phase8_set_c_pilot"]["safety_limit_timesteps"] == 256
-    assert [spec.run_id for spec in pilot.RUN_MATRIX] == [
+    assert [spec.run_id for spec in pilot.RUN_MATRIX[:8]] == [
         "p8f01_w315_s10__seed_81001",
         "p8f01_w315_s10__seed_81002",
         "p8f02_w315_s10__seed_81001",
@@ -201,14 +242,117 @@ def test_exact_approved_matrix_and_checked_in_gate():
         "p8f04_w315_s10__seed_81001",
         "p8f04_w315_s10__seed_81002",
     ]
-    assert [family.component_size for family in pilot.FAMILIES] == [3976, 5454, 3811, 3535]
+    assert len(pilot.RUN_MATRIX) == 32
+    assert [spec.seed for spec in pilot.RUN_MATRIX[8:16]] == list(range(82001, 82009))
+    assert [spec.seed for spec in pilot.RUN_MATRIX[16:24]] == list(range(83001, 83009))
+    assert [spec.seed for spec in pilot.RUN_MATRIX[24:32]] == list(range(84001, 84009))
+    assert [family.component_size for family in pilot.FAMILIES] == [
+        3976,
+        5454,
+        3811,
+        3535,
+        1921,
+        388,
+    ]
     assert [family.row_ceiling for family in pilot.FAMILIES] == [
         1_017_856,
         1_396_224,
         975_616,
         904_960,
+        491_776,
+        99_328,
     ]
-    assert pilot.TOTAL_ROW_CEILING == 8_589_312
+    assert [family.wind_direction_deg for family in pilot.FAMILIES] == [
+        315.0,
+        315.0,
+        315.0,
+        315.0,
+        45.0,
+        135.0,
+    ]
+    assert pilot.TOTAL_ROW_CEILING == 20_557_824
+    assert pilot.V1_AGGREGATE_PAYLOAD_SHA256 == (
+        "23cd71ebca4837e094eabec2a02c95e3869e9b7ae5aac28b2b5eb40b3a98afc6"
+    )
+    assert pilot.V1_AGGREGATE_FILE_SHA256 == (
+        "e4c52c15ca14286ec8926898e082166b7481ad480970db74877d10b00b7bd332"
+    )
+
+
+def test_each_family_uses_its_exact_approved_wind_and_seed_matrix(tmp_path):
+    observed_winds = {}
+
+    def recording_teacher(*args, **kwargs):
+        run_id = kwargs["transition_provenance"]["run_id"]
+        observed_winds[run_id] = dict(args[1]["wind"])
+        return _teacher(*args, **kwargs)
+
+    result = pilot.run_set_c_pilot(
+        _environment(),
+        _active_config(),
+        destination=tmp_path / "pilot.aggregate.json",
+        source_context=_source_context(),
+        resource_probe=_resource_probe,
+        teacher_runner=recording_teacher,
+        synthetic_test=True,
+    )
+
+    assert result["status"] == "complete"
+    assert observed_winds == {
+        spec.run_id: spec.family.wind_manifest for spec in pilot.RUN_MATRIX
+    }
+
+
+def test_v1_replay_mismatch_fails_closed_with_aggregate_only_report(tmp_path):
+    destination = tmp_path / "pilot.aggregate.json"
+
+    def mismatched_teacher(*args, **kwargs):
+        environment, config = args
+        observation = _observation(
+            environment, config, kwargs["transition_provenance"]
+        )
+        kwargs["set_c_collector"](observation)
+        kwargs["transition_observer"](observation)
+        return TeacherTerminationRecord(
+            schema_version="model_free_teacher_run.v1",
+            termination_reason=TERMINATION_INACTIVE,
+            final_timestep=1,
+            final_ignited_count=0,
+            final_blazing_count=0,
+            expected_transition_count=1,
+            captured_transition_count=1,
+            completeness_status=COMPLETENESS_COMPLETE,
+            authoritative=True,
+            ignition_coordinates=tuple(kwargs["ignition_points"]),
+            ignition_set_sha256=kwargs["transition_provenance"][
+                "ignition_set_sha256"
+            ],
+        )
+
+    result = pilot.run_set_c_pilot(
+        _environment(),
+        _active_config(),
+        destination=destination,
+        source_context=_source_context(),
+        resource_probe=_resource_probe,
+        teacher_runner=mismatched_teacher,
+        synthetic_test=True,
+    )
+    report = json.loads(destination.read_text(encoding="utf-8"))
+
+    assert result["status"] == "failed"
+    assert result["acceptance_status"] == "fail"
+    assert report["failure"]["type"] == "PilotContractError"
+    assert "V1 replay reconciliation failed" in report["failure"]["message"]
+    assert report["aggregate"]["runs"] == []
+    assert report["acceptance"]["gates"]["v1_replay_exactly_reconciled"] is False
+    assert not {
+        "features",
+        "labels",
+        "duplicate_group_ids",
+        "spatial_block_ids",
+        "ignition_coordinates",
+    }.intersection(_keys(report))
 
 
 def test_pilot_provenance_hashes_the_memory_optimized_loader():
@@ -257,18 +401,21 @@ def test_streaming_pilot_writes_one_self_hashed_aggregate_only_report(tmp_path):
     )
 
     assert result["status"] == "complete"
-    assert result["run_count"] == 8
+    assert result["run_count"] == 32
     assert list(tmp_path.iterdir()) == [destination]
     report = json.loads(destination.read_text(encoding="utf-8"))
     payload_hash = report.pop("payload_sha256")
     assert payload_hash == sha256(_canonical(report)).hexdigest()
     assert report["aggregate"]["totals"] == {
-        "rows": 64,
-        "class_counts": {"negative_0": 56, "positive_1": 8},
-        "positive_prevalence": 0.125,
-        "scenario_family_count": 4,
-        "run_count": 8,
+        "rows": 280,
+        "class_counts": {"negative_0": 247, "positive_1": 33},
+        "positive_prevalence": 33 / 280,
+        "scenario_family_count": 6,
+        "run_count": 32,
     }
+    assert result["acceptance_status"] == "fail"
+    assert report["acceptance"]["gates"]["v1_replay_exactly_reconciled"] is True
+    assert report["acceptance"]["gates"]["both_new_families_contain_both_labels"] is True
     assert report["integrity"]["row_level_payload_retained"] is False
     assert report["integrity"]["row_level_payload_published"] is False
     assert report["integrity"]["model_accessed"] is False
@@ -355,7 +502,7 @@ def test_censored_run_is_diagnostic_and_does_not_assign_roles(tmp_path):
     destination = tmp_path / "pilot.aggregate.json"
 
     def teacher(*args, **kwargs):
-        return _teacher(*args, censored_seed=81002, **kwargs)
+        return _teacher(*args, censored_seed=83001, **kwargs)
 
     pilot.run_set_c_pilot(
         _environment(),
@@ -372,9 +519,10 @@ def test_censored_run_is_diagnostic_and_does_not_assign_roles(tmp_path):
         for run in report["aggregate"]["runs"]
         if run["termination"]["reason"] == TERMINATION_SAFETY_LIMIT
     ]
-    assert len(censored) == 4
+    assert len(censored) == 1
     assert all(run["termination"]["authoritative"] is False for run in censored)
     assert report["contract"]["split_roles_assigned"] is False
+    assert report["acceptance"]["status"] == "fail"
 
 
 def test_midpilot_failure_creates_only_non_authoritative_aggregate(tmp_path):
@@ -471,6 +619,8 @@ def test_explicit_teacher_contract_drift_fails_before_teacher_or_output(
         ("ignition_set_sha256", "f" * 64),
         ("component_size", 1),
         ("row_ceiling", 1),
+        ("wind_manifest", {"speed_kmh": 99.0}),
+        ("seeds", [1]),
     ],
 )
 def test_aggregate_safe_family_contract_drift_fails_before_teacher_or_output(
@@ -621,8 +771,14 @@ def test_observation_resource_extrema_and_post_merge_samples_are_reported(tmp_pa
     summary = report["resource_summary"]
     assert summary["minimum_available_memory_bytes"] == observation_minimum
     assert summary["maximum_process_rss_bytes"] == observation_maximum_rss
-    # launch + four samples (pre, observation, post, post-merge) for each run
-    assert summary["sample_count"] == 1 + 4 * len(pilot.RUN_MATRIX)
+    # launch + pre/post/post-merge per run + every transition observation
+    expected_observations = sum(
+        pilot.V1_REPLAY_EXPECTATIONS.get(spec.run_id, (0, 0, 0, 1))[3]
+        for spec in pilot.RUN_MATRIX
+    )
+    assert summary["sample_count"] == (
+        1 + 3 * len(pilot.RUN_MATRIX) + expected_observations
+    )
 
 
 def test_teacher_failure_report_preserves_only_aggregate_partial_evidence(tmp_path):
@@ -799,12 +955,12 @@ def test_leakage_component_inventory_is_deterministic_and_aggregate_only(tmp_pat
         size = (candidate["size_rows"], candidate["size_cols"])
         assert component["component_ordinal"] == 1
         assert component["scenario_family_ids"] == expected_families
-        assert component["family_count"] == 4
-        assert component["run_count"] == 8
-        assert component["rows"] == 64
+        assert component["family_count"] == 6
+        assert component["run_count"] == 32
+        assert component["rows"] == 280
         assert component["class_counts"] == {
-            "negative_0": 56,
-            "positive_1": 8,
+            "negative_0": 247,
+            "positive_1": 33,
         }
         assert component["both_classes_present"] is True
         assert component["authoritative_only"] is True
@@ -823,6 +979,48 @@ def test_leakage_component_inventory_is_deterministic_and_aggregate_only(tmp_pat
         "cell_cols",
         "ignition_coordinates",
     }.intersection(_keys(report))
+
+
+def test_acceptance_requires_both_new_labels_and_four_components_at_every_size(
+    tmp_path,
+):
+    destination = tmp_path / "pilot.aggregate.json"
+    pilot.run_set_c_pilot(
+        _environment(),
+        _active_config(),
+        destination=destination,
+        source_context=_source_context(),
+        resource_probe=_resource_probe,
+        teacher_runner=_teacher,
+        synthetic_test=True,
+    )
+    sections = json.loads(destination.read_text(encoding="utf-8"))["aggregate"]
+    for candidate in sections["candidate_blocks"]:
+        connectivity = candidate["leakage_connectivity"]
+        connectivity["authoritative_component_count"] = 4
+        connectivity["authoritative_components_with_both_labels"] = 4
+        connectivity["four_role_mathematically_feasible"] = True
+
+    accepted = pilot._acceptance_summary("complete", sections)
+    assert accepted["status"] == "pass"
+    assert accepted["all_gates_passed"] is True
+    assert accepted["candidate_block_coverage"] == {
+        "32x32": True,
+        "64x64": True,
+        "128x128": True,
+    }
+
+    new_family = next(
+        family
+        for family in sections["scenario_families"]
+        if family["scenario_family_id"] == "p8v2f05_cluster_4146_m3"
+    )
+    new_family["class_counts"]["positive_1"] = 0
+    rejected = pilot._acceptance_summary("complete", sections)
+    assert rejected["status"] == "fail"
+    assert (
+        rejected["gates"]["both_new_families_contain_both_labels"] is False
+    )
 
 
 def _patch_small_production_grid_contract(monkeypatch, environment):

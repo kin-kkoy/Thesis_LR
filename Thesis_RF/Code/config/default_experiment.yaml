@@ -23,20 +23,20 @@ model_free_teacher:
   safety_limit_timesteps: null
   persistent_output_enabled: false
 
-# Human-approved Phase 8 diagnostic matrix. The checked-in gate remains false;
+# Human-approved Phase 8 v2 diagnostic matrix. The checked-in gate remains false;
 # run_set_c_pilot.py requires an explicit execution flag and activates only an
 # in-memory copy. Candidate blocks are diagnostic and never assign split roles.
 phase8_set_c_pilot:
   enabled: false
-  pilot_id: "phase8_set_c_feasibility_pilot_v1"
-  aggregate_schema_version: "phase8_set_c_feasibility_aggregate.v1"
-  authorization_reference: "Phase 8 Task 8.1 owner approval: phase8_set_c_feasibility_pilot_v1"
+  pilot_id: "phase8_set_c_feasibility_pilot_v2"
+  aggregate_schema_version: "phase8_set_c_feasibility_aggregate.v2"
+  authorization_reference: "Phase 8 v2 owner approval: phase8_set_c_feasibility_pilot_v2"
   transition_source: "model-free-fire-automata"
   estimator_enabled: false
   normal_ca_ml_path_enabled: false
   safety_limit_timesteps: 256
   run_concurrency: 0
-  seeds: [81001, 81002]
+  run_count: 32
   families:
     - family_id: "p8f01_cluster_322_m1"
       scenario_id: "p8f01_w315_s10"
@@ -44,24 +44,48 @@ phase8_set_c_pilot:
       ignition_set_sha256: "0843f3c6db0284bb85efd670b65027ee11af833e7070f2221080a729ab6193af"
       component_size: 3976
       row_ceiling: 1017856
+      wind_manifest: {speed_kmh: 10.0, direction_deg: 315.0, direction_convention: "meteorological_from", direction_units: "degrees_clockwise", north_reference: "projected_grid_north", schema_version: "simulated_wind.v1", calm_representation: "speed_zero_direction_zero"}
+      seeds: [81001, 81002]
     - family_id: "p8f02_cluster_1052_m3"
       scenario_id: "p8f02_w315_s10"
       ignition_coordinates: [[1198, 2523]]
       ignition_set_sha256: "2a938c46cd01a87b49f312257257053c2dedc33773d538776397b3394de31f65"
       component_size: 5454
       row_ceiling: 1396224
+      wind_manifest: {speed_kmh: 10.0, direction_deg: 315.0, direction_convention: "meteorological_from", direction_units: "degrees_clockwise", north_reference: "projected_grid_north", schema_version: "simulated_wind.v1", calm_representation: "speed_zero_direction_zero"}
+      seeds: [81001, 81002]
     - family_id: "p8f03_cluster_4974_m2"
       scenario_id: "p8f03_w315_s10"
       ignition_coordinates: [[1723, 1569]]
       ignition_set_sha256: "4c649982c5844a54d3bb8dd7b7eb3d1fbc3d71fe9f67505c25a95fef7d0bb1b8"
       component_size: 3811
       row_ceiling: 975616
+      wind_manifest: {speed_kmh: 10.0, direction_deg: 315.0, direction_convention: "meteorological_from", direction_units: "degrees_clockwise", north_reference: "projected_grid_north", schema_version: "simulated_wind.v1", calm_representation: "speed_zero_direction_zero"}
+      seeds: [81001, 81002]
     - family_id: "p8f04_cluster_160_m5"
       scenario_id: "p8f04_w315_s10"
       ignition_coordinates: [[791, 3164]]
       ignition_set_sha256: "a23beb74a1d4a649446416e6ca8258b1cd315a774a8757b0b033a3496057bbaa"
       component_size: 3535
       row_ceiling: 904960
+      wind_manifest: {speed_kmh: 10.0, direction_deg: 315.0, direction_convention: "meteorological_from", direction_units: "degrees_clockwise", north_reference: "projected_grid_north", schema_version: "simulated_wind.v1", calm_representation: "speed_zero_direction_zero"}
+      seeds: [81001, 81002, 82001, 82002, 82003, 82004, 82005, 82006, 82007, 82008]
+    - family_id: "p8v2f05_cluster_4146_m3"
+      scenario_id: "p8v2f05_w045_s10"
+      ignition_coordinates: [[1603, 2799]]
+      ignition_set_sha256: "01fb6b26993f5651fb070825c4fe7b9380a7d8fc852d977850f9e6c86063914f"
+      component_size: 1921
+      row_ceiling: 491776
+      wind_manifest: {speed_kmh: 10.0, direction_deg: 45.0, direction_convention: "meteorological_from", direction_units: "degrees_clockwise", north_reference: "projected_grid_north", schema_version: "simulated_wind.v1", calm_representation: "speed_zero_direction_zero"}
+      seeds: [83001, 83002, 83003, 83004, 83005, 83006, 83007, 83008]
+    - family_id: "p8v2f06_cluster_6201_m5"
+      scenario_id: "p8v2f06_w135_s10"
+      ignition_coordinates: [[1789, 2602]]
+      ignition_set_sha256: "084a8e3f06d0514c0c53a04d986248080a7271b769f0a09e464fa1d0f3a0c8d1"
+      component_size: 388
+      row_ceiling: 99328
+      wind_manifest: {speed_kmh: 10.0, direction_deg: 135.0, direction_convention: "meteorological_from", direction_units: "degrees_clockwise", north_reference: "projected_grid_north", schema_version: "simulated_wind.v1", calm_representation: "speed_zero_direction_zero"}
+      seeds: [84001, 84002, 84003, 84004, 84005, 84006, 84007, 84008]
   candidate_block_sizes:
     - [32, 32]
     - [64, 64]
@@ -74,14 +98,14 @@ phase8_set_c_pilot:
     max_buffer_rows: 932864
     max_buffer_bytes: 176311296
     backpressure_policy: "runner_owned_exact_retry.v1"
-  total_row_ceiling: 8589312
+  total_row_ceiling: 20557824
   launch_memory_floor_bytes: 6442450944
   disk_floor_bytes: 2147483648
   runtime_memory_floor_bytes: 2147483648
   rss_ceiling_bytes: 6442450944
   run_runtime_limit_seconds: 900
   pilot_runtime_limit_seconds: 5400
-  aggregate_destination: "output/phase8/phase8_set_c_feasibility_pilot_v1.aggregate.json"
+  aggregate_destination: "output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json"
 
 wind:
   speed_kmh: 10.0              # placeholder static global

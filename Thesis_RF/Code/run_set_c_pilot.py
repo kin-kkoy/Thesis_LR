@@ -40,7 +40,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Phase 8 aggregate status: {result['status']}")
     print(f"Phase 8 aggregate path: {result['path']}")
     print(f"Phase 8 aggregate SHA-256: {result['payload_sha256']}")
-    return 0 if result["status"] == "complete" else 1
+    print(f"Phase 8 v2 acceptance status: {result['acceptance_status']}")
+    return 0 if result["acceptance_status"] == "pass" else 1
 
 
 if __name__ == "__main__":
