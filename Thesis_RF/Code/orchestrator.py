@@ -48,6 +48,17 @@ DEFAULT_FLAMMABILITY_WEIGHTS = {
 	"slope_weight": 0.3,
 	"proximity_weight": 0.2,
 }
+
+PILOT_SOURCE_RELATIVE_PATHS = (
+	"modules/set_c_pilot.py",
+	"modules/model_free_teacher.py",
+	"modules/set_c_collector.py",
+	"modules/automata_engine.py",
+	"modules/feature_pipeline.py",
+	"modules/data_loader.py",
+	"orchestrator.py",
+	"run_set_c_pilot.py",
+)
 SUPPORTED_MODEL_EXTENSIONS = {".pkl", ".joblib"}
 
 
@@ -221,16 +232,9 @@ def _pilot_source_context(config: dict, config_path: Path) -> dict[str, object]:
 	"""Bind an authorized pilot to source, environment inputs, and versions."""
 	code_dir = Path(__file__).resolve().parent
 	repo_root = code_dir.parents[1]
-	source_paths = (
-		code_dir / "modules" / "set_c_pilot.py",
-		code_dir / "modules" / "model_free_teacher.py",
-		code_dir / "modules" / "set_c_collector.py",
-		code_dir / "modules" / "automata_engine.py",
-		code_dir / "modules" / "feature_pipeline.py",
-		code_dir / "orchestrator.py",
-		code_dir / "run_set_c_pilot.py",
-		config_path.resolve(),
-	)
+	source_paths = tuple(
+		code_dir / relative_path for relative_path in PILOT_SOURCE_RELATIVE_PATHS
+	) + (config_path.resolve(),)
 	if any(not path.is_file() for path in source_paths):
 		raise FileNotFoundError("Every pilot source/configuration file must exist")
 	source_hashes = {

@@ -34,7 +34,6 @@ class EnvironmentManager:
         self.proximity_risk = None
         self.building_presence = None
         self.material_class = None
-        self.material_risk = None
 
     def load_rasters(self) -> None:
         raster_specs = [
@@ -47,7 +46,10 @@ class EnvironmentManager:
         for index, (name, filename) in enumerate(raster_specs):
             raster_path = self.raster_dir / filename
             with rasterio.open(raster_path) as src:
-                arr = src.read(1).astype(np.float32)
+                # Read directly into the working dtype.  The previous
+                # read-then-astype pattern briefly retained both the source
+                # raster dtype and a second full-grid float32 copy.
+                arr = src.read(1, out_dtype=np.float32)
 
                 if index == 0:
                     self.transform = src.transform
@@ -106,18 +108,30 @@ class EnvironmentManager:
         if self.nodata_mask is None:
             raise ValueError("Masks are not built. Call build_masks() first.")
 
-        slope = self.slope_raw.copy()
+        # Masks are complete, so each raw buffer can now become or produce its
+        # final representation and be released immediately.  This preserves
+        # the element-wise float32 operations while avoiding four retained raw
+        # full-grid arrays during the pilot's second memory preflight.
+        slope = self.slope_raw
         slope[(slope < 0) | (slope > 10)] = 0
-        self.slope_risk = slope / 10.0
+        np.divide(slope, np.float32(10.0), out=slope)
+        self.slope_risk = slope
         self.slope_risk[self.nodata_mask] = 0
+        self.slope_raw = None
 
-        self.proximity_risk = self.proximity_raw / 10.0
+        proximity = self.proximity_raw
+        np.divide(proximity, np.float32(10.0), out=proximity)
+        self.proximity_risk = proximity
         self.proximity_risk[self.nodata_mask] = 0
+        self.proximity_raw = None
 
         self.building_presence = np.where(self.buildings_raw == 10, 1, 0).astype(np.int8)
+        self.buildings_raw = None
 
-        self.material_class = np.where(self.nodata_mask, 0.0, self.materials_raw).astype(np.int8)
-        self.material_risk = self.MATERIAL_CLASS_TO_RISK[self.material_class]
+        materials = self.materials_raw
+        materials[self.nodata_mask] = 0
+        self.material_class = materials.astype(np.int8)
+        self.materials_raw = None
 
     def get_environment(self) -> dict[str, Any]:
         return {
@@ -125,7 +139,6 @@ class EnvironmentManager:
             "proximity_risk": self.proximity_risk,
             "building_presence": self.building_presence,
             "material_class": self.material_class,
-            "material_risk": self.material_risk,
             "burnable_mask": self.burnable_mask,
             "nodata_mask": self.nodata_mask,
             "grid_shape": self.grid_shape,
@@ -138,7 +151,7 @@ class EnvironmentManager:
             self.slope_risk is None
             or self.proximity_risk is None
             or self.building_presence is None
-            or self.material_risk is None
+            or self.material_class is None
         ):
             raise ValueError("Layers are not normalized. Call normalize_layers() first.")
 
@@ -149,8 +162,9 @@ class EnvironmentManager:
         slope_max = float(np.max(self.slope_risk))
         proximity_min = float(np.min(self.proximity_risk))
         proximity_max = float(np.max(self.proximity_risk))
-        material_min = float(np.min(self.material_risk))
-        material_max = float(np.max(self.material_risk))
+        material_risk = self.MATERIAL_CLASS_TO_RISK[self.material_class]
+        material_min = float(np.min(material_risk))
+        material_max = float(np.max(material_risk))
 
         print(f"Grid shape: {self.grid_shape}")
         print(f"CRS: {self.crs}")

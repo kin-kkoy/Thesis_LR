@@ -211,6 +211,10 @@ def test_exact_approved_matrix_and_checked_in_gate():
     assert pilot.TOTAL_ROW_CEILING == 8_589_312
 
 
+def test_pilot_provenance_hashes_the_memory_optimized_loader():
+    assert "modules/data_loader.py" in orchestrator.PILOT_SOURCE_RELATIVE_PATHS
+
+
 def test_pilot_is_disabled_before_environment_or_model_access(monkeypatch):
     environment_accessed = False
 
