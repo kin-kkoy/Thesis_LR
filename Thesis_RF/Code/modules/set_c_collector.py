@@ -548,48 +548,60 @@ class SetCCollector:
                     permanent=False,
                 )
 
-            flat = selected
-            features = np.column_stack(
-                (
-                    self._assembler.slope_risk.ravel()[flat],
-                    self._assembler.proximity_risk.ravel()[flat],
-                    self._assembler.building_presence.ravel()[flat],
-                    self._assembler.material_risk.ravel()[flat],
-                    self._assembler.material_class.ravel()[flat],
-                    np.full(candidate_rows, self._assembler.wind_speed, dtype=np.float32),
-                    np.full(candidate_rows, self._assembler.wind_sin, dtype=np.float32),
-                    np.full(candidate_rows, self._assembler.wind_cos, dtype=np.float32),
-                    validated.blazing_neighbor_count_t.ravel()[flat],
-                    self._assembler.composite_flammability.ravel()[flat],
-                    validated.wind_weighted_score_t.ravel()[flat],
-                )
-            ).astype(np.float32, copy=False)
-            features = validate_feature_values(features)
-            labels = validated.newly_ignited_mask_t1.ravel()[flat].astype(
-                np.int8, copy=False
-            )
-            if not np.all(np.isin(labels, (0, POSITIVE_LABEL))):
-                raise ValueError("Set C labels must be integer 0 or 1")
-            cell_rows, cell_cols = np.unravel_index(flat, validated.grid_shape)
-            cell_rows = np.asarray(cell_rows, dtype=np.int64)
-            cell_cols = np.asarray(cell_cols, dtype=np.int64)
-            duplicate_ids = _sha256_rows(features)
-            block_ids = _spatial_block_ids(
-                grid_id=str(validated.provenance["grid_id"]),
-                rows=cell_rows,
-                cols=cell_cols,
-                origin_row=self.block_origin_row,
-                origin_col=self.block_origin_col,
-                size_rows=self.block_rows,
-                size_cols=self.block_cols,
-            )
-
             observation_index = self._accepted_observations
             pending: list[SetCRowBatch] = []
             for batch_index, start in enumerate(
                 range(0, candidate_rows, self.batch_rows)
             ):
                 stop = min(start + self.batch_rows, candidate_rows)
+                flat = selected[start:stop]
+                batch_rows = stop - start
+                features = np.column_stack(
+                    (
+                        self._assembler.slope_risk.ravel()[flat],
+                        self._assembler.proximity_risk.ravel()[flat],
+                        self._assembler.building_presence.ravel()[flat],
+                        self._assembler.material_risk.ravel()[flat],
+                        self._assembler.material_class.ravel()[flat],
+                        np.full(
+                            batch_rows,
+                            self._assembler.wind_speed,
+                            dtype=np.float32,
+                        ),
+                        np.full(
+                            batch_rows,
+                            self._assembler.wind_sin,
+                            dtype=np.float32,
+                        ),
+                        np.full(
+                            batch_rows,
+                            self._assembler.wind_cos,
+                            dtype=np.float32,
+                        ),
+                        validated.blazing_neighbor_count_t.ravel()[flat],
+                        self._assembler.composite_flammability.ravel()[flat],
+                        validated.wind_weighted_score_t.ravel()[flat],
+                    )
+                ).astype(np.float32, copy=False)
+                features = validate_feature_values(features)
+                labels = validated.newly_ignited_mask_t1.ravel()[flat].astype(
+                    np.int8, copy=False
+                )
+                if not np.all(np.isin(labels, (0, POSITIVE_LABEL))):
+                    raise ValueError("Set C labels must be integer 0 or 1")
+                cell_rows, cell_cols = np.unravel_index(flat, validated.grid_shape)
+                cell_rows = np.asarray(cell_rows, dtype=np.int64)
+                cell_cols = np.asarray(cell_cols, dtype=np.int64)
+                duplicate_ids = _sha256_rows(features)
+                block_ids = _spatial_block_ids(
+                    grid_id=str(validated.provenance["grid_id"]),
+                    rows=cell_rows,
+                    cols=cell_cols,
+                    origin_row=self.block_origin_row,
+                    origin_col=self.block_origin_col,
+                    size_rows=self.block_rows,
+                    size_cols=self.block_cols,
+                )
                 batch = SetCRowBatch(
                     schema_version=SET_C_ROW_BATCH_SCHEMA_VERSION,
                     feature_schema_version=SET_C_SCHEMA_VERSION,
@@ -615,14 +627,12 @@ class SetCCollector:
                     wind_manifest=validated.wind_manifest,
                     wind_weight=validated.wind_weight,
                     domain_mask_hashes=validated.domain_mask_hashes,
-                    features=_readonly_array(features[start:stop], np.float32),
-                    labels=_readonly_array(labels[start:stop], np.int8),
-                    cell_rows=_readonly_array(cell_rows[start:stop], np.int64),
-                    cell_cols=_readonly_array(cell_cols[start:stop], np.int64),
-                    duplicate_group_ids=_readonly_array(
-                        duplicate_ids[start:stop], "S64"
-                    ),
-                    spatial_block_ids=_readonly_array(block_ids[start:stop], "S64"),
+                    features=_readonly_array(features, np.float32),
+                    labels=_readonly_array(labels, np.int8),
+                    cell_rows=_readonly_array(cell_rows, np.int64),
+                    cell_cols=_readonly_array(cell_cols, np.int64),
+                    duplicate_group_ids=_readonly_array(duplicate_ids, "S64"),
+                    spatial_block_ids=_readonly_array(block_ids, "S64"),
                     provenance=validated.provenance,
                 )
                 pending.append(batch)

@@ -4,6 +4,7 @@ import pytest
 import modules.automata_engine as automata_engine_module
 from modules.automata_engine import (
     STATE_BLAZING,
+    STATE_IGNITED,
     STATE_NOT_YET_BURNING,
     FireAutomata,
 )
@@ -126,6 +127,49 @@ def test_model_free_probability_does_not_reapply_wind(monkeypatch):
     # D-014 gives p_effective = 0.2 * 0.1 = 0.02. Reapplying the
     # configured wind_weight of 3.0 would incorrectly ignite this cell.
     assert automata.grid[0, 1] == STATE_NOT_YET_BURNING
+    assert automata.grid.dtype == np.int8
+
+
+def test_model_free_sparse_probability_preserves_full_grid_seeded_outcome(monkeypatch):
+    shape = (3, 3)
+    environment = {
+        "slope_risk": np.zeros(shape, dtype=np.float32),
+        "proximity_risk": np.zeros(shape, dtype=np.float32),
+        "building_presence": np.ones(shape, dtype=np.float32),
+        "material_class": np.ones(shape, dtype=np.int8),
+        "burnable_mask": np.ones(shape, dtype=bool),
+        "nodata_mask": np.zeros(shape, dtype=bool),
+        "grid_shape": shape,
+        "transform": None,
+        "crs": None,
+    }
+    config = _config()
+    config["simulation"]["seed"] = 31415
+    config["placeholder_transition"]["base_ignition_prob"] = 0.45
+    automata = FireAutomata(environment, config, model_free=True)
+    automata.grid[1, 1] = STATE_BLAZING
+    wind_score = np.array(
+        [[0.1, 0.2, 0.3], [0.4, 0.0, 0.6], [0.7, 0.8, 0.9]],
+        dtype=np.float32,
+    )
+    monkeypatch.setattr(
+        automata_engine_module,
+        "compute_wind_weighted_score",
+        lambda *_args, **_kwargs: (
+            wind_score.copy(),
+            np.zeros((3, 3), dtype=np.float32),
+        ),
+    )
+    reference_draw = np.random.default_rng(31415).random(shape)
+    reference_susceptible = np.ones(shape, dtype=bool)
+    reference_susceptible[1, 1] = False
+    expected_ignited = reference_susceptible & (
+        reference_draw < np.clip(automata.p_base * wind_score, 0.0, 1.0)
+    )
+
+    automata.step()
+
+    assert np.array_equal(automata.grid == STATE_IGNITED, expected_ignited)
     assert automata.grid.dtype == np.int8
 
 

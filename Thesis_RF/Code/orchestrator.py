@@ -1,4 +1,8 @@
+from hashlib import sha256
+import importlib.metadata
 from pathlib import Path
+import platform
+import subprocess
 
 import numpy as np
 import rasterio
@@ -13,6 +17,13 @@ try:
 		TeacherTerminationRecord,
 		run_model_free_teacher as run_model_free_teacher_engine,
 	)
+	from modules.set_c_pilot import (
+		APPROVAL_REFERENCE as PILOT_APPROVAL_REFERENCE,
+		activate_approved_pilot_config,
+		approved_destination,
+		preflight_pilot_launch,
+		run_set_c_pilot as run_set_c_pilot_engine,
+	)
 	from modules.transition_observer import TransitionObserver
 except ModuleNotFoundError:
 	from Code.modules.automata_engine import FireAutomata
@@ -21,6 +32,13 @@ except ModuleNotFoundError:
 		TEACHER_RUNNER_SCHEMA_VERSION,
 		TeacherTerminationRecord,
 		run_model_free_teacher as run_model_free_teacher_engine,
+	)
+	from Code.modules.set_c_pilot import (
+		APPROVAL_REFERENCE as PILOT_APPROVAL_REFERENCE,
+		activate_approved_pilot_config,
+		approved_destination,
+		preflight_pilot_launch,
+		run_set_c_pilot as run_set_c_pilot_engine,
 	)
 	from Code.modules.transition_observer import TransitionObserver
 
@@ -188,6 +206,136 @@ def run_model_free_teacher(
 		ignition_points=ignition_tuples,
 		transition_observer=transition_observer,
 		transition_provenance=transition_provenance,
+	)
+
+
+def _sha256_file(path: Path) -> str:
+	digest = sha256()
+	with path.open("rb") as file_obj:
+		for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+			digest.update(chunk)
+	return digest.hexdigest()
+
+
+def _pilot_source_context(config: dict, config_path: Path) -> dict[str, object]:
+	"""Bind an authorized pilot to source, environment inputs, and versions."""
+	code_dir = Path(__file__).resolve().parent
+	repo_root = code_dir.parents[1]
+	source_paths = (
+		code_dir / "modules" / "set_c_pilot.py",
+		code_dir / "modules" / "model_free_teacher.py",
+		code_dir / "modules" / "set_c_collector.py",
+		code_dir / "modules" / "automata_engine.py",
+		code_dir / "modules" / "feature_pipeline.py",
+		code_dir / "orchestrator.py",
+		code_dir / "run_set_c_pilot.py",
+		config_path.resolve(),
+	)
+	if any(not path.is_file() for path in source_paths):
+		raise FileNotFoundError("Every pilot source/configuration file must exist")
+	source_hashes = {
+		str(path.resolve().relative_to(repo_root.resolve())).replace(
+			"\\", "/"
+		): _sha256_file(path)
+		for path in source_paths
+	}
+
+	environment = config["environment"]
+	raster_dir = Path(environment["raster_dir"])
+	input_paths = {
+		name: raster_dir / environment[key]
+		for name, key in (
+			("slope", "slope_file"),
+			("proximity", "proximity_file"),
+			("buildings", "buildings_file"),
+			("materials", "materials_file"),
+		)
+	}
+	if any("ground_truth" in path.name.lower() for path in input_paths.values()):
+		raise PermissionError("stack_ground_truth.tif is forbidden in the Phase 8 pilot")
+	if any(not path.is_file() for path in input_paths.values()):
+		raise FileNotFoundError("Every approved environmental raster must exist")
+	input_hashes = {
+		path.name: _sha256_file(path) for path in input_paths.values()
+	}
+
+	git_base = [
+		"git",
+		"-c",
+		f"safe.directory={repo_root.as_posix()}",
+		"-C",
+		str(repo_root),
+	]
+	revision = subprocess.run(
+		[*git_base, "rev-parse", "HEAD"],
+		check=True,
+		capture_output=True,
+		text=True,
+	).stdout.strip()
+	dirty = bool(
+		subprocess.run(
+			[*git_base, "status", "--porcelain"],
+			check=True,
+			capture_output=True,
+			text=True,
+		).stdout.strip()
+	)
+	versions = {}
+	for package in ("numpy", "scipy", "rasterio", "PyYAML"):
+		versions[package] = importlib.metadata.version(package)
+	return {
+		"source_revision": revision,
+		"source_dirty": dirty,
+		"source_hashes": source_hashes,
+		"input_hashes": input_hashes,
+		"generation_command": (
+			".venv\\Scripts\\python.exe -B Thesis_RF\\Code\\run_set_c_pilot.py "
+			"--config Thesis_RF\\Code\\config\\default_experiment.yaml "
+			"--execute-approved-pilot"
+		),
+		"environment_record": {
+			"python": platform.python_version(),
+			"platform": platform.platform(),
+			"packages": versions,
+		},
+	}
+
+
+def run_set_c_feasibility_pilot(
+	config: dict,
+	*,
+	explicitly_authorized: bool = False,
+	config_path: Path | None = None,
+) -> dict[str, object]:
+	"""Run the one approved model-free pilot without touching the ML path."""
+	if explicitly_authorized is not True:
+		raise PermissionError(
+			"Phase 8 is disabled; the exact --execute-approved-pilot flag is required"
+		)
+	active_config = activate_approved_pilot_config(config)
+	if (
+		active_config["phase8_set_c_pilot"]["authorization_reference"]
+		!= PILOT_APPROVAL_REFERENCE
+	):
+		raise PermissionError("Phase 8 owner authorization reference changed")
+	destination = approved_destination()
+	preflight_pilot_launch(active_config, destination)
+	resolved_config_path = (
+		Path(config_path).resolve()
+		if config_path is not None
+		else Path(__file__).resolve().parent / "config" / "default_experiment.yaml"
+	)
+	source_context = _pilot_source_context(active_config, resolved_config_path)
+
+	env_manager = EnvironmentManager(active_config["environment"])
+	env_manager.load_rasters()
+	env_manager.build_masks()
+	env_manager.normalize_layers()
+	return run_set_c_pilot_engine(
+		env_manager.get_environment(),
+		active_config,
+		destination=destination,
+		source_context=source_context,
 	)
 
 

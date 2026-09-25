@@ -223,12 +223,17 @@ class FireAutomata:
 			self.blazing_timers[blazing_to_extinguished] = np.int16(0)
 
 			blazing_state = blazing_now.astype(np.int8)
+			# These full-grid masks are no longer needed below. Releasing them before
+			# neighborhood and stochastic arrays are allocated lowers the teacher's
+			# peak resident memory without changing transition semantics.
+			del ignited_now, blazing_now, ignite_to_blazing, blazing_to_extinguished
 			blazing_neighbor_count = compute_moore_neighbor_count(blazing_state)
 			wind_weighted_score, _ = compute_wind_weighted_score(
 				blazing_state,
 				self.wind,
 				wind_weight,
 			)
+			del blazing_state
 			susceptible = (current_grid == STATE_NOT_YET_BURNING) & (blazing_neighbor_count > 0)
 
 			if np.any(susceptible):
@@ -240,17 +245,28 @@ class FireAutomata:
 						susceptible,
 						wind_weighted_score,
 					)
+					ignition_draw = self.rng.random(self.grid_shape)
+					ignite_mask = susceptible & (ignition_draw < p_effective)
+					next_grid[ignite_mask] = STATE_IGNITED
+					self.ignition_timers[ignite_mask] = np.int16(0)
+					self.blazing_timers[ignite_mask] = np.int16(0)
 				else:
+					# Preserve the historical full-grid RNG draw, and therefore exact
+					# seeded outcomes, while avoiding a full-grid p_effective array.
+					susceptible_indices = np.flatnonzero(susceptible.ravel())
 					p_effective = np.clip(
-						self.p_base * wind_weighted_score,
+						self.p_base.ravel()[susceptible_indices]
+						* wind_weighted_score.ravel()[susceptible_indices],
 						0.0,
 						1.0,
 					)
-				ignition_draw = self.rng.random(self.grid_shape)
-				ignite_mask = susceptible & (ignition_draw < p_effective)
-				next_grid[ignite_mask] = STATE_IGNITED
-				self.ignition_timers[ignite_mask] = np.int16(0)
-				self.blazing_timers[ignite_mask] = np.int16(0)
+					ignition_draw = self.rng.random(self.grid_shape)
+					ignite_indices = susceptible_indices[
+						ignition_draw.ravel()[susceptible_indices] < p_effective
+					]
+					next_grid.ravel()[ignite_indices] = STATE_IGNITED
+					self.ignition_timers.ravel()[ignite_indices] = np.int16(0)
+					self.blazing_timers.ravel()[ignite_indices] = np.int16(0)
 
 			self.grid = next_grid
 			self.timestep += 1
