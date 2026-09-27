@@ -9,6 +9,7 @@
 *.npz
 *.aux.xml
 *.xml
+*.qgz
 
 # Folders we don't version
 .venv/
