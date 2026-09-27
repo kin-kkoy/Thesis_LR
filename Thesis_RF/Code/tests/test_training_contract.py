@@ -5,9 +5,9 @@ import pandas as pd
 import pytest
 
 from modules.feature_pipeline import (
+    AUTHORITATIVE_OBSERVATION_METADATA_NAMES,
+    AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES,
     CANONICAL_FEATURE_NAMES,
-    PROVENANCE_METADATA_NAMES,
-    SPLIT_ASSIGNMENT_KEY_NAMES,
     SET_C_SCHEMA_VERSION,
     TARGET_NAME,
     TARGET_VERSION,
@@ -33,22 +33,28 @@ from modules.wind_convention import (
 
 def _contract_frame() -> pd.DataFrame:
     rows = []
-    for index, role in enumerate(("train", "validation", "calibration", "test")):
+    for index, role in enumerate(("train", "validation", "calibration")):
         for target in (0, 1):
             row_number = index * 2 + target
             row = {
                 "set_id": "SetC",
                 "experiment_id": "experiment-1",
                 "event_id": "single-event",
+                "scenario_family_id": f"family-{role}",
                 "scenario_id": f"scenario-{role}",
                 "run_id": f"run-{role}",
                 "seed": 42 + index,
                 "timestep_t": index,
+                "timestep_t1": index + 1,
                 "cell_row": row_number,
                 "cell_col": row_number,
                 "grid_id": "grid-1",
+                "stable_cell_id": f"cell-{row_number}",
                 "duplicate_group_id": f"duplicate-{role}-{target}",
                 "spatial_block_id": f"block-{role}",
+                "ignition_set_sha256": "a" * 64,
+                "run_identity_sha256": f"{row_number + 1:064x}",
+                "provenance_sha256": "b" * 64,
                 "split_role": role,
             }
             row.update({name: 0.0 for name in CANONICAL_FEATURE_NAMES})
@@ -62,7 +68,7 @@ def _contract_frame() -> pd.DataFrame:
             row["target_version"] = TARGET_VERSION
             rows.append(row)
     columns = (
-        list(PROVENANCE_METADATA_NAMES)
+        list(AUTHORITATIVE_OBSERVATION_METADATA_NAMES) + ["split_role"]
         + list(CANONICAL_FEATURE_NAMES)
         + [TARGET_NAME, "feature_schema_version", "target_version"]
     )
@@ -112,7 +118,7 @@ def test_observation_manifest_wind_contract_fails_closed(mutation):
 def test_split_roles_merge_from_a_separate_manifest():
     merged = _contract_frame()
     observations = merged.drop(columns=["split_role"])
-    assignments = merged.loc[:, list(SPLIT_ASSIGNMENT_KEY_NAMES) + ["split_role"]]
+    assignments = merged.loc[:, list(AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES) + ["split_role"]]
 
     reconstructed = ModelTrainer.merge_split_assignments(observations, assignments)
 
@@ -126,11 +132,10 @@ def test_duplicate_group_cannot_cross_roles():
         ModelTrainer._validate_dataset_contract(frame)
 
 
-def test_conflicting_label_duplicate_group_requires_investigation():
+def test_conflicting_label_duplicate_group_is_retained_within_one_role():
     frame = _contract_frame()
     frame.loc[1, "duplicate_group_id"] = frame.loc[0, "duplicate_group_id"]
-    with pytest.raises(ValueError, match="require investigation"):
-        ModelTrainer._validate_dataset_contract(frame)
+    ModelTrainer._validate_dataset_contract(frame)
 
 
 def test_feature_order_and_unassigned_roles_fail_closed():
@@ -143,14 +148,14 @@ def test_feature_order_and_unassigned_roles_fail_closed():
         ModelTrainer._validate_dataset_contract(frame.loc[:, swapped])
 
     frame.loc[0, "split_role"] = ""
-    with pytest.raises(ValueError, match="Invalid or unassigned split_role"):
+    with pytest.raises(PermissionError, match="cannot access final-test membership"):
         ModelTrainer._validate_dataset_contract(frame)
 
 
 def test_split_manifest_cannot_contain_foreign_assignment_rows():
     merged = _contract_frame()
     observations = merged.drop(columns=["split_role"])
-    assignments = merged.loc[:, list(SPLIT_ASSIGNMENT_KEY_NAMES) + ["split_role"]].copy()
+    assignments = merged.loc[:, list(AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES) + ["split_role"]].copy()
     foreign = assignments.iloc[[0]].copy()
     foreign["cell_row"] = 9999
     foreign["cell_col"] = 9999
@@ -162,7 +167,7 @@ def test_split_manifest_cannot_contain_foreign_assignment_rows():
 
 def test_each_split_role_requires_both_classes():
     frame = _contract_frame()
-    frame = frame.drop(frame[(frame["split_role"] == "test") & (frame[TARGET_NAME] == 1)].index)
+    frame = frame.drop(frame[(frame["split_role"] == "calibration") & (frame[TARGET_NAME] == 1)].index)
     with pytest.raises(ValueError, match="must contain both target classes"):
         ModelTrainer._validate_dataset_contract(frame)
 
@@ -175,6 +180,13 @@ def test_reporting_threshold_requires_calibration_provenance():
     assert ModelTrainer._validate_threshold_record(
         {"value": 0.4, "selected_on": "calibration", "objective": "approved-cost-policy"}
     ) == pytest.approx(0.4)
+
+
+def test_development_loader_rejects_final_test_membership():
+    frame = _contract_frame()
+    frame.loc[0, "split_role"] = "final_test"
+    with pytest.raises(PermissionError, match="cannot access final-test membership"):
+        ModelTrainer._validate_dataset_contract(frame)
 
 
 def test_fixed_numeric_class_weight_cost_ratios_are_rejected():

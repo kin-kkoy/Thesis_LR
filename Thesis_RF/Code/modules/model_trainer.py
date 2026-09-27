@@ -28,14 +28,13 @@ from sklearn.metrics import (
 )
 
 from .feature_pipeline import (
+    AUTHORITATIVE_OBSERVATION_METADATA_NAMES,
+    AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES,
     CANONICAL_FEATURE_NAMES,
+    DEVELOPMENT_SPLIT_ROLES,
     MODEL_MANIFEST_VERSION,
-    OBSERVATION_METADATA_NAMES,
     POSITIVE_LABEL,
-    PROVENANCE_METADATA_NAMES,
     SET_C_SCHEMA_VERSION,
-    SPLIT_ROLES,
-    SPLIT_ASSIGNMENT_KEY_NAMES,
     TARGET_NAME,
     TARGET_VERSION,
     positive_class_index,
@@ -60,10 +59,10 @@ def class_weight_for_estimator(configured: str | None) -> str | None:
 
 
 class ModelTrainer:
-    """Consume an explicitly grouped dataset without constructing row-level splits."""
+    """Consume development-only grouped data; final-test membership is forbidden."""
 
     SUPPORTED_MODEL_EXTENSIONS = {".joblib", ".pkl"}
-    GROUP_FIELDS = ("scenario_id", "spatial_block_id", "duplicate_group_id")
+    GROUP_FIELDS = ("scenario_family_id", "spatial_block_id", "duplicate_group_id")
 
     def __init__(
         self,
@@ -87,7 +86,6 @@ class ModelTrainer:
         self.X_train, self.y_train = self.get_partition("train")
         self.X_validation, self.y_validation = self.get_partition("validation")
         self.X_calibration, self.y_calibration = self.get_partition("calibration")
-        self.X_test, self.y_test = self.get_partition("test")
 
     @staticmethod
     def merge_split_assignments(
@@ -98,18 +96,18 @@ class ModelTrainer:
         if "split_role" in observations.columns:
             raise ValueError("Observation dataset must not embed split_role")
         observation_required = (
-            set(OBSERVATION_METADATA_NAMES)
+            set(AUTHORITATIVE_OBSERVATION_METADATA_NAMES)
             | set(CANONICAL_FEATURE_NAMES)
             | {TARGET_NAME, "feature_schema_version", "target_version"}
         )
         missing_observations = sorted(observation_required.difference(observations.columns))
         if missing_observations:
             raise ValueError(f"Observation dataset is missing columns: {missing_observations}")
-        assignment_required = set(SPLIT_ASSIGNMENT_KEY_NAMES) | {"split_role"}
+        assignment_required = set(AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES) | {"split_role"}
         missing_assignments = sorted(assignment_required.difference(assignments.columns))
         if missing_assignments:
             raise ValueError(f"Split manifest is missing columns: {missing_assignments}")
-        keys = list(SPLIT_ASSIGNMENT_KEY_NAMES)
+        keys = list(AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES)
         if observations.duplicated(keys).any():
             raise ValueError("Observation identity keys are not unique")
         if assignments.duplicated(keys).any():
@@ -140,10 +138,11 @@ class ModelTrainer:
 
     @classmethod
     def _validate_dataset_contract(cls, data: pd.DataFrame) -> None:
-        required = set(PROVENANCE_METADATA_NAMES) | set(CANONICAL_FEATURE_NAMES) | {
+        required = set(AUTHORITATIVE_OBSERVATION_METADATA_NAMES) | set(CANONICAL_FEATURE_NAMES) | {
             TARGET_NAME,
             "feature_schema_version",
             "target_version",
+            "split_role",
         }
         missing = sorted(required.difference(data.columns))
         if missing:
@@ -170,20 +169,23 @@ class ModelTrainer:
             raise ValueError(f"{TARGET_NAME} must contain only integer labels 0 and 1")
 
         roles = data["split_role"].astype(str)
-        invalid_roles = sorted(set(roles).difference(SPLIT_ROLES))
+        invalid_roles = sorted(set(roles).difference(DEVELOPMENT_SPLIT_ROLES))
         if invalid_roles:
-            raise ValueError(f"Invalid or unassigned split_role values: {invalid_roles}")
-        missing_roles = [role for role in SPLIT_ROLES if role not in set(roles)]
+            raise PermissionError(
+                "Development loaders cannot access final-test membership or unknown roles: "
+                f"{invalid_roles}"
+            )
+        missing_roles = [role for role in DEVELOPMENT_SPLIT_ROLES if role not in set(roles)]
         if missing_roles:
             raise ValueError(f"Dataset is missing required split roles: {missing_roles}")
-        for role in SPLIT_ROLES:
+        for role in DEVELOPMENT_SPLIT_ROLES:
             role_classes = set(data.loc[roles.eq(role), TARGET_NAME].astype(int))
             if role_classes != {0, POSITIVE_LABEL}:
                 raise ValueError(
                     f"Split role {role!r} must contain both target classes 0 and 1"
                 )
 
-        metadata = data.loc[:, list(PROVENANCE_METADATA_NAMES)]
+        metadata = data.loc[:, list(AUTHORITATIVE_OBSERVATION_METADATA_NAMES) + ["split_role"]]
         if metadata.isna().any().any():
             raise ValueError("Grouping/provenance metadata cannot contain missing values")
         empty_text = metadata.select_dtypes(include=["object", "string"]).apply(
@@ -191,7 +193,7 @@ class ModelTrainer:
         )
         if bool(empty_text.any()):
             raise ValueError("Grouping/provenance metadata cannot contain empty values")
-        for field in ("seed", "timestep_t", "cell_row", "cell_col"):
+        for field in ("seed", "timestep_t", "timestep_t1", "cell_row", "cell_col"):
             if not pd.api.types.is_integer_dtype(data[field].dtype):
                 raise ValueError(f"Grouping/provenance field {field!r} must be integer")
 
@@ -200,17 +202,7 @@ class ModelTrainer:
             if bool((role_counts > 1).any()):
                 raise ValueError(f"{field} crosses split roles")
 
-        conflicting_duplicates = data.groupby(
-            "duplicate_group_id", dropna=False
-        )[TARGET_NAME].nunique()
-        if bool((conflicting_duplicates > 1).any()):
-            raise ValueError(
-                "Conflicting-label duplicate feature groups require investigation"
-            )
-
-        cell_roles = data.groupby(
-            ["grid_id", "cell_row", "cell_col"], dropna=False
-        )["split_role"].nunique()
+        cell_roles = data.groupby("stable_cell_id", dropna=False)["split_role"].nunique()
         if bool((cell_roles > 1).any()):
             raise ValueError("A spatial cell crosses split roles")
 
@@ -220,7 +212,7 @@ class ModelTrainer:
                 raise ValueError("event_id crosses split roles")
 
     def get_partition(self, role: str) -> tuple[pd.DataFrame, pd.Series]:
-        if role not in SPLIT_ROLES:
+        if role not in DEVELOPMENT_SPLIT_ROLES:
             raise ValueError(f"Unknown split role: {role}")
         partition = self.data[self.data["split_role"] == role]
         if partition.empty:
@@ -282,7 +274,7 @@ class ModelTrainer:
 
     def evaluate(
         self,
-        split_role: Literal["validation", "calibration", "test"] = "test",
+        split_role: Literal["validation", "calibration"] = "validation",
         threshold_record: dict | None = None,
     ) -> dict:
         """Evaluate without selecting a threshold on the evaluated partition."""

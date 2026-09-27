@@ -107,6 +107,35 @@ phase8_set_c_pilot:
   pilot_runtime_limit_seconds: 5400
   aggregate_destination: "output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json"
 
+# Phase 9 Task 9.2 source-only site inventory. Production execution and site
+# approval remain separately gated; the checked-in configuration stays disabled.
+phase9_set_c_site_inventory:
+  enabled: false
+  inventory_id: "phase9_set_c_site_inventory_v1"
+  aggregate_schema_version: "phase9_set_c_site_inventory_aggregate.v1"
+  authorization_reference: "Phase 9 Task 9.2 source and synthetic-test approval only"
+  aggregate_destination: "output/phase9/phase9_set_c_site_inventory_v1.aggregate.json"
+  grid_shape: [5489, 6896]
+  grid_crs: "EPSG:32651"
+  grid_resolution_m: 3
+  grid_identity_sha256: "26e9da1104da2caf15039b5f9fbcf719fea506adcee95f9c2da247e8a9e2bc46"
+  authoritative_domain_sha256: "f9bb9dbfe00c61a5b08d228bcbec4b4313853a47f4ca2ea82b7a4359d81814a4"
+  raster_sha256:
+    stack_buildings.tif: "da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7"
+    stack_materials.tif: "21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a"
+    stack_proximity.tif: "1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5"
+    stack_slope_final.tif: "dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482"
+  component_connectivity: 8
+  component_size_min: 256
+  component_size_max: 6000
+  block_size: [128, 128]
+  block_origin: [0, 0]
+  primary_candidates_per_material: 4
+  reserve_candidates_per_material: 4
+  material_classes: [1, 2, 3, 4, 5]
+  launch_memory_floor_bytes: 6442450944
+  disk_floor_bytes: 2147483648
+
 wind:
   speed_kmh: 10.0              # placeholder static global
   direction_deg: 315.0         # meteorological from-bearing, clockwise from projected grid north
@@ -153,6 +182,14 @@ ml_model:
   classification_threshold: null                          # reporting only; requires separate owner approval
   calibration_method: null                                # selected using grouped non-test data
 
+protected_final_test:
+  enabled: false
+  authorization_reference: null
+  protected_storage_mechanism: null                       # separately gated; do not infer an ACL
+  membership_source: null
+  data_source: null
+  report_destination: null
+
 rf_contract:
   feature_schema_version: "set_c.v1"
   target_version: "ignition_t_plus_1.v1"
@@ -173,8 +210,11 @@ dataset_generation:
     backpressure_policy: null                             # runner_owned_exact_retry.v1 requires explicit approval
   set_c_publisher:
     enabled: false                                        # production publication remains unauthorized
-    mode: null                                            # only synthetic_test_only exists for focused tests
+    mode: null                                            # authoritative_versioned requires separate execution approval
     authorization_reference: null
+    package_id: "authoritative_set_c"
+    package_version: "1"
+    destination_pattern: "output/datasets/{package_id}/v{package_version}"
   scenario_records: []                                    # explicit simulator-produced adjacent-state records only
   roi: null                                             # null means the full aligned raster domain; no crop is approved
   sampling_policy: "all_eligible"                       # preserve eligible-population prevalence for calibration

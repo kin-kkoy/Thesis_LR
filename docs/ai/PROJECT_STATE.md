@@ -2,102 +2,105 @@
 
 ## Record contract
 
-- **Purpose:** Canonical compact navigation and current-state index for Codex and thesis collaborators. It reduces repeated repository scans but does not replace claim-specific verification.
-- **Authority:** Repository-local, Git-reviewable memory. Source code, identified data, immutable outputs, configurations, model metadata, and reproducible command records remain the evidence for their respective claims.
-- **Scope:** Random Forest work and shared repository coordination. `Thesis_LR/` remains partner-owned and read-only.
-- **Last updated:** 2026-09-22T20:05:15+08:00.
-- **Last reviewed Git revision:** `8713099dd2996e67026c18e944bba34f1ba48d2a` on branch `RF-11-Params`.
-- **Worktree note:** Commit `8713099` was reviewed with a clean worktree/index before this memory-only update. A remembered fact is not evidence that later working files remain unchanged.
-- **Stale-information rule:** Treat a statement as stale when its linked source, configuration, data/model identity, relevant dependency, or reviewed Git revision has changed. Inspect the affected diff and evidence before reuse.
-- **Size policy:** Keep this file below 16 KiB and focused on navigation, current verified state, and active blockers. Move durable rationale to `DECISIONS.md`; link to detailed evidence rather than copying it.
+- **Purpose:** Compact, Git-reviewable navigation and current-state index. Source, identified inputs, immutable artifacts, configurations, commands, and raw records remain the primary evidence.
+- **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
+- **Last updated:** 2026-09-27.
+- **Last reviewed base revision:** `df65217b91c1624bbfcff82e95cca15a45a6df2c` on `RF-11-Params`.
+- **Worktree note:** The accepted v2 pilot recorded `source_dirty: false`. Afterward, the preserved visualization project `Thesis-try.qgz` was restored as an untracked item. This authorized memory update preserves the user's earlier uncommitted edits to this file.
+- **Current reviewed RF work:** The revision containing D-018 and this record combines the accepted Ponytail cleanup, disabled Task 9.2 inventory, disabled Phase 10 source architecture, and mixed-material rule. Its clean-source gate ignores only preserved root `Thesis-try.qgz` while rejecting every other change. The full RF synthetic suite passed 254 tests with bytecode/cache disabled. No production execution occurred.
+- **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
+- **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Validate and verify the Random Forest-assisted Cellular Automata pipeline before relying on prior thesis comparisons or results.
-- **Ownership:** Write only authorized RF implementation paths. `Thesis_LR/**`, datasets, rasters, model artifacts, outputs, and manuscripts are read-only unless the thesis owner explicitly approves a change.
-- **Current integration target:** Set C is the approved active development candidate for the 11-feature RF/CA pipeline. Set A and Set B remain separate historical chains. No cross-set metric comparison is valid without equivalent target, feature, grouping, split, evaluation, and provenance contracts.
-- **Approved methodology contract:** `docs/ai/DECISIONS.md` D-009 defines next-timestep ignition as the primary RF estimand; group-first evaluation; separate training, validation, calibration, and final-test roles; distinct class-weight and threshold selection; separate estimator and CA metrics; duplicate-group containment; and immutable per-set provenance manifests.
-- **Approved burnable domain:** Eligible RF/CA target cells must be raster-valid building cells. Invalid/nodata and non-building cells are excluded, use separate documented masks, and cannot enter evaluation as true negatives. Existing implementation and artifact compliance remain to be verified.
-- **Approved Phase 4 refinement:** `docs/ai/DECISIONS.md` D-010 fixes the Set C order and positive label, keeps observation metadata out of predictors, stores split assignments separately, and distinguishes frozen classification-reporting thresholds from threshold-free stochastic CA probabilities.
-- **Approved D-013 contracts:** From-bearing grid-north wind, common-valid mapped-building final-footprint evaluation, and provenance-bound BLAZING-at-`t` to newly-IGNITED-at-`t+1` observation.
-- **Approved Set C teacher:** D-014 selects the model-free stochastic `FireAutomata` no-model branch and requires 11-feature `all_eligible`, whole-group, inactive-run, bounded-memory collection with simulator-limited claims.
-- **Current source baseline:** Commit `8713099` implements D-009–D-013 wind, evaluation, and five-state observer contracts; complete D-014 collection is not implemented.
-- **Execution boundary:** D-014 permits scoped source implementation and synthetic/static verification only; production, artifacts, training, evaluation, manuscripts, and `Thesis_LR/**` writes remain unauthorized.
-- **Validation focus:** artifact provenance; feature/schema alignment; repeated-cell, scenario, and spatial leakage; class weighting versus threshold calibration; model/CA metric separation; and spatial AUC semantics.
-- **Highest-priority blockers:** implement and verify the D-014 runner/collector, ignition and termination records; establish group/block feasibility; and obtain production authorization.
-- **Primary entry points:** `Thesis_RF/Code/config/default_experiment.yaml`, `Thesis_RF/Code/modules/feature_pipeline.py`, `Thesis_RF/Code/modules/automata_engine.py`, `Thesis_RF/Code/modules/model_trainer.py`, `Thesis_RF/Code/dataset_generator.py`, `Thesis_RF/Code/generate_multi_scenario.py`, `Thesis_RF/Code/train_rf_optuna.py`, and `Thesis_RF/Code/validation_engine.py`.
-- **Detailed leads:** `Thesis_RF/THESIS_RF_CODEX_HANDOFF.md` and `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md`. These are navigation/evidence leads, not automatic proof of reproducibility.
-- **Testing rule:** Reuse a prior test only when its revision or worktree state, command, environment, scope, inputs, timestamp, and result are recorded and still applicable. Otherwise run the smallest relevant verification.
+- **Active objective:** Establish one reviewed Phase 9/10 revision and pass the full synthetic suite; then seek separate authorization for one inventory execution.
+- **Methodology:** D-009–D-015 define next-timestep eligible-cell ignition, canonical Set C predictors, `all_eligible`, model-free teacher labels, 128×128 conservative grouping, controlled population expansion, duplicate containment, and role-level adequacy gates.
+- **Accepted source:** Phase 7 supplies the fail-closed model-free teacher and bounded 11-feature collector. Phase 8 v2 revision `df65217b91c1624bbfcff82e95cca15a45a6df2c` supplies the disabled aggregate-only pilot extension; 110 focused synthetic tests passed before execution.
+- **Accepted diagnostic artifact:** `Thesis_RF/Code/output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json`; canonical payload SHA-256 `9a4f48ea6b2b7f882985d63ff3cad7ef3c785736e223860f82637fdd9e45cbf3`; whole-file SHA-256 `b62a7bf542d0ab74a3ac71399e85048b3169d0a04b33c95625aec3ee39339d17`.
+- **Diagnostic result:** All 32 runs were inactive, complete, authoritative, and count-matched. They produced 384 aggregate-observed eligible rows: 26 positive and 358 negative. Every diagnostic block size yielded five authoritative leakage components, all five independently containing both labels; four-role allocation is mathematically feasible, but no roles or final block dimensions were assigned.
+- **Current authorization:** D-016 authorizes the bounded aggregate diagnostic under prerequisites; D-017 authorizes only disabled source architecture; D-018 closes the mixed-material policy gate. Inventory execution and every production/model/final-test operation remain separately gated.
+- **Hard boundary:** Do not run the production inventory, approve sites automatically, run the teacher expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
+- **Next gate:** Resolve the class-1-to-5 mixed-material reservation policy, commit a clean reviewed revision, separately authorize and validate one inventory execution, and approve the exact family manifest before implementing or executing the bounded aggregate adequacy expansion.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state
 
 | Status | Current fact | Evidence | Recheck trigger |
 |---|---|---|---|
-| `VERIFIED` | The active project priority is validation and verification of the RF track; LR is outside the writable scope. | `AGENTS.md`; `Thesis_RF/AGENTS.md` | Owner changes scope or ownership. |
-| `VERIFIED` | RF implementation entry points are under `Thesis_RF/Code/`; generated datasets, rasters, models, checkpoints, and outputs are not normal source-edit targets. | `Thesis_RF/AGENTS.md`; current repository tree | Repository layout or guidance changes. |
-| `VERIFIED` | The owner approved Set C as the active development candidate and preserved Sets A/B as separate historical chains with no unsupported cross-set metric comparison. | `docs/ai/DECISIONS.md` D-009 | Owner supersedes the decision or equivalent provenance is established. |
-| `VERIFIED` | The approved primary RF estimand is next-timestep ignition of an eligible cell; final burn masks are CA-level outcome evidence, while any final-burn classifier is a separate susceptibility/outcome task. | `docs/ai/DECISIONS.md` D-009 | Owner changes the scientific estimand. |
-| `VERIFIED` | The approved evaluation contract is group-first separation with distinct training, hyperparameter-validation, calibration/threshold, and untouched final-test roles. Class weighting and thresholding are separate selections. | `docs/ai/DECISIONS.md` D-009 | Owner supersedes the methodology contract. |
-| `VERIFIED` | The approved physical burnable domain excludes non-building cells. Raster-validity and burnability masks remain separate, and neither invalid nor non-building cells may enter evaluation as true negatives. | `docs/ai/DECISIONS.md` D-009 | Ground-truth semantics or owner policy changes. |
-| `VERIFIED` | Each Set A/B/C chain requires an immutable independent provenance manifest; missing lineage remains `NEEDS VERIFICATION` and existing artifacts cannot be overwritten. | `docs/ai/DECISIONS.md` D-009 | Owner supersedes provenance or artifact policy. |
-| `VERIFIED` | Set C uses `all_eligible`; approved class-weight candidates are `none`, `balanced`, and `balanced_subsample`. | `docs/ai/DECISIONS.md` D-011; current RF source/config worktree | Owner supersedes D-011 or the source contracts change. |
-| `VERIFIED` | Active Set C accepts only provenance-bound `authorized_simulated` adjacent-state pairs. The satellite-derived manual burn mask is an approximate CA final-footprint reference, not observed temporal or calibration evidence; claims are limited to the case-study area and tested simulated scenarios. | `docs/ai/DECISIONS.md` D-012; current RF source/config worktree | Owner supersedes D-012 or the source contracts change. |
-| `VERIFIED` | Commit `8713099` implements D-013: from-bearing wind, common-valid building evaluation, and a mutation-isolated five-state observer with BLAZING-at-`t` predictors and eligible `2→3` labels. Observer mode suppresses output/checkpoints; pure rows retain all eligible cells; legacy binary publication fails closed. | D-013; exact commit diff; 109 synthetic tests; RF Validator `PASS`; Technical Lead source acceptance `PASS`, 2026-09-22 | Source/test or production integration changes. |
-| `VERIFIED` | D-014 approves the model-free stochastic `FireAutomata` no-model branch as Set C's teacher; other sources are excluded or separately labeled. Collection must be complete, bounded, whole-group, and inactive-run, with claims limited to tested teacher scenarios. | D-014; Task 6.1 RF Validator review; owner approval, 2026-09-22 | D-014 or its implementation changes. |
-| `VERIFIED` | The aligned approximate reference mask contains 3,312 burned cells. Of these, 1,393 are outside the mapped-building mask; 20 coincide with slope-invalid cells, including 9 mapped-building cells. A building-only final-footprint evaluation therefore measures building-fire agreement, not the complete manually delineated footprint. | Read-only raster preflight on `stack_ground_truth.tif`, `stack_buildings.tif`, and `stack_slope_final.tif`, 2026-09-17 | Any raster identity/content, mask value semantics, or evaluation-domain decision changes. |
-| `VERIFIED` | The current feature pipeline and Optuna entry point define an ordered 11-feature schema containing `material_class`, `neighbor_burning_count`, and `wind_weighted_score`. | `Thesis_RF/Code/modules/feature_pipeline.py`; `Thesis_RF/Code/train_rf_optuna.py` | Either file or a model schema changes. |
-| `VERIFIED` | The CA uses five `np.int8` states, convolution-based neighborhoods, susceptible-cell filtering, chunked `predict_proba()` inference, and a callable estimator interface. | `Thesis_RF/Code/modules/automata_engine.py`; `Thesis_RF/Code/orchestrator.py` | CA engine, feature pipeline, or model-loading boundary changes. |
-| `VERIFIED` | The current Phase 4 worktree separates continuous estimator metrics from hard CA-mask metrics and excludes invalid/non-building cells before flattening. | `Thesis_RF/Code/validation_engine.py`; synthetic smoke check | Validator or domain-mask logic changes. |
-| `VERIFIED` | The current Phase 4 worktree no longer selects a threshold on the reporting test. A hard reporting threshold requires a calibration-origin/objective record; stochastic CA uses the positive-class probability unchanged. | `Thesis_RF/Code/modules/model_trainer.py`; `Thesis_RF/Code/modules/automata_engine.py`; synthetic smoke check | Evaluation or CA inference logic changes. |
-| `VERIFIED` | The current Phase 4 worktree consumes preassigned roles from a separate split manifest and rejects scenario, spatial-block, duplicate-group, cell, and multi-event overlap. Actual historical leakage remains unverified. | `Thesis_RF/Code/modules/model_trainer.py`; `Thesis_RF/Code/train_rf_optuna.py`; synthetic smoke check | Split logic or active dataset lineage changes. |
-| `VERIFIED` | The current Phase 4 worktree rejects unbound wind permutations, extra or missing split assignments, single-class split roles, stale calibration-selection records, and partial publication of a model/study/summary version set. | `Thesis_RF/Code/generate_multi_scenario.py`; `Thesis_RF/Code/modules/model_trainer.py`; `Thesis_RF/Code/train_rf_optuna.py`; direct contract smoke check | Scenario construction, manifests, split logic, calibration selection, or artifact publication changes. |
-| `NEEDS VERIFICATION` | Existing Set A/B/C metrics can be reproduced from identified datasets, models, configurations, seeds, commands, and raw outputs. | Leads: `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md`, `Thesis_RF/THESIS_RF_CODEX_HANDOFF.md` | Close only with an experiment manifest and primary artifacts. |
+| `VERIFIED` | RF is the writable implementation track; LR remains read-only. | `AGENTS.md`; `Thesis_RF/AGENTS.md` | Ownership changes. |
+| `VERIFIED` | Set C is the active 11-feature candidate; Sets A/B remain separate historical chains. | D-009–D-014 | Owner supersedes the methodology. |
+| `VERIFIED` | The RF estimand is eligible mapped-building-cell ignition at `t+1` from state/features at `t`; dynamic neighbor features use BLAZING at `t`. | D-009, D-010, D-013, D-014 | Target/timing contract changes. |
+| `VERIFIED` | Authoritative Set C labels come only from the versioned model-free stochastic teacher. Incumbent RF transitions are not independent truth. | D-014; Phase 7 source and validator reports | Teacher contract changes. |
+| `VERIFIED` | Phase 7 provides model isolation, seeded D-014 ignition, five-state `np.int8` transitions, inactive/censored/failure records, canonical `all_eligible` rows, bounded exact-retry collection, and disabled publication. | Commit `10b1b7c`; Phase 7 acceptance; 160-test source verification | Phase 7 interfaces change. |
+| `VERIFIED` | Phase 8 harness is disabled by default, permits only the exact model-free path, retains no row dataset, and can publish only one hash-bound aggregate report atomically without overwrite. | Commits `ffbda28`, `2fd0e68`, `3d8439c`; repeated Task 8.4 PASS | Harness/publisher changes. |
+| `VERIFIED` | Full-grid building/material mapped identities agree after material-specific normalization; combined validity still excludes slope-invalid cells. | Revision `3d8439c`; real-input preflight; approved domain hashes | Loader or raster changes. |
+| `VERIFIED` | Phase 8 v2 completed from clean revision `df65217`: 32 authoritative inactive runs, 74/74 transitions, 384 rows (26 positive), five both-label leakage components at every tested block size, exact v1 reconciliation, and no forbidden operation or extra output. | Immutable v1/v2 reports; final RF Validator PASS | Report/hash/source/input changes. |
+| `VERIFIED` | The thesis owner formally accepted Phase 8, including the v2 extension, and authorized Phase 9 planning only under a separate bounded contract. | Owner acceptance, 2026-09-25 | Owner grants or revises Phase 9 authorization. |
+| `VERIFIED` | D-015 fixes 128×128 origin-(0,0) conservative grouping, a controlled 26-family/17-condition population design, aggregate-only site discovery, role-level adequacy minima, and conflict-preserving duplicate containment. | Phase 9 Task 9.1; owner approval, 2026-09-27 | Owner supersedes D-015 or production evidence changes the contract. |
+| `VERIFIED` | Phase 8's five components and 26 positives are inadequate for production row publication; aggregate-only independent-family expansion is required. | Phase 9 Task 9.1 RF Validator review; D-015 | Approved adequacy expansion passes all gates. |
+| `VERIFIED` | Task 9.2 implements a disabled, fail-closed, aggregate-only site-inventory harness with exact provenance/input contracts, 8-connected component selection, global 128×128 footprint reservation, four primary plus four reserve candidates per material class, aggregate-only atomic non-overwrite publication, and no teacher/model execution. | `modules/set_c_site_inventory.py`; `run_set_c_site_inventory.py`; synthetic contracts; final read-only RF Validator PASS | Source/config changes or production evidence contradicts the synthetic contract. |
+| `VERIFIED` | D-018 assigns mixed-material components to the first eligible class in deterministic order 1–5 and globally reserves their full leakage footprint. This is an inventory rule, not a prevalence or independence claim. | Owner approval; `_select_candidates`; mixed-material synthetic contract | Owner revises D-018. |
+| `VERIFIED` | D-016 authorizes only the bounded aggregate population-adequacy diagnostic after its inventory/manifest prerequisites. Production row publication, split execution, training, and final-test access remain unauthorized. | Phase 9 Tasks 9.1–9.3; owner approval, 2026-09-27 | Owner broadens or revokes the authorization. |
+| `VERIFIED` | D-017 approves the disabled Task 9.3 source architecture: versioned package/staging, canonical rows, joint leakage components, development-only loaders, and a separate fail-closed final evaluator. Numerical role targets and protected storage/ACL remain separately gated. | Owner approval; 61 focused tests; final read-only RF Validator PASS | Source or approval changes. |
+| `NEEDS VERIFICATION` | Historical Set A/B/C metric claims are reproducible from identified datasets, models, configurations, splits, commands, and immutable outputs. | `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md` | Close only with primary provenance. |
 
-## Active issues and unknowns
+## Accepted Phase 8 aggregate evidence
 
-1. `NEEDS VERIFICATION` — Recover an explicit provenance chain for each Set A/B/C dataset, trained model, feature schema, class weights, seed, YAML/configuration, command, output, and metric record.
-2. `NEEDS VERIFICATION` — D-014 is not implemented: the fail-closed no-model runner, bounded 11-feature collector, ignition identity, and termination record are absent; legacy publication remains closed.
-3. `NEEDS VERIFICATION` — Establish group inventory and spatial-correlation/feasibility evidence before approving block scale or train/validation/calibration/test allocation.
-4. `NEEDS VERIFICATION` — Select a calibration method using grouped non-test evidence; approve a cost/safety objective before deriving any hard reporting threshold.
-5. `NEEDS EVIDENCE` — Historical transition artifacts, if any, have not been checked against `simulated_wind.v1`; source now rejects missing, noncanonical, or scenario-mismatched originating wind provenance.
-6. `NEEDS VERIFICATION` — Before training, approve the RF search space, trial budget, tuning objective, calibration candidates/design, and actual group-first allocation. Nested grouped CV remains fail-closed until group inventory proves it necessary.
-7. `WARNING` — Phase 4 source guardrails passed synthetic verification but have not been exercised against real datasets, models, rasters, or production simulations. Caller-attested provenance and external-callback behavior remain trusted boundaries; measured impact remains unverified.
-8. `WARNING` — D-013 makes common-valid mapped-building agreement the primary CA final-footprint domain. Source now requires the exact simulation-valid mask and dynamically reports exclusions, but no real-output validation was run. The preflight found 1,393 of 3,312 reference-burned cells outside mapped buildings and 20 on slope-invalid cells (9 also mapped as buildings); broader-domain metrics and artifact production remain unauthorized.
-9. `NEEDS VERIFICATION` — Confirm that the model feature names/order, current YAML, probability behavior, output raster, and validation command all belong to the same experiment.
+- **V1:** `output/phase8/phase8_set_c_feasibility_pilot_v1.aggregate.json`; payload/file SHA-256 `23cd71eb...98afc6` / `e4c52c...d332`; clean revision `3d8439c`; preserved diagnostic predecessor.
+- **V2:** `output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json`; payload/file SHA-256 `9a4f48ea...45cbf3` / `b62a7bf...39d17`; clean revision `df65217`.
+- **V2 result:** 32 authoritative inactive runs, 74/74 transitions, 384 rows, 26 positive, 358 negative, and five both-label leakage components at every tested block size. Detailed family/resource evidence remains in the immutable report and Phase 9 handoff.
+- **Boundary:** Mathematical feasibility only; no role assignment, row publication, model operation, final CA raster, or real-fire accuracy claim.
 
-## Known-good navigation map
+## Active blockers and authorized follow-up
 
-| Need | Start here | Read further only if needed |
-|---|---|---|
-| Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` | `Thesis_RF/Code/main.py`, `Thesis_RF/Code/orchestrator.py` |
-| Raster alignment and nodata | `Thesis_RF/Code/modules/data_loader.py` | Identified raster metadata and quality reports |
-| Feature contract | `Thesis_RF/Code/modules/feature_pipeline.py` | Saved model `feature_names_in_` or an approved schema manifest |
-| CA behavior | `Thesis_RF/Code/modules/automata_engine.py` | Configuration plus focused synthetic-array tests |
-| Dataset construction | `Thesis_RF/Code/dataset_generator.py`, `Thesis_RF/Code/generate_multi_scenario.py` | Identified CSV metadata and generation logs |
-| RF training | `Thesis_RF/Code/modules/model_trainer.py`, `Thesis_RF/Code/train_rf_optuna.py` | Model sidecar/serialized metadata and split records |
-| Spatial metrics | `Thesis_RF/Code/validation_engine.py` | Identified output/ground-truth rasters and raw metric record |
-| Historical experiment leads | `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md` | Primary artifacts named by each claim |
-| Durable project decisions | `docs/ai/DECISIONS.md` | Evidence linked from the relevant decision |
+1. `PASS` — Phase 8's four-role feasibility gate is satisfied: five authoritative leakage components independently contain both labels at every diagnostic block size.
+2. `WARNING` — V2 contains 20 conflicting-label duplicate groups. Phase 9 must keep each duplicate/leakage-connected group intact; random row splitting is prohibited.
+3. `APPROVED POLICY` — Use 128×128-cell blocks at origin `(0,0)` as conservative containment; do not claim measured decorrelation or spatial independence.
+4. `PASS` — The disabled aggregate site-inventory source and synthetic contracts passed read-only RF validation: four primary and four reserve candidates for each material class 1–5.
+5. `NEEDS EVIDENCE` — Discover, validate, and separately approve exact new-family coordinates, ignition hashes, material contexts, component identities, and block footprints.
+6. `PASS` — D-018 approves deterministic class-1-to-5 ownership and global footprint reservation for mixed-material components.
+7. `AUTHORIZED WITH PREREQUISITES` — D-016 authorizes the bounded aggregate diagnostic source and synthetic tests, plus one later diagnostic execution only after a clean revision, separately authorized/validated inventory, mixed-material resolution, and exact-manifest approval.
+8. `BLOCKED` — Source architecture exists, but row publication and split roles still require D-015/D-016 evidence, separate execution approval, exact package identity, and all later allocation gates.
+9. `NEEDS EVIDENCE` — RF search space, tuning budget/objective, class weight, calibration, reporting threshold, protected final test, dataset/split identities, and final evaluation remain unset.
+10. `BLOCKED` — Training, tuning, calibration, final-test access, model/raster publication, manuscripts, and `Thesis_LR/**` writes remain unauthorized.
 
-## Test evidence available for reuse
+## Known-good navigation
 
-No RF experiment result is established. At commit `8713099`, all 109 synthetic RF contract tests passed with caches disabled; the RF Validator independently passed 63 focused tests and the Technical Lead accepted the source architecture. Coverage includes timing/state/label semantics, provenance, noninterference, output suppression, legacy rejection, wind, evaluation, and training contracts. Artifact readiness remains `NEEDS EVIDENCE`; no production or artifact operation ran.
+| Need | Start here |
+|---|---|
+| Durable methodology | `docs/ai/DECISIONS.md` D-009–D-015 |
+| Phase 9 handoff | `docs/HandoffPhase9.md` |
+| Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
+| Raster loading/domains | `Thesis_RF/Code/modules/data_loader.py` |
+| Model-free teacher | `Thesis_RF/Code/modules/model_free_teacher.py`; `modules/automata_engine.py` |
+| Set C collector | `Thesis_RF/Code/modules/set_c_collector.py` |
+| Pilot harness/reporting | `Thesis_RF/Code/modules/set_c_pilot.py`; `run_set_c_pilot.py`; `orchestrator.py` |
+| Phase 9 site inventory | `Thesis_RF/Code/modules/set_c_site_inventory.py`; `run_set_c_site_inventory.py`; `tests/test_set_c_site_inventory_contract.py` |
+| Phase 10 source architecture | `modules/set_c_publication.py`; `modules/set_c_leakage.py`; `evaluate_rf_final_test.py`; `tests/test_phase10_architecture_contract.py` |
+| Accepted Phase 8 evidence | `Thesis_RF/Code/output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json`; preserved v1 report |
+| Later split/training code | `modules/model_trainer.py`; `train_rf_optuna.py` |
+
+## Test and review evidence
+
+- Phase 7 acceptance: 160 synthetic tests, RF Validator Tasks 7.2/7.4 PASS.
+- Phase 8 harness and repairs: repeated Task 8.4 acceptance-gate PASS reports.
+- Revision `3d8439c`: 215 complete RF synthetic tests passed with bytecode and pytest cache disabled; focused validator run passed 107 tests.
+- V1 artifact: independent Task 8.5 read-only validation passed integrity, provenance, termination, resource, reconciliation, and protected-operation gates; readiness failed only because four-role feasibility is false.
+- Revision `df65217`: 110 focused synthetic tests passed with bytecode and pytest cache disabled before the v2 run.
+- V2 artifact: the final read-only RF Validator passed all ten acceptance gates, including exact v1 reconciliation, both-label new-family coverage, five qualifying components, protected-operation checks, and sole-output verification.
+- Phase 8 owner acceptance: 2026-09-25; Phase 9 planning only, with no dataset, split, training, calibration, model, raster, manuscript, or LR-write authorization.
+- Phase 9 Task 9.1: RF Validator decision `AGGREGATE-ONLY EXPANSION REQUIRED`; owner approved D-015 without revisions on 2026-09-27. Task 9.2 source-only site-inventory implementation is authorized; production execution is not.
+- Pre-Task 9.2 Ponytail cleanup: four unused RF prototype/utility scripts and unreachable legacy binary-publication bodies were removed without changing active fail-closed guards; 220 complete synthetic tests and a final 68-test focused rerun passed. No production input, artifact, model, raster, manuscript, or LR operation occurred.
+- Phase 9 Task 9.2: final read-only RF Validator `PASS` with one policy warning after current-source inspection and an 80-test focused run. The complete RF synthetic suite passed 244 tests; `git diff --check` passed; `output/phase9` remained absent. Owner approval of the mixed-material class-order policy, a clean revision, and separate production authorization remain required.
+- Phase 9 Task 9.3: read-only architecture audit passed the teacher/collector foundation but failed production publication, leakage-graph, split-allocation, and protected-test readiness. D-016 consequently authorizes only the bounded aggregate diagnostic; the publisher architecture remains proposed with numerical final-allocation targets and protected storage/ACL separately gated.
+- Phase 10 source-only Task 9.3 implementation: 61 focused synthetic temporary-path tests passed with bytecode/cache disabled. The final read-only RF Validator passed after feature-domain, per-run provenance, null-identity, dataset-hash, and destination-pattern repairs. No production artifact or operation was authorized.
+- Consolidated Phase 9/10 revision: the complete RF synthetic suite passed 254 tests with bytecode and pytest caching disabled; tracked worktree/index were clean afterward except for preserved untracked `Thesis-try.qgz`.
 
 ## Update procedure
 
-1. Inspect the Git delta since the last reviewed state and the evidence relevant to the task.
-2. Update only facts affected by a material, verified change; preserve uncertainty labels.
-3. Update the timestamp and reviewed revision/worktree description.
-4. Append to `DECISIONS.md` only when a durable choice, approval, or supersession occurred.
-5. Review the implementation diff and memory diff together.
-6. Keep detailed logs, output tables, citations, and experiment artifacts in their evidence locations and link them here.
-
-## Phase 7 acceptance checkpoint — 2026-09-24
-
-- `VERIFIED` — The thesis owner formally accepted Phase 7 after the RF Engineer implementations, RF Validator Task 7.2 and Task 7.4 acceptance-gate passes, ownership review, and a full source-only run of 160 synthetic RF tests with Python bytecode and the pytest cache disabled.
-- `VERIFIED` — The accepted source provides the fail-closed model-free stochastic teacher, D-014 ignition law, five-state `np.int8` transitions, ignition and termination identities, canonical 11-feature `all_eligible` collection, bounded lossless backpressure, and a disabled synthetic-test-only atomic publisher that rejects incomplete, censored, corrupted, partial, legacy, and overwrite attempts.
-- **Evidence boundary:** This acceptance establishes source behavior only. It does not establish a real Set C dataset, final spatial blocks or split assignments, a trained or calibrated model, CA result rasters, or real-world predictive accuracy.
-- **Next authorized scope:** Phase 8 may proceed only under a separately defined bounded feasibility-pilot contract. It must not load an RF model, publish row-level training data, create CA rasters or checkpoints, use `stack_ground_truth.tif`, assign final split roles, train, calibrate, publish models/results, change manuscripts, or write under `Thesis_LR/**`.
-- **Open planning evidence:** Numeric collection bounds, scenario/run/seed inventory, spatial-block feasibility, pilot termination limits, and the Phase 8 evidence package remain unset pending the bounded pilot contract.
+1. Inspect the Git delta and claim-specific evidence.
+2. Update only affected facts and preserve uncertainty labels.
+3. Record the reviewed revision, artifact identity, command, and authorization boundary.
+4. Append to `DECISIONS.md` only after explicit approval of a durable methodology choice.
+5. Never overwrite an immutable artifact; use a separately approved versioned successor.

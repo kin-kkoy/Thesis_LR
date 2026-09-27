@@ -24,28 +24,31 @@ from sklearn.metrics import average_precision_score
 
 from dataset_generator import SyntheticDatasetGenerator
 from modules.feature_pipeline import (
+    AUTHORITATIVE_CSV_COLUMNS,
+    AUTHORITATIVE_OBSERVATION_METADATA_NAMES,
+    AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES,
     CALIBRATION_SELECTION_VERSION,
     CANONICAL_FEATURE_NAMES,
     COMBINED_MANIFEST_VERSION,
+    DEVELOPMENT_SPLIT_ROLES,
+    DEVELOPMENT_SPLIT_MANIFEST_VERSION,
     MODEL_MANIFEST_VERSION,
     OBSERVATION_MANIFEST_VERSION,
     OBSERVATION_METADATA_NAMES,
     POSITIVE_LABEL,
-    PROVENANCE_METADATA_NAMES,
     SET_C_SCHEMA_VERSION,
-    SPLIT_ROLES,
     SPLIT_MANIFEST_VERSION,
     TARGET_NAME,
     TARGET_VERSION,
     predict_positive_probability,
 )
+from modules.set_c_publication import PACKAGE_SCHEMA_VERSION, validate_published_package
 from modules.model_trainer import (
     ModelTrainer,
     SUPPORTED_CLASS_WEIGHT_STRATEGIES,
     class_weight_for_estimator,
 )
 from modules.wind_convention import WindContract
-from validation_engine import evaluate_estimator_probabilities
 
 
 SEED = 42
@@ -76,7 +79,7 @@ def load_grouped_data(
     data = ModelTrainer.merge_split_assignments(observations, assignments)
     ModelTrainer._validate_dataset_contract(data)
     partitions: dict[str, tuple[pd.DataFrame, pd.Series]] = {}
-    for role in SPLIT_ROLES:
+    for role in DEVELOPMENT_SPLIT_ROLES:
         selected = data[data["split_role"] == role]
         partitions[role] = (
             selected.loc[:, list(CANONICAL_FEATURE_NAMES)].copy(),
@@ -161,19 +164,7 @@ def _file_sha256(path: Path) -> str:
 
 
 def _split_membership_hash(data: pd.DataFrame) -> str:
-    columns = [
-        "experiment_id",
-        "event_id",
-        "scenario_id",
-        "run_id",
-        "timestep_t",
-        "grid_id",
-        "cell_row",
-        "cell_col",
-        "duplicate_group_id",
-        "spatial_block_id",
-        "split_role",
-    ]
+    columns = [*AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES, "split_role"]
     ordered = data.loc[:, columns].astype(str).sort_values(columns).to_csv(index=False)
     return sha256(ordered.encode("utf-8")).hexdigest()
 
@@ -203,6 +194,52 @@ def _validate_observation_wind_manifest(wind: object) -> dict[str, object]:
 
 def load_dataset_manifest(manifest_path: Path, csv_path: Path) -> dict:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("manifest_schema_version") == PACKAGE_SCHEMA_VERSION:
+        manifest = validate_published_package(manifest_path)
+        required_package = {
+            "artifact_kind", "package_id", "package_version", "canonical_csv_columns",
+            "predictor_dtype", "label_dtype", "state_dtype", "sampling_policy",
+            "split_status", "row_count", "target_counts", "dataset_path",
+            "dataset_sha256", "identity", "runs", "manifest_payload_sha256",
+        }
+        missing_package = sorted(required_package.difference(manifest))
+        if missing_package:
+            raise ValueError(f"Authoritative package manifest is incomplete: {missing_package}")
+        if (
+            manifest["artifact_kind"] != "authoritative_set_c_observation_package"
+            or tuple(manifest["canonical_csv_columns"]) != AUTHORITATIVE_CSV_COLUMNS
+            or manifest["predictor_dtype"] != "float32"
+            or manifest["label_dtype"] != "int8"
+            or manifest["state_dtype"] != "int8"
+            or manifest["sampling_policy"] != "all_eligible"
+            or manifest["split_status"] != "unassigned"
+        ):
+            raise ValueError("Authoritative package manifest violates the Set C contract")
+        recorded_dataset = manifest_path.parent / str(manifest["dataset_path"])
+        if recorded_dataset.resolve() != csv_path.resolve():
+            raise ValueError("Authoritative package manifest identifies another dataset")
+        if manifest["dataset_sha256"] != _file_sha256(csv_path):
+            raise ValueError("Authoritative package dataset hash mismatch")
+        if not isinstance(manifest["row_count"], int) or manifest["row_count"] <= 0:
+            raise ValueError("Authoritative package row count must be positive")
+        counts = {str(key): int(value) for key, value in manifest["target_counts"].items()}
+        if set(counts) != {"0", "1"} or sum(counts.values()) != manifest["row_count"]:
+            raise ValueError("Authoritative package class totals are inconsistent")
+        identity = manifest["identity"]
+        if not isinstance(identity, dict) or not str(identity.get("experiment_id", "")).strip():
+            raise ValueError("Authoritative package experiment identity is missing")
+        normalized = dict(manifest)
+        normalized.update(
+            set_id="SetC",
+            experiment_id=identity["experiment_id"],
+            feature_schema_version=SET_C_SCHEMA_VERSION,
+            feature_names=list(CANONICAL_FEATURE_NAMES),
+            target_name=TARGET_NAME,
+            target_version=TARGET_VERSION,
+            positive_label=POSITIVE_LABEL,
+            metadata_names=list(AUTHORITATIVE_OBSERVATION_METADATA_NAMES),
+        )
+        return normalized
     required = {
         "manifest_schema_version",
         "artifact_kind",
@@ -423,12 +460,12 @@ def load_split_manifest_metadata(
     if missing:
         raise ValueError(f"Split-manifest metadata is incomplete: {missing}")
     if (
-        metadata["manifest_schema_version"] != SPLIT_MANIFEST_VERSION
-        or metadata["artifact_kind"] != "set_c_split_assignments"
+        metadata["manifest_schema_version"] != DEVELOPMENT_SPLIT_MANIFEST_VERSION
+        or metadata["artifact_kind"] != "set_c_development_split_assignments"
         or metadata["set_id"] != "SetC"
         or metadata["feature_schema_version"] != SET_C_SCHEMA_VERSION
         or metadata["target_version"] != TARGET_VERSION
-        or tuple(metadata["split_roles"]) != SPLIT_ROLES
+        or tuple(metadata["split_roles"]) != DEVELOPMENT_SPLIT_ROLES
     ):
         raise ValueError("Split-manifest metadata violates the Set C contract")
     if metadata["assignment_sha256"] != _file_sha256(split_manifest_path):
@@ -558,7 +595,6 @@ def build_summary(
     class_weight_candidates: tuple[str, ...],
     best_params: dict,
     best_score: float,
-    metrics: dict,
     model: object,
 ) -> dict:
     return {
@@ -591,7 +627,8 @@ def build_summary(
         "target_name": TARGET_NAME,
         "target_version": TARGET_VERSION,
         "positive_label": POSITIVE_LABEL,
-        "metadata_names": list(PROVENANCE_METADATA_NAMES),
+        "metadata_names": list(AUTHORITATIVE_OBSERVATION_METADATA_NAMES),
+        "development_role_column": "split_role",
         "split_membership_sha256": _split_membership_hash(data),
         "split_counts": data["split_role"].value_counts().sort_index().to_dict(),
         "class_weight_candidates": list(class_weight_candidates),
@@ -602,7 +639,7 @@ def build_summary(
         "model_classes": [int(value) for value in getattr(model, "classes_", ())],
         "classification_threshold": None,
         "ca_decision_policy": "stochastic_calibrated_probability",
-        "final_test_probability_metrics": metrics,
+        "final_test_status": "not_loaded_not_evaluated",
     }
 
 
@@ -690,7 +727,6 @@ def main() -> None:
     x_train, y_train = partitions["train"]
     x_validation, y_validation = partitions["validation"]
     x_calibration, y_calibration = partitions["calibration"]
-    x_test, y_test = partitions["test"]
 
     output_dir = code_dir / "models"
     final_dir = output_dir / version
@@ -722,9 +758,6 @@ def main() -> None:
         y_calibration,
         str(ml_cfg["calibration_method"]),
     )
-    probabilities = predict_positive_probability(model, x_test)
-    metrics = evaluate_estimator_probabilities(y_test.to_numpy(), probabilities)
-
     output_dir.mkdir(parents=True, exist_ok=True)
     staging_dir = Path(tempfile.mkdtemp(prefix=f".{version}.staging-", dir=output_dir))
     try:
@@ -755,7 +788,6 @@ def main() -> None:
             class_weight_candidates=class_weight_candidates,
             best_params=study.best_params,
             best_score=study.best_value,
-            metrics=metrics,
             model=model,
         )
         summary.update(

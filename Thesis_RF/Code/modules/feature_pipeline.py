@@ -17,6 +17,7 @@ POSITIVE_LABEL = 1
 OBSERVATION_MANIFEST_VERSION = "set_c_observation_manifest.v1"
 COMBINED_MANIFEST_VERSION = "set_c_combined_manifest.v1"
 SPLIT_MANIFEST_VERSION = "set_c_split_manifest.v1"
+DEVELOPMENT_SPLIT_MANIFEST_VERSION = "set_c_development_split_manifest.v1"
 CALIBRATION_SELECTION_VERSION = "set_c_calibration_selection.v1"
 MODEL_MANIFEST_VERSION = "set_c_model_manifest.v1"
 
@@ -65,6 +66,41 @@ SPLIT_ASSIGNMENT_KEY_NAMES = (
 PROVENANCE_METADATA_NAMES = OBSERVATION_METADATA_NAMES + ("split_role",)
 
 SPLIT_ROLES = ("train", "validation", "calibration", "test")
+DEVELOPMENT_SPLIT_ROLES = ("train", "validation", "calibration")
+FINAL_TEST_ROLE = "final_test"
+
+AUTHORITATIVE_OBSERVATION_METADATA_NAMES = (
+	"set_id",
+	"experiment_id",
+	"event_id",
+	"scenario_family_id",
+	"scenario_id",
+	"run_id",
+	"seed",
+	"timestep_t",
+	"timestep_t1",
+	"cell_row",
+	"cell_col",
+	"grid_id",
+	"stable_cell_id",
+	"duplicate_group_id",
+	"spatial_block_id",
+	"ignition_set_sha256",
+	"run_identity_sha256",
+	"provenance_sha256",
+)
+
+AUTHORITATIVE_CSV_COLUMNS = (
+	*AUTHORITATIVE_OBSERVATION_METADATA_NAMES,
+	"feature_schema_version",
+	"target_version",
+	*CANONICAL_FEATURE_NAMES,
+	TARGET_NAME,
+)
+
+AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES = tuple(
+	name for name in AUTHORITATIVE_OBSERVATION_METADATA_NAMES if name != "set_id"
+)
 
 FEATURE_DTYPES = tuple("float32" for _ in CANONICAL_FEATURE_NAMES)
 FEATURE_DEFINITIONS = {
