@@ -111,10 +111,10 @@ phase8_set_c_pilot:
 # approval remain separately gated; the checked-in configuration stays disabled.
 phase9_set_c_site_inventory:
   enabled: false
-  inventory_id: "phase9_set_c_site_inventory_v1"
-  aggregate_schema_version: "phase9_set_c_site_inventory_aggregate.v1"
+  inventory_id: "phase9_set_c_site_inventory_v2"
+  aggregate_schema_version: "phase9_set_c_site_inventory_aggregate.v2"
   authorization_reference: "Phase 9 Task 9.2 source and synthetic-test approval only"
-  aggregate_destination: "output/phase9/phase9_set_c_site_inventory_v1.aggregate.json"
+  aggregate_destination: "output/phase9/phase9_set_c_site_inventory_v2.aggregate.json"
   grid_shape: [5489, 6896]
   grid_crs: "EPSG:32651"
   grid_resolution_m: 3

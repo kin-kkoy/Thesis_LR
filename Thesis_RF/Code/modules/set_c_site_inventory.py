@@ -25,11 +25,11 @@ from .set_c_pilot import (
 from .transition_observer import canonical_metadata_hash
 
 
-INVENTORY_ID = "phase9_set_c_site_inventory_v1"
-AGGREGATE_SCHEMA_VERSION = "phase9_set_c_site_inventory_aggregate.v1"
+INVENTORY_ID = "phase9_set_c_site_inventory_v2"
+AGGREGATE_SCHEMA_VERSION = "phase9_set_c_site_inventory_aggregate.v2"
 AUTHORIZATION_REFERENCE = "Phase 9 Task 9.2 source and synthetic-test approval only"
 APPROVED_RELATIVE_DESTINATION = Path(
-    "output/phase9/phase9_set_c_site_inventory_v1.aggregate.json"
+    "output/phase9/phase9_set_c_site_inventory_v2.aggregate.json"
 )
 EXPECTED_GRID_SHAPE = (5489, 6896)
 EXPECTED_GRID_CRS = "EPSG:32651"
@@ -340,15 +340,35 @@ def _select_candidates(
         ),
         key=lambda ordinal: (-int(sizes[ordinal]), ordinal),
     )
+    material_compositions: dict[int, dict[str, int]] = {}
+    assigned_classes: dict[int, int | None] = {}
+    for ordinal in ordered:
+        rows, cols = _component_cells(labels, slices, ordinal)
+        values, counts = np.unique(materials[rows, cols], return_counts=True)
+        composition = {
+            str(int(value)): int(count)
+            for value, count in zip(values, counts, strict=True)
+        }
+        material_compositions[ordinal] = composition
+        assigned_classes[ordinal] = next(
+            (
+                material_class
+                for material_class in MATERIAL_CLASSES
+                if composition.get(str(material_class), 0) > 0
+            ),
+            None,
+        )
     candidates: list[dict[str, object]] = []
     for material_class in MATERIAL_CLASSES:
         selected = 0
         for ordinal in ordered:
+            if assigned_classes[ordinal] != material_class:
+                continue
+            if selected == TOTAL_PER_MATERIAL:
+                continue
             rows, cols = _component_cells(labels, slices, ordinal)
             blocks, block_hash = _block_footprint(rows, cols)
-            if blocks & occupied_blocks or not np.any(
-                materials[rows, cols] == material_class
-            ):
+            if blocks & occupied_blocks:
                 continue
             ignition_row, ignition_col = _choose_ignition(
                 domain, materials, rows, cols, material_class
@@ -369,6 +389,8 @@ def _select_candidates(
                         "primary" if selected <= PRIMARY_PER_MATERIAL else "reserve"
                     ),
                     "material_class": material_class,
+                    "assigned_class": material_class,
+                    "material_composition": material_compositions[ordinal],
                     "rank": selected,
                     "component_ordinal": ordinal,
                     "component_size": int(sizes[ordinal]),
@@ -385,8 +407,6 @@ def _select_candidates(
                 }
             )
             occupied_blocks.update(blocks)
-            if selected == TOTAL_PER_MATERIAL:
-                break
         if selected != TOTAL_PER_MATERIAL:
             raise SiteInventoryContractError(
                 f"Material class {material_class} has only {selected} valid candidates"
@@ -569,6 +589,7 @@ def run_site_inventory(
             ),
             "primary_candidates_per_material": PRIMARY_PER_MATERIAL,
             "reserve_candidates_per_material": RESERVE_PER_MATERIAL,
+            "material_assignment_order": list(MATERIAL_CLASSES),
         },
         "component_count": component_count,
         "existing_site_count": len(checked_existing),

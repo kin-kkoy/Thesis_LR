@@ -306,3 +306,15 @@
 - **Evidence:** Owner approval dated 2026-09-27; D-015–D-017; `modules/set_c_site_inventory.py`; mixed-material synthetic contract; Phase 9 Task 9.2 RF Validator warning.
 - **Consequences and follow-up:** The mixed-material policy prerequisite is closed. Establish one reviewed revision and pass the full synthetic suite before seeking separate authorization for one inventory execution.
 - **Supersedes / superseded by:** Resolves the mixed-material policy gate left open by D-015 and D-016 without changing any execution or artifact boundary.
+
+## D-019 — Record Gate 3 site-inventory execution and validation block
+
+- **Date:** 2026-09-27
+- **Status:** BLOCKED
+- **Scope:** One authorized Phase 9 Set C aggregate-only site-inventory execution
+- **Owner/approver:** Thesis owner, by explicit one-run production authorization
+- **Decision:** Execute the approved inventory once from the clean reviewed revision `d7e455de15a953f826e101ab77f810a1f156b86b`; retain only its aggregate report; and do not approve the candidate/family manifest because independent validation found 21 candidates whose connected components contain a lower eligible material class than the reported assignment. This violates D-018's deterministic class-1-to-5 ownership rule.
+- **Evidence:** Preflight passed with 7,711,215,616 available bytes of memory, 91,008,909,312 free bytes of disk, matching approved raster hashes, clean source provenance, absent destination, and preserved `Thesis-try.qgz`. Aggregate report `Thesis_RF/Code/output/phase9/phase9_set_c_site_inventory_v1.aggregate.json`; payload SHA-256 `56521134204b04fb464a12529e6d8f91eec62aec1e689f610731f5bd7d57e53a`; whole-file SHA-256 `804fc0626be7577735b78e5c71802cd0f4a8bbe0d373842e31ada37f99be9859`; 40 candidates (8 per material), 6 existing sites, 105 unique reserved blocks, zero block overlaps, 23,901 components, sole output, and no row-level payload. Independent recomputation from the four approved rasters identified the 21 ownership violations.
+- **Authorization boundary:** This record does not authorize regeneration, candidate reassignment, family-manifest approval, aggregate expansion, teacher execution, row publication, split assignment, model operations, final-test access, `stack_ground_truth.tif`, manuscripts, `Thesis_LR/**`, or changes to `Thesis-try.qgz`.
+- **Consequences and follow-up:** Gate 4 is blocked. Repair the source selection rule and rerun the full synthetic suite in a new clean revision, then obtain a new explicit one-run authorization before any replacement inventory execution. The existing report is evidence only and must not be promoted or used to approve families.
+- **Supersedes / superseded by:** Adds execution evidence to D-018 without changing the approved mixed-material policy or any later-phase authorization boundary.

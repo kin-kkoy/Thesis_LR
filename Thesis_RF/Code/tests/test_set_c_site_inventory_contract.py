@@ -302,6 +302,43 @@ def test_mixed_material_component_is_reserved_by_first_material_class(tmp_path):
     ]
     assert len(selected) == 1
     assert selected[0]["material_class"] == 1
+    assert selected[0]["assigned_class"] == 1
+    assert selected[0]["material_composition"] == {"1": 128, "2": 128}
+
+
+def test_full_class_quota_does_not_reassign_later_mixed_component(tmp_path):
+    environment, sites = _synthetic_case()
+    for key in (
+        "slope_risk",
+        "proximity_risk",
+        "building_presence",
+        "material_class",
+        "burnable_mask",
+        "nodata_mask",
+    ):
+        environment[key] = np.pad(environment[key], ((0, 128), (0, 0)))
+    environment["grid_shape"] = environment["building_presence"].shape
+    row, col = 6 * 128 + 2, 2
+    environment["building_presence"][row : row + 16, col : col + 16] = 1
+    environment["material_class"][row : row + 8, col : col + 16] = 2
+    environment["material_class"][row + 8 : row + 16, col : col + 16] = 3
+    labels, _count = inventory.label_authoritative_components(
+        environment["building_presence"].astype(bool)
+    )
+    mixed_ordinal = int(labels[row, col])
+    destination = tmp_path / "inventory.aggregate.json"
+    inventory.run_site_inventory(
+        _active_config(),
+        environment_loader=lambda: environment,
+        destination=destination,
+        source_context=_source_context(),
+        resource_probe=_resource_probe,
+        synthetic_test=True,
+        existing_sites=sites,
+    )
+    candidates = json.loads(destination.read_text(encoding="utf-8"))["candidates"]
+    assert sum(item["assigned_class"] == 2 for item in candidates) == 8
+    assert all(item["component_ordinal"] != mixed_ordinal for item in candidates)
 
 
 def test_component_size_filter_fails_without_report_when_one_class_is_short(tmp_path):
