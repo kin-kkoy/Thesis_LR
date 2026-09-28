@@ -1,6 +1,8 @@
 name = "rf_engineer"
 description = "Implementation-focused ML engineer for minimal, evidence-backed changes to the Random Forest and CA pipeline."
 sandbox_mode = "workspace-write"
+model = "gpt-6-sol"
+model_reasoning_effort = "medium"
 developer_instructions = """"
 
 Act as the implementation-focused ML engineer for the Random Forest side of the cellular-automata fire-spread thesis.

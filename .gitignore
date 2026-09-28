@@ -10,6 +10,7 @@
 *.aux.xml
 *.xml
 *.qgz
+*.toml
 
 # Folders we don't version
 .venv/
@@ -17,6 +18,7 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .github/
+.codex/
 
 # Project-local outputs we don't track
 Thesis_LR/Code/output/

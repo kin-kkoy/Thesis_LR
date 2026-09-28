@@ -343,3 +343,52 @@
 - **Authorization boundary:** This decision authorizes source implementation and synthetic temporary-path tests only. It does not authorize Gate 5 production expansion, teacher execution, row publication, dataset or split generation, role assignments, training, tuning, class-weight or calibration selection, threshold selection, final-test access, model/raster/checkpoint/manuscript publication, `stack_ground_truth.tif` access, `Thesis_LR/**` writes, or modification of `Thesis-try.qgz`.
 - **Consequences and follow-up:** Commit the reviewed RF source, configuration, tests, and memory update as one clean revision. Gate 6 may then seek a separate one-run authorization bound to the exact revision, destination, manifest, and resource contract. No production command is authorized by D-021.
 - **Supersedes / superseded by:** Supersedes D-020's pending Gate 5/source approval only; it preserves all D-015–D-018 execution, publication, split, model, and final-test gates.
+
+## D-022 — Pin non-Astra models for the four project agents
+
+- **Date:** 2026-09-28
+- **Status:** APPROVED
+- **Scope:** Project-scoped Codex agent model and reasoning defaults
+- **Owner/approver:** Thesis owner, through direct edits to all four `.codex/agents/*.toml` profiles
+- **Decision:** Pin `tech_lead` and `rf_validator` to `gpt-6-sol` with `model_reasoning_effort = "high"`. Pin `thesis_researcher` and `rf_engineer` to `gpt-6-sol` with `model_reasoning_effort = "medium"`. Do not assign GPT-6 Astra to these project agents.
+- **Rationale:** Architecture and skeptical validation require deeper assumption checking and edge-case review. Bounded research and implementation need balanced judgment and completeness without Astra's higher token cost. Explicit profile settings prevent accidental inheritance from a more expensive parent configuration.
+- **Alternatives considered:** Let every profile inherit the parent model; use GPT-6 Astra; use GPT-6 Luna for the lighter roles; or set all four roles to high reasoning. These were rejected in favor of consistent Sol capability with role-specific effort.
+- **Evidence:** `.codex/agents/tech-lead.toml`; `.codex/agents/rf-validator.toml`; `.codex/agents/thesis-researcher.toml`; `.codex/agents/rf-engineer.toml`; successful TOML parse; official Codex subagent configuration guidance reviewed on 2026-09-28.
+- **Consequences and follow-up:** Recheck availability and cost behavior if model access changes. Separately repair the remaining contradiction in `tech-lead.toml`: the parent owns delegation and no human prompt copying, but the output section still requests “Prompt to Copy,” direct researcher invocation, and Markdown updating. D-022 approves model settings only and does not approve those conflicting instructions or any manuscript write.
+- **Supersedes / superseded by:** None.
+
+## D-023 — Record failed Gate 6 aggregate-adequacy execution attempt
+
+- **Date:** 2026-09-28
+- **Status:** FAILED BEFORE TEACHER EXECUTION; NO ARTIFACT
+- **Scope:** One explicitly authorized Phase 9 Gate 6 aggregate-only execution attempt
+- **Owner/approver:** Thesis owner, by explicit instruction to execute and validate Gate 6 from the committed Gate 5 source
+- **Decision:** Treat the one-shot authorization as consumed. The exact production command was invoked once from clean revision `8b45b10de9f64cd7a9927733155e828690abeb15` after the manifest, destination, memory, and disk preflight passed. It exited with code 1 after approximately 2.78 seconds while obtaining Git provenance in `run_set_c_population_adequacy.py::_source_context`; the per-command `safe.directory` value used a Windows backslash path and Git rejected the worktree as dubiously owned. The model-free teacher, 884-run matrix, aggregate accumulator, and D-015 adequacy analysis did not start.
+- **Evidence:** Launch memory `7,095,463,936` bytes; approximately 95 GB free disk; destination absent before and after; approved v2 inventory hashes matched; worktree remained clean; `output/phase9` retained only inventory v1/v2; no `phase9_set_c_population_adequacy_expansion_v1.aggregate.json` or `set-c-adequacy-*` temporary store existed. A read-only RF Validator independently reproduced failure with the Windows-style per-command override and success with `repository_root.as_posix()`.
+- **Authorization boundary:** This record does not authorize a retry, source repair, production teacher execution, dataset generation/publication, split assignment, model operations, final-test access, ground-truth access, manuscripts, `Thesis_LR/**`, or QGIS modification.
+- **Consequences and follow-up:** Make the minimal source repair by using `repository_root.as_posix()` for both runner Git overrides, add a focused regression test, rerun synthetic validation, commit a new clean revision, obtain a fresh read-only RF Validator PASS, and then seek a new explicit one-run Gate 6 authorization. D-015 numerical adequacy remains `NEEDS EVIDENCE`; Gate 7 and Phase 11 are blocked.
+- **Supersedes / superseded by:** Adds failed execution evidence to D-021 without changing the approved Gate 5 architecture or relaxing any later gate.
+
+## D-024 — Record user-stopped Gate 6 retry at 45 minutes
+
+- **Date:** 2026-09-28
+- **Status:** STOPPED; PARTIAL TEMPORARY EVIDENCE ONLY
+- **Scope:** Freshly authorized Gate 6 aggregate-only retry from repaired revision `560ea9b70651432e20d3b8e4017da002534c06e1`
+- **Owner/approver:** Thesis owner authorized the retry after the D-023 repair, then explicitly required termination if runtime exceeded 45 minutes
+- **Decision:** Treat the retry authorization as consumed. Preflight passed and the command started once from the exact clean revision. At 2,711 seconds the same CPU-bound worker remained active within the approved memory ceiling, so it was terminated once under the owner's 45-minute cutoff. The command exited 1 without publishing the aggregate JSON.
+- **Evidence:** Launch memory `7,548,125,184` bytes; free disk `94,198,104,064` bytes; process RSS remained below the 6-GiB ceiling. Independent read-only validation found no final report, a clean execution worktree, and one structurally valid 69,632-byte temporary SQLite store at `C:\Users\gibgib\AppData\Local\Temp\set-c-adequacy-a17r5of9.sqlite3`. The store contains 1,834 aggregate row counts for both identity kinds and family masks involving the first six ordered existing families. Sequential ordering and per-run commits imply at least 171 completed runs, but the exact count is not stored and must not be claimed.
+- **Interpretation:** The run showed substantial progress and no evidence of a hang. At the observed early pace, 884 sequential runs plausibly require several hours; D-015 permits up to 21,600 seconds. Later-family runtime may differ, so linear completion estimates are diagnostic only.
+- **Authorization boundary:** The partial SQLite store is diagnostic, non-authoritative, and must not be promoted. This decision does not authorize cleanup, retry, dataset generation/publication, Gate 7, split assignment, model operations, final-test access, ground-truth access, manuscripts, `Thesis_LR/**`, or QGIS modification.
+- **Consequences and follow-up:** Decide whether a future Gate 6 attempt may use the full D-015 six-hour limit. Before retry, explicitly authorize removal of the residual temporary store, recheck the clean revision and resources, and grant a fresh one-run authorization. D-015 adequacy, Gate 7, and Phase 11 remain blocked.
+- **Supersedes / superseded by:** Adds retry/cutoff evidence to D-023 without changing D-015 or D-021.
+
+## D-025 — Authorize one manual full-window Gate 6 execution
+
+- **Date:** 2026-09-28
+- **Status:** AUTHORIZED; AWAITING MANUAL EXECUTION
+- **Scope:** One manual Gate 6 aggregate-only execution from clean revision `560ea9b70651432e20d3b8e4017da002534c06e1`
+- **Owner/approver:** Thesis owner, by explicit manual-execution authorization
+- **Decision:** Permit exactly one manual invocation of the approved Gate 6 command with the complete D-015 runtime ceiling of 21,600 seconds. The agent must not launch the command. The sole permitted persistent output remains `Thesis_RF/Code/output/phase9/phase9_set_c_population_adequacy_expansion_v1.aggregate.json`; all dataset, model, raster, ground-truth, split, manuscript, `Thesis_LR/**`, and QGIS operations remain prohibited.
+- **Cleanup evidence:** The owner authorized deletion of `C:\Users\gibgib\AppData\Local\Temp\set-c-adequacy-a17r5of9.sqlite3`. The exact 69,632-byte residual was verified inside the expected temp directory, the prior worker was absent, and the file was deleted. The aggregate destination remains absent and `Thesis-try.qgz` remains present.
+- **Consequences and follow-up:** After the owner completes the manual command, independently validate the immutable aggregate report, hashes, sole-output condition, all 884 run records, and every D-015 adequacy gate before considering Gate 7 or Phase 11.
+- **Supersedes / superseded by:** Supersedes only D-024's lack of retry/cleanup authorization; D-015, D-021, and all later publication/model gates remain unchanged.
