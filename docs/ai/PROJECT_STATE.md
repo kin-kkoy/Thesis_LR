@@ -7,21 +7,21 @@
 - **Last updated:** 2026-09-28.
 - **Last reviewed base revision:** `60740644a305182079eced47d9684a001d31b2a7`.
 - **Worktree note:** The accepted v2 pilot recorded `source_dirty: false`. Afterward, the preserved visualization project `Thesis-try.qgz` was restored as an untracked item. This authorized memory update preserves the user's earlier uncommitted edits to this file.
-- **Current reviewed RF work:** Gate 4 v2 executed once from clean revision `60740644a305182079eced47d9684a001d31b2a7` and passed independent validation: 20 primaries, 20 reserves, exact first-present ownership, matching material compositions, 90 disjoint reserved blocks, and no row payload. The failed v1 report remains preserved. Manifest and Gate 5 approval remain withheld.
+- **Current reviewed RF work:** Gate 4 v2 executed once from clean revision `60740644a305182079eced47d9684a001d31b2a7` and passed independent validation: 20 primaries, 20 reserves, exact first-present ownership, matching material compositions, 90 disjoint reserved blocks, and no row payload. The failed v1 report remains preserved. The exact v2 manifest and Gate 5 source-only implementation are now approved; production expansion remains separately gated.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Establish one reviewed Phase 9/10 revision and pass the full synthetic suite; then seek separate authorization for one inventory execution.
+- **Active objective:** Preserve the clean reviewed Phase 9/10 revision and seek separate Gate 6 authorization for one aggregate-only expansion execution.
 - **Methodology:** D-009–D-015 define next-timestep eligible-cell ignition, canonical Set C predictors, `all_eligible`, model-free teacher labels, 128×128 conservative grouping, controlled population expansion, duplicate containment, and role-level adequacy gates.
 - **Accepted source:** Phase 7 supplies the fail-closed model-free teacher and bounded 11-feature collector. Phase 8 v2 revision `df65217b91c1624bbfcff82e95cca15a45a6df2c` supplies the disabled aggregate-only pilot extension; 110 focused synthetic tests passed before execution.
 - **Accepted diagnostic artifact:** `Thesis_RF/Code/output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json`; canonical payload SHA-256 `9a4f48ea6b2b7f882985d63ff3cad7ef3c785736e223860f82637fdd9e45cbf3`; whole-file SHA-256 `b62a7bf542d0ab74a3ac71399e85048b3169d0a04b33c95625aec3ee39339d17`.
 - **Diagnostic result:** All 32 runs were inactive, complete, authoritative, and count-matched. They produced 384 aggregate-observed eligible rows: 26 positive and 358 negative. Every diagnostic block size yielded five authoritative leakage components, all five independently containing both labels; four-role allocation is mathematically feasible, but no roles or final block dimensions were assigned.
-- **Current authorization:** D-020 records the validated one-run v2 evidence. Candidate-manifest approval and Gate 5 implementation/execution were explicitly withheld; every production/model/final-test operation remains separately gated.
-- **Hard boundary:** Do not approve candidate families, implement or run the aggregate expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
-- **Next gate:** Obtain explicit human approval binding the exact 20 primaries and 20 reserves to the v2 report and its validated hashes. Only then seek Gate 5 source-and-synthetic-test authorization.
+- **Current authorization:** D-020 records the validated one-run v2 evidence and D-021 records approval of the exact manifest plus Gate 5 source-only implementation. Every production/model/final-test operation remains separately gated.
+- **Hard boundary:** Do not run the aggregate expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
+- **Next gate:** Commit the reviewed source and seek explicit Gate 6 one-run execution authorization bound to the clean revision, destination, manifest, and resource contract.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state
@@ -60,8 +60,8 @@
 4. `PASS` — The disabled aggregate site-inventory source and synthetic contracts passed read-only RF validation: four primary and four reserve candidates for each material class 1–5.
 5. `NEEDS EVIDENCE` — Discover, validate, and separately approve exact new-family coordinates, ignition hashes, material contexts, component identities, and block footprints.
 6. `PASS` — D-018 approves deterministic class-1-to-5 ownership and global footprint reservation for mixed-material components.
-7. `AWAITING MANIFEST APPROVAL` — The immutable v2 report passed independent validation, but its exact 20 primaries and 20 reserves and all Gate 5 work remain unapproved.
-8. `BLOCKED` — Source architecture exists, but row publication and split roles still require D-015/D-016 evidence, separate execution approval, exact package identity, and all later allocation gates.
+7. `PASS` — The immutable v2 report, exact 20 primaries and 20 reserves, and Gate 5 source-only harness are approved and independently validated; no production expansion has run.
+8. `BLOCKED` — Gate 6 production expansion requires a separate one-run authorization and clean committed revision; row publication and split roles still require D-015/D-016 evidence, exact package identity, and all later allocation gates.
 9. `NEEDS EVIDENCE` — RF search space, tuning budget/objective, class weight, calibration, reporting threshold, protected final test, dataset/split identities, and final evaluation remain unset.
 10. `BLOCKED` — Training, tuning, calibration, final-test access, model/raster publication, manuscripts, and `Thesis_LR/**` writes remain unauthorized.
 
@@ -95,7 +95,8 @@
 - Phase 9 Task 9.2: final read-only RF Validator `PASS` with one policy warning after current-source inspection and an 80-test focused run. The complete RF synthetic suite passed 244 tests; `git diff --check` passed; `output/phase9` remained absent. D-018 later approved the mixed-material class-order policy.
 - Phase 9 Task 9.3: read-only architecture audit passed the teacher/collector foundation but failed production publication, leakage-graph, split-allocation, and protected-test readiness. D-016 consequently authorizes only the bounded aggregate diagnostic; the publisher architecture remains proposed with numerical final-allocation targets and protected storage/ACL separately gated.
 - Phase 10 source-only Task 9.3 implementation: 61 focused synthetic temporary-path tests passed with bytecode/cache disabled. The final read-only RF Validator passed after feature-domain, per-run provenance, null-identity, dataset-hash, and destination-pattern repairs. No production artifact or operation was authorized.
-- Gate 4 v2: the repair passed the complete 255-test RF synthetic suite; one authorized execution from revision `6074064` produced the immutable v2 report (payload `25a0a27a...158cc`, file `26fb06f3...1de75`), and final read-only RF validation passed ownership, composition, provenance, disjointness, sole-output, and aggregate-only gates. Manifest and Gate 5 approval remain withheld.
+- Gate 4 v2: the repair passed the complete 255-test RF synthetic suite; one authorized execution from revision `6074064` produced the immutable v2 report (payload `25a0a27a...158cc`, file `26fb06f3...1de75`), and final read-only RF validation passed ownership, composition, provenance, disjointness, sole-output, and aggregate-only gates. The exact manifest and Gate 5 source-only implementation are approved by D-021.
+- Gate 5 source-only implementation: the disabled 884-run aggregate harness is bound to the approved v2 manifest, enforces temporary-path and production-provenance boundaries, and retains only aggregate identity/counter state. Focused contract tests passed 17/17; the complete RF synthetic suite passed 272/272; final read-only RF Validator PASS. No Gate 5 aggregate, production run, row dataset, split, model, or final-test artifact exists.
 
 ## Update procedure
 

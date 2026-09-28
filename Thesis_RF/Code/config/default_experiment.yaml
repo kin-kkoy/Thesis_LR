@@ -136,6 +136,41 @@ phase9_set_c_site_inventory:
   launch_memory_floor_bytes: 6442450944
   disk_floor_bytes: 2147483648
 
+# Phase 9 Gate 5 source-only aggregate adequacy expansion. Execution remains
+# separately gated; checked-in defaults must stay disabled.
+phase9_set_c_population_adequacy:
+  enabled: false
+  expansion_id: "phase9_set_c_population_adequacy_expansion_v1"
+  aggregate_schema_version: "phase9_set_c_population_adequacy_aggregate.v1"
+  authorization_reference: "Phase 9 Gate 5 source and synthetic-test approval only"
+  aggregate_destination: "output/phase9/phase9_set_c_population_adequacy_expansion_v1.aggregate.json"
+  inventory_path: "output/phase9/phase9_set_c_site_inventory_v2.aggregate.json"
+  inventory_payload_sha256: "25a0a27ac81db42a38eaf339b101fbc6c41c44cd60c1525cc5686112332158cc"
+  inventory_file_sha256: "26fb06f324b7197a6b6cb5242d7b09012400451e5467d3bdb6fdb30e5dc1de75"
+  ordered_candidate_sha256: "7336d5f124ce8164275855f10f54eeae4f13c3af81f20ce81f2014a3c56012de"
+  ordered_primary_sha256: "d97e3cb7598dbc9c4b4cc53398c0d0daad0a5236f2d59e357db3cd8cf86a7d33"
+  ordered_reserve_sha256: "7459ba860d583c6790d033bd3eaf48c8fce7b54ad200a0d6e1c8560581fa79e0"
+  existing_family_count: 6
+  primary_family_count: 20
+  wind_condition_count: 17
+  replicates_per_condition: 2
+  run_count: 884
+  safety_limit_timesteps: 300
+  block_size: [128, 128]
+  block_origin: [0, 0]
+  per_run_row_ceiling: 1800000
+  total_row_ceiling: 1418667000
+  batch_rows: 16384
+  max_buffer_rows: 932864
+  max_buffer_bytes: 176311296
+  retry_limit: 58
+  launch_memory_floor_bytes: 6442450944
+  runtime_memory_floor_bytes: 2147483648
+  rss_ceiling_bytes: 6442450944
+  free_disk_floor_bytes: 2147483648
+  run_runtime_limit_seconds: 900
+  expansion_runtime_limit_seconds: 21600
+
 wind:
   speed_kmh: 10.0              # placeholder static global
   direction_deg: 315.0         # meteorological from-bearing, clockwise from projected grid north
