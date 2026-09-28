@@ -60,7 +60,7 @@ def _source_context(
     code_root = Path(__file__).resolve().parent
     repository_root = code_root.parents[1]
     revision = subprocess.run(
-        ["git", "-c", f"safe.directory={repository_root}", "rev-parse", "HEAD"],
+        ["git", "-c", f"safe.directory={repository_root.as_posix()}", "rev-parse", "HEAD"],
         cwd=repository_root,
         check=True,
         capture_output=True,
@@ -70,7 +70,7 @@ def _source_context(
         [
             "git",
             "-c",
-            f"safe.directory={repository_root}",
+            f"safe.directory={repository_root.as_posix()}",
             "status",
             "--porcelain",
             "--",

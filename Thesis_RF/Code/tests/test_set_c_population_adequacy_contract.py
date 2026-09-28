@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -345,6 +346,46 @@ def test_explicit_entry_point_preflights_before_environment_load(monkeypatch):
 
     with pytest.raises(StopPreflight):
         main(["--execute-approved-expansion", "--config", str(CONFIG_PATH)])
+
+
+def test_source_context_uses_slash_normalized_git_safe_directory(monkeypatch):
+    repository_root = Path(runner.__file__).resolve().parents[2]
+    expected_safe_directory = f"safe.directory={repository_root.as_posix()}"
+    calls = []
+
+    def git_with_dubious_ownership(command, **kwargs):
+        calls.append(command)
+        assert command[:3] == ["git", "-c", expected_safe_directory]
+        assert kwargs["cwd"] == repository_root
+        return SimpleNamespace(stdout="a" * 40 if "rev-parse" in command else "")
+
+    monkeypatch.setattr(runner.subprocess, "run", git_with_dubious_ownership)
+    monkeypatch.setattr(
+        runner,
+        "_file_sha256",
+        lambda path: runner.EXPECTED_RASTER_SHA256.get(path.name, "a" * 64),
+    )
+    monkeypatch.setattr(runner, "mask_sha256", lambda _: "b" * 64)
+    monkeypatch.setattr(runner.platform, "platform", lambda: "synthetic-platform")
+    environment = {
+        "burnable_mask": np.ones((1, 1), dtype=bool),
+        "nodata_mask": np.zeros((1, 1), dtype=bool),
+        "building_presence": np.ones((1, 1), dtype=np.int8),
+    }
+
+    context = runner._source_context(
+        {"environment": {"raster_dir": "synthetic-unused"}},
+        CONFIG_PATH,
+        environment,
+    )
+
+    assert len(calls) == 2
+    assert calls[0][3:] == ["rev-parse", "HEAD"]
+    assert calls[1][3:] == [
+        "status", "--porcelain", "--", ".", ":(exclude)Thesis-try.qgz"
+    ]
+    assert context["source_revision"] == "a" * 40
+    assert context["source_dirty"] is False
 
 
 def test_production_rejects_injected_resource_probe():
