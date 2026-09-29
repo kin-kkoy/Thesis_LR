@@ -29,15 +29,30 @@ CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "default_experime
 
 
 class _Batch:
-    def __init__(self, family_order: int, *, connect_first_two: bool = False) -> None:
+    def __init__(
+        self,
+        family_order: int,
+        *,
+        connect_first_two: bool = False,
+        link_cause: str | None = None,
+    ) -> None:
         self.labels = np.array([0] * 5 + [1] * 5, dtype=np.int8)
-        identity_order = 1 if connect_first_two and family_order in (1, 2) else family_order
+        if link_cause == "bridge":
+            duplicate_order = 1 if family_order == 2 else family_order
+            block_order = 2 if family_order == 3 else family_order
+        else:
+            duplicate_order = 1 if family_order in (1, 2) and (
+                connect_first_two or link_cause in ("duplicate", "joint")
+            ) else family_order
+            block_order = 1 if family_order in (1, 2) and (
+                connect_first_two or link_cause in ("block", "joint")
+            ) else family_order
         self.duplicate_group_ids = np.array(
-            [f"family-{identity_order:02d}-cell-{index:02d}" for index in range(10)],
+            [f"family-{duplicate_order:02d}-cell-{index:02d}" for index in range(10)],
             dtype="S64",
         )
         self.spatial_block_ids = np.array(
-            [f"family-{identity_order:02d}-block"] * 10,
+            [f"family-{block_order:02d}-block"] * 10,
             dtype="S64",
         )
 
@@ -123,6 +138,7 @@ def _executor(
     fail_order: int | None = None,
     unexpected: bool = False,
     connect_first_two: bool = False,
+    link_cause: str | None = None,
     result_updates: dict | None = None,
 ):
     active = 0
@@ -135,7 +151,13 @@ def _executor(
         try:
             if spec.order == fail_order:
                 raise RuntimeError("synthetic run failure")
-            consume(_Batch(spec.family.order, connect_first_two=connect_first_two))
+            consume(
+                _Batch(
+                    spec.family.order,
+                    connect_first_two=connect_first_two,
+                    link_cause=link_cause,
+                )
+            )
             result = PopulationRunResult(
                 run_id=spec.run_id,
                 scenario_id=spec.scenario_id,
@@ -211,6 +233,10 @@ def test_success_is_sequential_aggregate_only_atomic_and_non_overwriting(tmp_pat
     assert executor.maximum_active() == 1
     assert list(tmp_path.iterdir()) == [destination]
     report = json.loads(destination.read_text(encoding="utf-8"))
+    assert report["aggregate_schema_version"] == "phase9_set_c_population_adequacy_aggregate.v2"
+    assert "production execution requires separate one-run authorization" in report[
+        "authorization_reference"
+    ]
     assert report["aggregate"]["totals"]["run_count"] == 884
     assert report["aggregate"]["totals"]["rows"] == 8840
     assert report["aggregate"]["leakage"]["qualifying_component_count"] == 26
@@ -295,6 +321,10 @@ def test_checked_in_harness_requires_future_execution_flag():
 
     assert exc.value.code == 2
 
+    with pytest.raises(SystemExit) as legacy:
+        main(["--execute-approved-expansion"])
+    assert legacy.value.code == 2
+
 
 def test_production_executor_checks_resources_during_observation(monkeypatch, tmp_path):
     class FakeCollector:
@@ -345,7 +375,7 @@ def test_explicit_entry_point_preflights_before_environment_load(monkeypatch):
     )
 
     with pytest.raises(StopPreflight):
-        main(["--execute-approved-expansion", "--config", str(CONFIG_PATH)])
+        main(["--execute-approved-edge-diagnostic", "--config", str(CONFIG_PATH)])
 
 
 def test_source_context_uses_slash_normalized_git_safe_directory(monkeypatch):
@@ -442,7 +472,7 @@ def test_alternate_config_is_rejected_before_load_or_environment(monkeypatch, tm
     with pytest.raises(PermissionError, match="checked-in default"):
         main(
             [
-                "--execute-approved-expansion",
+                "--execute-approved-edge-diagnostic",
                 "--config",
                 str(tmp_path / "alternate.yaml"),
             ]
@@ -506,6 +536,79 @@ def test_duplicate_and_block_edges_connect_families(tmp_path):
         component["family_count"] == 2
         for component in report["aggregate"]["leakage"]["components"]
     )
+
+
+@pytest.mark.parametrize(
+    ("cause", "duplicate_count", "block_count"),
+    [("duplicate", 10, 0), ("block", 0, 1), ("joint", 10, 1)],
+)
+def test_edge_attribution_keeps_joint_adequacy_and_exposes_no_identity_values(
+    tmp_path, cause, duplicate_count, block_count
+):
+    destination = tmp_path / "diagnostic-v2.aggregate.json"
+    run_population_adequacy(
+        _active_config(),
+        destination=destination,
+        source_context=_source_context(),
+        families=_families(),
+        run_executor=_executor(link_cause=cause),
+        resource_probe=_resources,
+        synthetic_test=True,
+        aggregate_store_directory=tmp_path,
+    )
+    report = json.loads(destination.read_text(encoding="utf-8"))
+    leakage = report["aggregate"]["leakage"]
+    attribution = leakage["edge_attribution"]
+    assert attribution["family_pair_links"] == [
+        {
+            "family_ordinals": [1, 2],
+            "duplicate_identity_count": duplicate_count,
+            "spatial_block_count": block_count,
+        }
+    ]
+    assert attribution["duplicate_only"]["component_count"] == (
+        25 if duplicate_count else 26
+    )
+    assert attribution["block_only"]["component_count"] == (25 if block_count else 26)
+    assert attribution["joint"] == {"component_count": 25, "family_counts": [2] + [1] * 24}
+    assert leakage["component_count"] == leakage["qualifying_component_count"] == 25
+    assert report["adequacy"]["status"] == "pass"
+    assert b"family-01-cell" not in destination.read_bytes()
+    assert b"family-01-block" not in destination.read_bytes()
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_duplicate_and_block_edges_form_transitive_joint_bridge(tmp_path):
+    destination = tmp_path / "bridge-v2.aggregate.json"
+    run_population_adequacy(
+        _active_config(),
+        destination=destination,
+        source_context=_source_context(),
+        families=_families(),
+        run_executor=_executor(link_cause="bridge"),
+        resource_probe=_resources,
+        synthetic_test=True,
+        aggregate_store_directory=tmp_path,
+    )
+    leakage = json.loads(destination.read_text(encoding="utf-8"))["aggregate"]["leakage"]
+    attribution = leakage["edge_attribution"]
+    assert attribution["family_pair_links"] == [
+        {
+            "family_ordinals": [1, 2],
+            "duplicate_identity_count": 10,
+            "spatial_block_count": 0,
+        },
+        {
+            "family_ordinals": [2, 3],
+            "duplicate_identity_count": 0,
+            "spatial_block_count": 1,
+        },
+    ]
+    assert attribution["duplicate_only"]["family_counts"] == [2] + [1] * 24
+    assert attribution["block_only"]["family_counts"] == [2] + [1] * 24
+    assert attribution["joint"]["family_counts"] == [3] + [1] * 23
+    assert leakage["component_count"] == 24
+    assert list(tmp_path.iterdir()) == [destination]
 
 
 @pytest.mark.parametrize(

@@ -136,14 +136,14 @@ phase9_set_c_site_inventory:
   launch_memory_floor_bytes: 6442450944
   disk_floor_bytes: 2147483648
 
-# Phase 9 Gate 5 source-only aggregate adequacy expansion. Execution remains
+# Phase 9 Gate 6 source-only aggregate edge diagnostic. Execution remains
 # separately gated; checked-in defaults must stay disabled.
 phase9_set_c_population_adequacy:
   enabled: false
-  expansion_id: "phase9_set_c_population_adequacy_expansion_v1"
-  aggregate_schema_version: "phase9_set_c_population_adequacy_aggregate.v1"
-  authorization_reference: "Phase 9 Gate 5 source and synthetic-test approval only"
-  aggregate_destination: "output/phase9/phase9_set_c_population_adequacy_expansion_v1.aggregate.json"
+  expansion_id: "phase9_set_c_population_adequacy_edge_diagnostic_v2"
+  aggregate_schema_version: "phase9_set_c_population_adequacy_aggregate.v2"
+  authorization_reference: "Phase 9 Gate 6 edge diagnostic source and synthetic tests only; production execution requires separate one-run authorization"
+  aggregate_destination: "output/phase9/phase9_set_c_population_adequacy_edge_diagnostic_v2.aggregate.json"
   inventory_path: "output/phase9/phase9_set_c_site_inventory_v2.aggregate.json"
   inventory_payload_sha256: "25a0a27ac81db42a38eaf339b101fbc6c41c44cd60c1525cc5686112332158cc"
   inventory_file_sha256: "26fb06f324b7197a6b6cb5242d7b09012400451e5467d3bdb6fdb30e5dc1de75"

@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+from itertools import combinations
 import json
 import os
 from pathlib import Path
@@ -51,11 +52,11 @@ from .transition_observer import (
 from .wind_convention import WindContract
 
 
-EXPANSION_ID = "phase9_set_c_population_adequacy_expansion_v1"
-AGGREGATE_SCHEMA_VERSION = "phase9_set_c_population_adequacy_aggregate.v1"
-APPROVAL_REFERENCE = "Phase 9 Gate 5 source and synthetic-test approval only"
+EXPANSION_ID = "phase9_set_c_population_adequacy_edge_diagnostic_v2"
+AGGREGATE_SCHEMA_VERSION = "phase9_set_c_population_adequacy_aggregate.v2"
+APPROVAL_REFERENCE = "Phase 9 Gate 6 edge diagnostic source and synthetic tests only; production execution requires separate one-run authorization"
 APPROVED_RELATIVE_DESTINATION = Path(
-    "output/phase9/phase9_set_c_population_adequacy_expansion_v1.aggregate.json"
+    "output/phase9/phase9_set_c_population_adequacy_edge_diagnostic_v2.aggregate.json"
 )
 APPROVED_INVENTORY_RELATIVE_PATH = Path(
     "output/phase9/phase9_set_c_site_inventory_v2.aggregate.json"
@@ -122,7 +123,7 @@ PRODUCTION_GENERATION_COMMAND = (
     ".venv\\Scripts\\python.exe -B "
     "Thesis_RF\\Code\\run_set_c_population_adequacy.py "
     "--config Thesis_RF\\Code\\config\\default_experiment.yaml "
-    "--execute-approved-expansion"
+    "--execute-approved-edge-diagnostic"
 )
 
 ROLE_REQUIREMENTS = (
@@ -766,6 +767,51 @@ class _AggregateAccumulator:
             )
         return components
 
+    def edge_attribution(self) -> dict[str, object]:
+        """Count shared identities per family pair without exposing identity values."""
+        pair_counts: dict[tuple[int, int], list[int]] = defaultdict(lambda: [0, 0])
+        unions = [_UnionFind(), _UnionFind(), _UnionFind()]
+        family_orders = tuple(range(1, EXPECTED_FAMILY_COUNT + 1))
+        for union in unions:
+            for order in family_orders:
+                union.find(str(order))
+        for kind in (0, 1):
+            for mask in self.identities.family_masks(kind):
+                if mask.bit_count() < 2:
+                    continue
+                present = [order for order in family_orders if mask & (1 << (order - 1))]
+                for left, right in combinations(present, 2):
+                    pair_counts[left, right][kind] += 1
+                    unions[kind].union(str(left), str(right))
+                    unions[2].union(str(left), str(right))
+
+        def sizes(union: _UnionFind) -> list[int]:
+            counts: dict[str, int] = defaultdict(int)
+            for order in family_orders:
+                counts[union.find(str(order))] += 1
+            return sorted(counts.values(), reverse=True)
+
+        duplicate_sizes, block_sizes, joint_sizes = (sizes(union) for union in unions)
+        return {
+            "family_pair_links": [
+                {
+                    "family_ordinals": [left, right],
+                    "duplicate_identity_count": counts[0],
+                    "spatial_block_count": counts[1],
+                }
+                for (left, right), counts in sorted(pair_counts.items())
+            ],
+            "duplicate_only": {
+                "component_count": len(duplicate_sizes),
+                "family_counts": duplicate_sizes,
+            },
+            "block_only": {
+                "component_count": len(block_sizes),
+                "family_counts": block_sizes,
+            },
+            "joint": {"component_count": len(joint_sizes), "family_counts": joint_sizes},
+        }
+
     def close(self) -> None:
         self.identities.close()
 
@@ -1275,6 +1321,11 @@ def _run_population_adequacy_impl(
     if len(aggregate.runs) != EXPECTED_RUN_COUNT or aggregate.total_rows > TOTAL_ROW_CEILING:
         raise PopulationAdequacyError("Complete expansion count contract failed")
     components = aggregate.leakage_components()
+    edge_attribution = aggregate.edge_attribution()
+    if edge_attribution["joint"]["family_counts"] != sorted(
+        (component["family_count"] for component in components), reverse=True
+    ):
+        raise PopulationAdequacyError("Edge attribution disagrees with the joint leakage graph")
     qualifying = [component for component in components if component["qualifies"] is True]
     allocation_feasible = _unexposed_allocation_feasible(components)
     gates = {
@@ -1361,6 +1412,7 @@ def _run_population_adequacy_impl(
                 "component_count": len(components),
                 "qualifying_component_count": len(qualifying),
                 "components": components,
+                "edge_attribution": edge_attribution,
                 "unexposed_allocation_feasible": allocation_feasible,
                 "role_identities_exposed": False,
             },

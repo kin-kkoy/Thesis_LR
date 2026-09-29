@@ -1,4 +1,4 @@
-"""Explicit entry point for a future approved Gate 5 aggregate execution."""
+"""Explicit entry point for a future approved Gate 6 aggregate diagnostic."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(__file__).resolve().parent / "config" / "default_experiment.yaml",
     )
     parser.add_argument(
-        "--execute-approved-expansion",
+        "--execute-approved-edge-diagnostic",
         action="store_true",
         help="Required future one-run authorization gate; absent by default.",
     )
@@ -123,9 +123,9 @@ def _source_context(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.execute_approved_expansion:
+    if not args.execute_approved_edge_diagnostic:
         parser.error(
-            "--execute-approved-expansion is required; Gate 5 execution is disabled by default"
+            "--execute-approved-edge-diagnostic is required; production execution is unapproved by default"
         )
     config_path = args.config.resolve()
     if config_path != APPROVED_CONFIG_PATH:
@@ -143,10 +143,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_context=_source_context(config, config_path, environment),
         environment=environment,
     )
-    print(f"Gate 5 aggregate status: {result['status']}")
-    print(f"Gate 5 aggregate path: {result['path']}")
-    print(f"Gate 5 aggregate SHA-256: {result['payload_sha256']}")
-    print(f"Gate 5 adequacy status: {result['adequacy_status']}")
+    print(f"Gate 6 diagnostic status: {result['status']}")
+    print(f"Gate 6 diagnostic path: {result['path']}")
+    print(f"Gate 6 diagnostic payload SHA-256: {result['payload_sha256']}")
+    print(f"Gate 6 adequacy status: {result['adequacy_status']}")
     return 0 if result["adequacy_status"] == "pass" else 1
 
 
