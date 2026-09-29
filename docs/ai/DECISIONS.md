@@ -350,7 +350,7 @@
 - **Status:** APPROVED
 - **Scope:** Project-scoped Codex agent model and reasoning defaults
 - **Owner/approver:** Thesis owner, through direct edits to all four `.codex/agents/*.toml` profiles
-- **Decision:** Pin `tech_lead` to `gpt-5.6-sol` with `model_reasoning_effort = "high"`. `rf_validator` to `gpt-6-sol` with `model_reasoning_effort = "high"`. Pin `thesis_researcher` and `rf_engineer` to `gpt-6-sol` with `model_reasoning_effort = "medium"`. Do not assign GPT-6 Astra to these project agents.
+- **Decision:** Pin `tech_lead` to `gpt-6-sol` with `model_reasoning_effort = "high"`. `rf_validator` to `gpt-5.6-sol` with `model_reasoning_effort = "high"`. Pin `thesis_researcher` and `rf_engineer` to `gpt-6-sol` with `model_reasoning_effort = "medium"`. Do not assign GPT-6 Astra to these project agents.
 - **Rationale:** Architecture and skeptical validation require deeper assumption checking and edge-case review. Bounded research and implementation need balanced judgment and completeness without Astra's higher token cost. Explicit profile settings prevent accidental inheritance from a more expensive parent configuration.
 - **Alternatives considered:** Let every profile inherit the parent model; use GPT-6 Astra; use GPT-6 Luna for the lighter roles; or set all four roles to high reasoning. These were rejected in favor of consistent Sol capability with role-specific effort.
 - **Evidence:** `.codex/agents/tech-lead.toml`; `.codex/agents/rf-validator.toml`; `.codex/agents/thesis-researcher.toml`; `.codex/agents/rf-engineer.toml`; successful TOML parse; official Codex subagent configuration guidance reviewed on 2026-09-28.
