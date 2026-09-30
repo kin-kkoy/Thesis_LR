@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import csv
 from dataclasses import asdict, is_dataclass
 from hashlib import sha256
@@ -27,7 +27,6 @@ from .feature_pipeline import (
 )
 from .set_c_collector import (
     SET_C_ROW_BATCH_SCHEMA_VERSION,
-    canonical_metadata_hash,
     observation_record_ids,
 )
 from .transition_observer import (
@@ -468,8 +467,16 @@ class SetCPublicationSession:
         self._active_run_hash = None
         return path
 
-    def publish(self, *, expected_run_count: int) -> Path:
+    def publish(
+        self,
+        *,
+        expected_run_count: int,
+        publication_guard: Callable[[int], None] | None = None,
+        manifest_margin_bytes: int = 0,
+    ) -> Path:
         try:
+            if manifest_margin_bytes < 0:
+                raise ValueError("Publication manifest margin must not be negative")
             if expected_run_count <= 0 or len(self._runs) != expected_run_count:
                 raise PermissionError("Package run count does not match the approved expectation")
             if any(not run["sealed"] for run in self._runs.values()):
@@ -493,26 +500,15 @@ class SetCPublicationSession:
             }
             ordered_run_hashes = [run_hash_by_id[run_id] for run_id in expected_run_order]
             dataset_path = self.staging_path / "set_c.v1.csv"
-            totals = {"0": 0, "1": 0}
-            row_count = 0
-            with dataset_path.open("x", newline="", encoding="utf-8") as output:
-                for run_hash in ordered_run_hashes:
-                    for batch in sorted(self._runs[run_hash]["batches"], key=lambda item: (item["observation_index"], item["batch_index"])):
-                        source = self.staging_path / batch["path"]
-                        if _file_sha256(source) != batch["sha256"]:
-                            raise PermissionError("Staged batch hash mismatch")
-                        with source.open("r", newline="", encoding="utf-8") as handle:
-                            header = handle.readline()
-                            if output.tell() == 0:
-                                output.write(header)
-                            output.writelines(handle)
-                        row_count += batch["row_count"]
-                        for label in totals:
-                            totals[label] += batch["target_counts"][label]
             run_manifests = [
                 {"run_identity_sha256": key, "manifest_sha256": self._runs[key]["manifest_sha256"], "content": self._runs[key]["manifest"]}
                 for key in ordered_run_hashes
             ]
+            totals = {
+                label: sum(int(self._runs[key]["counts"][label]) for key in ordered_run_hashes)
+                for label in ("0", "1")
+            }
+            row_count = sum(int(self._runs[key]["rows"]) for key in ordered_run_hashes)
             manifest = {
                 "manifest_schema_version": PACKAGE_SCHEMA_VERSION,
                 "artifact_kind": "authoritative_set_c_observation_package",
@@ -529,15 +525,58 @@ class SetCPublicationSession:
                 "row_count": row_count,
                 "target_counts": totals,
                 "dataset_path": dataset_path.name,
-                "dataset_sha256": _file_sha256(dataset_path),
+                "dataset_sha256": "0" * 64,
                 "identity": self.identity,
                 "runs": run_manifests,
             }
+            manifest["manifest_payload_sha256"] = "0" * 64
+            estimated_manifest_bytes = len(_canonical_bytes(manifest))
+
+            batches = [
+                (batch, self.staging_path / batch["path"])
+                for run_hash in ordered_run_hashes
+                for batch in sorted(
+                    self._runs[run_hash]["batches"],
+                    key=lambda item: (item["observation_index"], item["batch_index"]),
+                )
+            ]
+            remaining_dataset_bytes = sum(path.stat().st_size for _, path in batches)
+            guard = publication_guard or (lambda _required_bytes: None)
+            remaining_required_bytes = remaining_dataset_bytes + estimated_manifest_bytes
+            guard(remaining_required_bytes + manifest_margin_bytes)
+
+            with dataset_path.open("x", newline="", encoding="utf-8") as output:
+                for batch, source in batches:
+                    guard(remaining_required_bytes + manifest_margin_bytes)
+                    if _file_sha256(source) != batch["sha256"]:
+                        raise PermissionError("Staged batch hash mismatch")
+                    with source.open("r", newline="", encoding="utf-8") as handle:
+                        header = handle.readline()
+                        if output.tell() == 0:
+                            output.write(header)
+                        output.writelines(handle)
+                    output.flush()
+                    size = source.stat().st_size
+                    remaining_dataset_bytes -= size
+                    remaining_required_bytes = remaining_dataset_bytes + estimated_manifest_bytes
+                    guard(remaining_required_bytes + manifest_margin_bytes)
+            if row_count != sum(int(batch["row_count"]) for batch, _ in batches):
+                raise PermissionError("Assembled row count differs from its staged batches")
+
+            guard(estimated_manifest_bytes + manifest_margin_bytes)
+            manifest["dataset_sha256"] = _file_sha256(dataset_path)
+            manifest.pop("manifest_payload_sha256")
             manifest["manifest_payload_sha256"] = sha256(_canonical_bytes(manifest)).hexdigest()
+            manifest_bytes = _canonical_bytes(manifest)
+            if len(manifest_bytes) != estimated_manifest_bytes:
+                raise PermissionError("Final package manifest exceeded its reserved size")
             manifest_path = self.staging_path / "manifest.json"
-            manifest_path.write_bytes(_canonical_bytes(manifest))
+            guard(len(manifest_bytes) + manifest_margin_bytes)
+            manifest_path.write_bytes(manifest_bytes)
+            guard(manifest_margin_bytes)
             if self.final_path.exists():
                 raise FileExistsError(f"Refusing to overwrite immutable package: {self.final_path}")
+            guard(manifest_margin_bytes)
             os.rename(self.staging_path, self.final_path)
             self._published = True
             return self.final_path

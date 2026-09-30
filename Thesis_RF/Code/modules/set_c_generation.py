@@ -33,6 +33,7 @@ from .set_c_population_adequacy import (
     MAX_BUFFER_ROWS,
     MODEL_FREE_SOURCE,
     PER_RUN_ROW_CEILING,
+    PopulationResourceError,
     RETRY_LIMIT,
     RSS_CEILING_BYTES,
     RUNTIME_MEMORY_FLOOR_BYTES,
@@ -83,6 +84,7 @@ RUN_ORDER_SHA256 = "97706c938953e44c08539b758535aa5ebd7731f10abdbfe780f248afaea4
 EXPERIMENT_ID = GENERATION_ID
 EVENT_ID = "simulated_case_study_no_observed_event"
 GRID_ID = "lapu_lapu_epsg32651_3m_5489x6896_v1"
+PUBLICATION_MANIFEST_MARGIN_BYTES = 64 * 1024 * 1024
 RESOURCE_LIMITS = {
     "safety_limit_timesteps": SAFETY_LIMIT_TIMESTEPS,
     "per_run_row_ceiling": PER_RUN_ROW_CEILING,
@@ -95,6 +97,7 @@ RESOURCE_LIMITS = {
     "runtime_memory_floor_bytes": RUNTIME_MEMORY_FLOOR_BYTES,
     "rss_ceiling_bytes": RSS_CEILING_BYTES,
     "free_disk_floor_bytes": FREE_DISK_FLOOR_BYTES,
+    "publication_manifest_margin_bytes": PUBLICATION_MANIFEST_MARGIN_BYTES,
     "run_runtime_limit_seconds": RUN_RUNTIME_LIMIT_SECONDS,
     "total_runtime_limit_seconds": EXPANSION_RUNTIME_LIMIT_SECONDS,
     "maximum_live_runs": 1,
@@ -338,7 +341,39 @@ def _publish_run_plan(
     if len(specs) != EXPECTED_RUN_COUNT and not synthetic_test:
         raise PermissionError("Production generation requires all 884 approved runs")
     _check_resources(resource_probe(session.final_path), launch=False)
-    return session.publish(expected_run_count=len(specs))
+    return session.publish(
+        expected_run_count=len(specs),
+        publication_guard=_make_publication_guard(
+            resource_probe=resource_probe,
+            destination=session.final_path,
+            total_started=total_started,
+        ),
+        manifest_margin_bytes=PUBLICATION_MANIFEST_MARGIN_BYTES,
+    )
+
+
+def _make_publication_guard(
+    *,
+    resource_probe: Callable[[Path], ResourceSnapshot],
+    destination: Path,
+    total_started: float,
+    clock: Callable[[], float] = time.monotonic,
+) -> Callable[[int], None]:
+    deadline = total_started + EXPANSION_RUNTIME_LIMIT_SECONDS
+
+    def guard(required_bytes: int) -> None:
+        if required_bytes < 0:
+            raise ValueError("Publication space estimate must not be negative")
+        if clock() >= deadline:
+            raise TimeoutError("Total generation runtime limit exceeded during publication")
+        snapshot = resource_probe(destination)
+        _check_resources(snapshot, launch=False)
+        if snapshot.free_disk_bytes < FREE_DISK_FLOOR_BYTES + required_bytes:
+            raise PopulationResourceError(
+                "Free disk cannot preserve the approved floor plus remaining publication reserve"
+            )
+
+    return guard
 
 
 def preflight_generation(
