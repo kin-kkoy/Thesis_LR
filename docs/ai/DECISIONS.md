@@ -453,3 +453,16 @@
 - **Evidence:** `.codex/agents/rf-engineer.toml`; `.codex/agents/rf-validator.toml`; successful TOML parse.
 - **Consequences and follow-up:** Future project-scoped RF Engineer and RF Validator tasks use these defaults. This changes tooling only and authorizes no production execution, dataset publication, split, training, final-test access, or protected-path write.
 - **Supersedes / superseded by:** Supersedes D-022 only for the RF Engineer and RF Validator model/effort settings; all other D-022 boundaries remain in force.
+
+## D-031 — Authorize source-only authoritative Set C generation wiring
+
+- **Date:** 2026-09-30
+- **Status:** APPROVED; IMPLEMENTED; AWAITING INDEPENDENT VALIDATION
+- **Scope:** Disabled authoritative Set C production-runner source and synthetic temporary-path tests
+- **Owner/approver:** Thesis owner, by explicit Gate 7 prerequisite authorization
+- **Decision:** Add the minimum disabled runner that reuses the D-015 26-family/884-run plan, model-free teacher, bounded collector, and D-017 publication session. Bind the Gate 4 and Gate 6 artifact hashes, ordered family and run identities, package/source/configuration/input identities, per-run configuration hashes, resource limits, and atomic no-overwrite destination. Require an explicit execution flag, exact authorization reference, and separately approved clean source revision.
+- **Implementation note:** The publication identity now carries an exact per-run configuration-hash map because approved wind and seed values vary by run. It also carries and enforces the approved run sequence rather than serializing by run-identity hash. These are stricter bindings, not compatibility relaxations.
+- **Validation:** RF Engineer focused tests passed 15/15 and the complete RF synthetic suite passed 295/295; parent focused rerun passed 15/15 and independently reproduced 26 families, 884 runs, family hash `6101a4729bfc6c4b4c49f48b6ef19b728620532014fb471adf4bb0e1cefd4046`, and run-order hash `97706c938953e44c08539b758535aa5ebd7731f10abdbfe780f248afaea4c250`.
+- **Authorization boundary:** This decision authorizes source and synthetic temporary-path tests only. It does not authorize production simulation, row-level dataset generation or publication, checkpoint/resume, split assignment, training, calibration, final-test or ground-truth access, models, rasters, manuscripts, `Thesis_LR/**`, or `Thesis-try.qgz` modification.
+- **Consequences and follow-up:** Commit one clean source revision and obtain an independent read-only RF Validator PASS. Only then may the owner review the exact package destination, resource envelope, and one-time command for separate Gate 7 execution authorization.
+- **Supersedes / superseded by:** Implements the source prerequisite reserved by D-017 without authorizing its production execution.

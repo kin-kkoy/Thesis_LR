@@ -1266,6 +1266,10 @@ def build_model_free_executor(
     *,
     destination: Path,
     resource_probe: Callable[[Path], ResourceSnapshot],
+    on_run_sealed: Callable[[PopulationRunSpec, object], None] | None = None,
+    expected_output_path: Path | None = None,
+    experiment_id: str = EXPANSION_ID,
+    authorization_reference: str = APPROVAL_REFERENCE,
 ) -> RunExecutor:
     """Wire the existing model-free teacher and bounded Set C collector."""
 
@@ -1273,6 +1277,12 @@ def build_model_free_executor(
     output_root = Path(__file__).resolve().parents[1] / str(
         config.get("output", {}).get("output_dir", "output")
     )
+    excluded_output = expected_output_path.resolve() if expected_output_path else None
+    if excluded_output is not None:
+        try:
+            excluded_output.relative_to(output_root.resolve())
+        except ValueError as exc:
+            raise ValueError("Expected publication staging must remain under output/") from exc
 
     def output_snapshot() -> dict[str, tuple[int, int]]:
         if not output_root.exists():
@@ -1284,6 +1294,10 @@ def build_model_free_executor(
             )
             for path in output_root.rglob("*")
             if path.is_file()
+            and (
+                excluded_output is None
+                or not path.resolve().is_relative_to(excluded_output)
+            )
         }
 
     def execute(
@@ -1337,7 +1351,7 @@ def build_model_free_executor(
         wind = WindContract.from_config(run_config["wind"]).to_manifest()
         provenance = {
             "set_id": "SetC",
-            "experiment_id": EXPANSION_ID,
+            "experiment_id": experiment_id,
             "event_id": EVENT_ID,
             "scenario_id": spec.scenario_id,
             "scenario_family_id": spec.family.family_id,
@@ -1353,7 +1367,7 @@ def build_model_free_executor(
             "configuration_hash": canonical_metadata_hash(run_config),
             "input_hashes": source_context["input_hashes"],
             "authorization": SOURCE_ONLY_AUTHORIZATION,
-            "authorization_reference": APPROVAL_REFERENCE,
+            "authorization_reference": authorization_reference,
             "transition_source_type": AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
             "seed": spec.seed,
             "rng_bit_generator": "PCG64",
@@ -1362,7 +1376,7 @@ def build_model_free_executor(
             "simulation_valid_mask_sha256": source_context["input_hashes"]["simulation_valid_mask"],
             "mapped_building_mask_sha256": source_context["input_hashes"]["mapped_building_mask"],
             "environment_id": GRID_ID,
-            "execution_id": f"{EXPANSION_ID}:{spec.run_id}",
+            "execution_id": f"{experiment_id}:{spec.run_id}",
             "capture_source_id": "model_free_teacher.step",
             "ignition_coordinate_system": "grid_row_col",
             "ignition_coordinates": spec.family.ignition_coordinates,
@@ -1379,6 +1393,8 @@ def build_model_free_executor(
         )
         drain(collector)
         sealed = collector.finalize(termination)
+        if on_run_sealed is not None:
+            on_run_sealed(spec, sealed)
         outputs_after = output_snapshot()
         unexpected_outputs = tuple(
             sorted(

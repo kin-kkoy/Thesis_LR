@@ -25,7 +25,11 @@ from .feature_pipeline import (
     TARGET_VERSION,
     validate_feature_values,
 )
-from .set_c_collector import SET_C_ROW_BATCH_SCHEMA_VERSION, observation_record_ids
+from .set_c_collector import (
+    SET_C_ROW_BATCH_SCHEMA_VERSION,
+    canonical_metadata_hash,
+    observation_record_ids,
+)
 from .transition_observer import (
     AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
     TRANSITION_OBSERVATION_SCHEMA_VERSION,
@@ -90,6 +94,22 @@ def validate_published_package(manifest_path: Path) -> dict[str, object]:
     runs = manifest.get("runs")
     if not isinstance(runs, list) or not runs:
         raise ValueError("Package must contain run manifests")
+    run_configuration_hashes = manifest.get("identity", {}).get(
+        "run_configuration_sha256_by_run_id"
+    )
+    approved_run_order = manifest.get("identity", {}).get("approved_run_order")
+    if not isinstance(run_configuration_hashes, Mapping) or len(run_configuration_hashes) != len(runs):
+        raise ValueError("Package per-run configuration map is incomplete")
+    if (
+        not isinstance(approved_run_order, list)
+        or len(approved_run_order) != len(runs)
+        or len(set(approved_run_order)) != len(approved_run_order)
+        or canonical_metadata_hash(approved_run_order)
+        != manifest.get("identity", {}).get("run_order_sha256")
+    ):
+        raise ValueError("Package approved run order is missing or inconsistent")
+    observed_run_ids: set[str] = set()
+    ordered_run_ids: list[str] = []
     for entry in runs:
         run_hash = str(entry.get("run_identity_sha256", ""))
         run_path = manifest_path.parent / "runs" / run_hash / "run.manifest.json"
@@ -98,6 +118,15 @@ def validate_published_package(manifest_path: Path) -> dict[str, object]:
         if json.loads(run_path.read_text(encoding="utf-8")) != entry.get("content"):
             raise ValueError("Run manifest content mismatch")
         run = entry["content"]
+        run_identity = run.get("run_identity", {})
+        run_id = str(run_identity.get("run_id", ""))
+        if (
+            run_id in observed_run_ids
+            or run_configuration_hashes.get(run_id) != run_identity.get("configuration_hash")
+        ):
+            raise ValueError("Package run configuration identity mismatch")
+        observed_run_ids.add(run_id)
+        ordered_run_ids.append(run_id)
         total_rows += int(run["row_count"])
         for label in totals:
             totals[label] += int(run["target_counts"][label])
@@ -111,7 +140,12 @@ def validate_published_package(manifest_path: Path) -> dict[str, object]:
                 or batch.get("manifest_sha256") != _file_sha256(batch_manifest)
             ):
                 raise ValueError("Batch artifact hash mismatch")
-    if total_rows != manifest.get("row_count") or totals != manifest.get("target_counts"):
+    if (
+        observed_run_ids != set(run_configuration_hashes)
+        or ordered_run_ids != approved_run_order
+        or total_rows != manifest.get("row_count")
+        or totals != manifest.get("target_counts")
+    ):
         raise ValueError("Package run totals do not match its manifest")
     return manifest
 
@@ -187,6 +221,26 @@ class SetCPublicationSession:
         for name, value in input_hashes.items():
             if not str(name).strip() or not isinstance(value, str) or _SHA256.fullmatch(value) is None:
                 raise ValueError("input_hashes must contain named lowercase SHA-256 values")
+        run_hashes = identity.get("run_configuration_sha256_by_run_id")
+        if not isinstance(run_hashes, Mapping) or not run_hashes:
+            raise ValueError("A complete per-run configuration hash map is required")
+        for run_id, digest in run_hashes.items():
+            if (
+                not isinstance(run_id, str)
+                or not run_id.strip()
+                or not isinstance(digest, str)
+                or _SHA256.fullmatch(digest) is None
+            ):
+                raise ValueError("Per-run configuration hashes are malformed")
+        run_order = identity.get("approved_run_order")
+        if (
+            not isinstance(run_order, list)
+            or len(run_order) != len(run_hashes)
+            or len(set(run_order)) != len(run_order)
+            or set(run_order) != set(run_hashes)
+            or canonical_metadata_hash(run_order) != identity.get("run_order_sha256")
+        ):
+            raise ValueError("Approved run order is missing or inconsistent")
 
     def _validate_run_identity(self, identity: Mapping[str, object]) -> None:
         expected = {
@@ -194,7 +248,6 @@ class SetCPublicationSession:
             "experiment_id": self.identity["experiment_id"],
             "source_revision": self.identity["source_revision"],
             "source_dirty": self.identity["source_dirty"],
-            "configuration_hash": self.identity["configuration_sha256"],
             "environment_id": self.identity["environment_id"],
             "rng_bit_generator": self.identity["rng_algorithm"],
             "input_hashes": self.identity["input_hashes"],
@@ -207,6 +260,12 @@ class SetCPublicationSession:
         for key, value in expected.items():
             if identity.get(key) != value:
                 raise PermissionError(f"Run identity disagrees with package identity: {key}")
+        run_id = _text(identity, "run_id")
+        expected_configuration = self.identity[
+            "run_configuration_sha256_by_run_id"
+        ].get(run_id)
+        if expected_configuration is None or identity.get("configuration_hash") != expected_configuration:
+            raise PermissionError("Run configuration hash is not approved for this run")
         for key in (
             "event_id", "scenario_family_id", "scenario_id", "run_id", "grid_id",
             "wind_manifest", "ignition_coordinates",
@@ -273,6 +332,7 @@ class SetCPublicationSession:
             raise PermissionError("Model-free teacher runs must be staged sequentially")
         self._active_run_hash = run_hash
         identity = dict(getattr(batch, "provenance"))
+        self._validate_run_identity(identity)
         run = self._runs.setdefault(
             run_hash,
             {
@@ -414,11 +474,29 @@ class SetCPublicationSession:
                 raise PermissionError("Package run count does not match the approved expectation")
             if any(not run["sealed"] for run in self._runs.values()):
                 raise PermissionError("Every run must be sealed before publication")
+            expected_run_ids = set(
+                self.identity["run_configuration_sha256_by_run_id"]
+            )
+            if len(expected_run_ids) != expected_run_count:
+                raise PermissionError("Approved run configuration count differs from the package expectation")
+            published_run_ids = [
+                str(run["provenance"]["run_id"]) for run in self._runs.values()
+            ]
+            if set(published_run_ids) != expected_run_ids:
+                raise PermissionError("Published run identities differ from the approved run plan")
+            expected_run_order = self.identity["approved_run_order"]
+            if published_run_ids != expected_run_order:
+                raise PermissionError("Published runs differ from the approved run order")
+            run_hash_by_id = {
+                str(run["provenance"]["run_id"]): run_hash
+                for run_hash, run in self._runs.items()
+            }
+            ordered_run_hashes = [run_hash_by_id[run_id] for run_id in expected_run_order]
             dataset_path = self.staging_path / "set_c.v1.csv"
             totals = {"0": 0, "1": 0}
             row_count = 0
             with dataset_path.open("x", newline="", encoding="utf-8") as output:
-                for run_hash in sorted(self._runs):
+                for run_hash in ordered_run_hashes:
                     for batch in sorted(self._runs[run_hash]["batches"], key=lambda item: (item["observation_index"], item["batch_index"])):
                         source = self.staging_path / batch["path"]
                         if _file_sha256(source) != batch["sha256"]:
@@ -433,7 +511,7 @@ class SetCPublicationSession:
                             totals[label] += batch["target_counts"][label]
             run_manifests = [
                 {"run_identity_sha256": key, "manifest_sha256": self._runs[key]["manifest_sha256"], "content": self._runs[key]["manifest"]}
-                for key in sorted(self._runs)
+                for key in ordered_run_hashes
             ]
             manifest = {
                 "manifest_schema_version": PACKAGE_SCHEMA_VERSION,

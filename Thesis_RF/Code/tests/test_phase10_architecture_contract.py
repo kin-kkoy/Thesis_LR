@@ -1,4 +1,5 @@
 import csv
+from hashlib import sha256
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +23,7 @@ from modules.set_c_leakage import (
     build_joint_leakage_components,
     deterministic_allocation_policy_contract,
 )
-from modules.set_c_publication import SetCPublicationSession
+from modules.set_c_publication import SetCPublicationSession, _canonical_bytes, validate_published_package
 from modules.transition_observer import canonical_metadata_hash
 from modules.transition_observer import (
     AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
@@ -46,12 +47,15 @@ def _publisher_config() -> dict:
     }
 
 
-def _package_identity() -> dict:
+def _package_identity(run_ids=("run-1",)) -> dict:
     return {
         "experiment_id": "synthetic-experiment",
         "source_revision": "abc123",
         "source_dirty": False,
         "configuration_sha256": "a" * 64,
+        "run_configuration_sha256_by_run_id": {run_id: "a" * 64 for run_id in run_ids},
+        "approved_run_order": list(run_ids),
+        "run_order_sha256": canonical_metadata_hash(list(run_ids)),
         "environment_id": "synthetic-env",
         "environment_sha256": "b" * 64,
         "rng_algorithm": "PCG64",
@@ -66,21 +70,21 @@ def _package_identity() -> dict:
     }
 
 
-def _run_identity() -> dict:
-    package = _package_identity()
+def _run_identity(run_id="run-1") -> dict:
+    package = _package_identity((run_id,))
     return {
         "set_id": "SetC",
         "experiment_id": "synthetic-experiment",
         "event_id": "event-1",
         "scenario_family_id": "family-1",
         "scenario_id": "scenario-1",
-        "run_id": "run-1",
+        "run_id": run_id,
         "grid_id": "grid-1",
         "ignition_set_sha256": "1" * 64,
         "ignition_coordinates": [[1, 3]],
         "source_revision": package["source_revision"],
         "source_dirty": package["source_dirty"],
-        "configuration_hash": package["configuration_sha256"],
+        "configuration_hash": package["run_configuration_sha256_by_run_id"][run_id],
         "environment_id": package["environment_id"],
         "rng_bit_generator": package["rng_algorithm"],
         "input_hashes": package["input_hashes"],
@@ -93,10 +97,10 @@ def _run_identity() -> dict:
     }
 
 
-def _batch() -> SimpleNamespace:
+def _batch(identity=None) -> SimpleNamespace:
     features = np.zeros((2, len(CANONICAL_FEATURE_NAMES)), dtype=np.float32)
     labels = np.array([0, 1], dtype=np.int8)
-    identity = _run_identity()
+    identity = _run_identity() if identity is None else identity
     identity_hash = canonical_metadata_hash(identity)
     return SimpleNamespace(
         schema_version=SET_C_ROW_BATCH_SCHEMA_VERSION,
@@ -134,8 +138,8 @@ def _batch() -> SimpleNamespace:
     )
 
 
-def _run(*, authoritative: bool = True) -> SimpleNamespace:
-    identity = _run_identity()
+def _run(*, authoritative: bool = True, identity=None) -> SimpleNamespace:
+    identity = _run_identity() if identity is None else identity
     identity_hash = canonical_metadata_hash(identity)
     termination = SimpleNamespace(
         authoritative=authoritative,
@@ -182,6 +186,33 @@ def test_publication_is_bounded_atomic_hash_bound_and_has_no_split_role(tmp_path
         SetCPublicationSession(
             _publisher_config(), _package_identity(), destination_root=tmp_path
         )
+
+
+def test_publication_preserves_and_validates_approved_run_order(tmp_path):
+    identities = [_run_identity("run-a"), _run_identity("run-b")]
+    identities.sort(key=lambda identity: canonical_metadata_hash(identity), reverse=True)
+    run_ids = [identity["run_id"] for identity in identities]
+    package_identity = _package_identity(run_ids)
+    with SetCPublicationSession(
+        _publisher_config(), package_identity, destination_root=tmp_path
+    ) as session:
+        for identity in identities:
+            session.stage_batch(_batch(identity))
+            session.seal_run(_run(identity=identity))
+        package = session.publish(expected_run_count=2)
+
+    manifest_path = package / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert [run["content"]["run_identity"]["run_id"] for run in manifest["runs"]] == run_ids
+    validate_published_package(manifest_path)
+
+    manifest["runs"].reverse()
+    payload = dict(manifest)
+    payload.pop("manifest_payload_sha256")
+    manifest["manifest_payload_sha256"] = sha256(_canonical_bytes(payload)).hexdigest()
+    manifest_path.write_bytes(_canonical_bytes(manifest))
+    with pytest.raises(ValueError, match="run totals"):
+        validate_published_package(manifest_path)
 
 
 def test_publication_cleans_failed_staging_and_rejects_tampering(tmp_path):
@@ -241,6 +272,16 @@ def test_publication_rejects_invalid_features_and_mixed_batch_provenance(tmp_pat
         session.stage_batch(first)
         with pytest.raises(PermissionError, match="Mixed batch provenance"):
             session.stage_batch(second)
+
+
+def test_publication_rejects_run_configuration_hash_not_in_approved_map(tmp_path):
+    batch = _batch()
+    batch.provenance = {**batch.provenance, "configuration_hash": "9" * 64}
+    with pytest.raises(PermissionError, match="configuration hash"):
+        with SetCPublicationSession(
+            _publisher_config(), _package_identity(), destination_root=tmp_path
+        ) as session:
+            session.stage_batch(batch)
 
 
 def test_joint_leakage_graph_contains_family_block_cell_and_conflicting_duplicate_edges():
