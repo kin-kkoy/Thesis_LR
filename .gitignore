@@ -29,3 +29,6 @@ Code/processedData/
 # Quirky old patterns kept from original .gitignore
 *./OperatingSystem
 *./Notes
+
+# Thesis manuscript (kept outside the public repo)
+ThesisPaper/
