@@ -133,6 +133,7 @@ def _batch(identity=None) -> SimpleNamespace:
         domain_mask_hashes={
             "simulation_valid_mask_sha256": "d" * 64,
             "mapped_building_mask_sha256": "e" * 64,
+            "eligible_mask_t_sha256": "f" * 64,
         },
         provenance=identity,
     )
@@ -282,6 +283,26 @@ def test_publication_rejects_run_configuration_hash_not_in_approved_map(tmp_path
             _publisher_config(), _package_identity(), destination_root=tmp_path
         ) as session:
             session.stage_batch(batch)
+
+
+def test_publication_accepts_observation_mask_and_rejects_malformed_hash(tmp_path):
+    with SetCPublicationSession(
+        _publisher_config(), _package_identity(), destination_root=tmp_path / "valid"
+    ) as session:
+        session.stage_batch(_batch())
+        session.seal_run(_run())
+        session.publish(expected_run_count=1)
+
+    invalid = _batch()
+    invalid.domain_mask_hashes = {
+        **invalid.domain_mask_hashes,
+        "eligible_mask_t_sha256": "invalid",
+    }
+    with SetCPublicationSession(
+        _publisher_config(), _package_identity(), destination_root=tmp_path / "invalid"
+    ) as session:
+        with pytest.raises(ValueError, match="domain-mask identity"):
+            session.stage_batch(invalid)
 
 
 def test_joint_leakage_graph_contains_family_block_cell_and_conflicting_duplicate_edges():

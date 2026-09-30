@@ -466,3 +466,14 @@
 - **Authorization boundary:** This decision authorizes source and synthetic temporary-path tests only. It does not authorize production simulation, row-level dataset generation or publication, checkpoint/resume, split assignment, training, calibration, final-test or ground-truth access, models, rasters, manuscripts, `Thesis_LR/**`, or `Thesis-try.qgz` modification.
 - **Consequences and follow-up:** Source readiness is complete. Production generation remains prohibited until the owner separately authorizes the exact package destination, final clean revision, family/run hashes, resource envelope, and one-time command.
 - **Supersedes / superseded by:** Implements the source prerequisite reserved by D-017 without authorizing its production execution.
+
+## D-032 — Record failed Gate 7 generation attempt and batch-mask repair
+
+- **Date:** 2026-09-30
+- **Status:** FAILED INVOCATION; NO IMMUTABLE PACKAGE
+- **Scope:** One owner-authorized manual authoritative Set C generation invocation from clean revision `45733b16bf9cd64b897800f8441433804f8c95a2`
+- **Decision:** Treat the one-run authorization as consumed. The command failed during batch staging because the publisher required equality with only two stable domain-mask hashes, while real transition batches also carry the required timestep-specific `eligible_mask_t_sha256`. The later collector-finalization exception followed the staging failure. Preserve the fail-closed behavior and do not treat this attempt as dataset evidence.
+- **Evidence:** Owner traceback through `SetCPublicationSession.stage_batch`; `transition_observer.py` emits all three hashes and `set_c_collector.py` passes them through; the authorized immutable package destination is absent. A source repair validates the two stable hashes against package identity and the eligible-mask hash as a 64-character lowercase SHA-256. Focused synthetic tests passed 19/19 and the full RF suite passed 299/299; independent review remains pending.
+- **Authorization boundary:** No retry, dataset publication, split, training, calibration, final-test or ground-truth access, checkpoint/resume, manuscript, `Thesis_LR/**`, or `Thesis-try.qgz` change is authorized by this record.
+- **Consequences and follow-up:** Obtain independent read-only RF Validator PASS, commit a clean repair revision, then request a fresh exact one-run authorization before any manual retry.
+- **Supersedes / superseded by:** Consumes the prior one-run Gate 7 generation approval without changing D-015, D-017, or D-029 methodology.

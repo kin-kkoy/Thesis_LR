@@ -7,21 +7,21 @@
 - **Last updated:** 2026-09-30.
 - **Last reviewed base revision:** `f40e8c327327bc4ccd25a2c086aed22952b97b1a`.
 - **Worktree note:** Gate 6 v2 recorded `source_dirty: false`; `Thesis-try.qgz` remains preserved.
-- **Current reviewed RF work:** Gate 6 v3 passed independent validation: all 26 block-only components qualify, all six D-015 gates pass, and the 97 predictor-collision links remain audit-only. The immutable replay payload/file SHA-256 values are `3891f54b...9ca96` / `a6cd757f...8bbc`. No checkpoint or row-level artifact exists.
+- **Current reviewed RF work:** Gate 6 v3 passed independent validation. The first authorized Gate 7 generation invocation failed when the publisher rejected a batch carrying the required timestep-specific eligible-mask hash; no immutable package exists. The source repair has passed synthetic tests and awaits independent review and a new clean revision.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Seek exact one-run Gate 7 owner authorization for the independently validated authoritative Set C generation runner. Do not execute or begin Phase 11 until approved.
+- **Active objective:** Independently validate and commit the Gate 7 batch-mask repair, then seek a fresh one-run authorization. Do not rerun generation under the consumed approval.
 - **Methodology:** D-009–D-015 define next-timestep eligible-cell ignition, canonical Set C predictors, `all_eligible`, model-free teacher labels, 128×128 conservative grouping, controlled population expansion, duplicate containment, and role-level adequacy gates.
 - **Accepted source:** Phase 7 supplies the fail-closed model-free teacher and bounded 11-feature collector. Phase 8 v2 revision `df65217b91c1624bbfcff82e95cca15a45a6df2c` supplies the disabled aggregate-only pilot extension; 110 focused synthetic tests passed before execution.
 - **Accepted diagnostic artifact:** `Thesis_RF/Code/output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json`; canonical payload SHA-256 `9a4f48ea6b2b7f882985d63ff3cad7ef3c785736e223860f82637fdd9e45cbf3`; whole-file SHA-256 `b62a7bf542d0ab74a3ac71399e85048b3169d0a04b33c95625aec3ee39339d17`.
 - **Diagnostic result:** All 32 runs were inactive, complete, authoritative, and count-matched. They produced 384 aggregate-observed eligible rows: 26 positive and 358 negative. Every diagnostic block size yielded five authoritative leakage components, all five independently containing both labels; four-role allocation is mathematically feasible, but no roles or final block dimensions were assigned.
-- **Current authorization:** The one-run v3 replay authorization is consumed and Gate 6 is complete. Dataset generation, checkpoints/resume, splits, models, and final-test access remain unauthorized.
+- **Current authorization:** Gate 6 is complete. The one-run Gate 7 generation authorization was consumed by a failed invocation; a retry needs a fresh exact approval. Checkpoints/resume, splits, models, and final-test access remain unauthorized.
 - **Hard boundary:** Do not run the aggregate expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
-- **Next gate:** Bind the exact package ID, destination, clean revision, family/run hashes, resource envelope, and one-time command in a separate owner authorization.
+- **Next gate:** Validate the repaired publisher on a clean revision; then rebind the exact package, hashes, resource envelope, and one-time command in a fresh owner authorization.
 - **Agent tooling:** `rf_engineer` is pinned to `gpt-6-luna`/`medium`; `rf_validator` to `gpt-6-sol`/`medium`; `tech_lead` remains `gpt-6-sol`/`high`; and `thesis_researcher` remains `gpt-6-sol`/`medium` (D-030). The `tech_lead` instruction conflict remains governed by the parent agent and repository boundaries.
 <!-- END CODEX DIGEST -->
 
@@ -51,6 +51,7 @@
 | `VERIFIED` | Gate 6 v3 independently validates 26 qualifying singleton block components and feasible unexposed role minima; all 97 predictor-collision family links remain audit-only. | Immutable v3 payload/file `3891f54b...9ca96` / `a6cd757f...8bbc`; final RF Validator PASS | V3 artifact, D-015 policy, or source binding changes. |
 | `VERIFIED` | Agent profiles pin `rf_engineer` to `gpt-6-luna`/`medium`, `rf_validator` to `gpt-6-sol`/`medium`, `tech_lead` to `gpt-6-sol`/`high`, and `thesis_researcher` to `gpt-6-sol`/`medium`. | `.codex/agents/*.toml`; D-030; successful TOML parse | Profile settings or available models change. |
 | `VERIFIED` | The disabled Gate 7 runner connects the approved 26-family/884-run plan to sequential model-free collection and bounded immutable publication. It binds per-run configuration hashes and approved run order, reserves publication disk, and enforces the shared runtime deadline through atomic promotion. | Revision `df63ef5`; focused 18/18 and complete RF 298/298; independent RF Validator PASS | Runner, publisher, approved artifacts, limits, or authorization changes. |
+| `FAIL` | The first Gate 7 production invocation from revision `45733b1` raised `Batch domain-mask identity is inconsistent` during batch staging. The batch includes a timestep-specific eligible-mask hash that the publisher's two-key equality check omitted. The subsequent collector finalization error followed the staging exception. No immutable package exists. | Owner traceback; transition observer, collector, and publisher source; destination absence | Repaired source passes independent validation, clean revision, and fresh one-run authorization. |
 | `WARNING` | `tech_lead` still has contradictory delegation/output instructions: parent-owned delegation and no human prompt copying conflict with “Prompt to Copy,” direct researcher invocation, and a request to update Markdown despite read-only/manuscript boundaries. | `.codex/agents/tech-lead.toml` lines 21, 42, 50–54 | Profile wording is explicitly repaired and reviewed. |
 | `NEEDS VERIFICATION` | Historical Set A/B/C metric claims are reproducible from identified datasets, models, configurations, splits, commands, and immutable outputs. | `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md` | Close only with primary provenance. |
 

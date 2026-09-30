@@ -357,10 +357,17 @@ class SetCPublicationSession:
         if dict(getattr(batch, "wind_manifest")) != identity["wind_manifest"]:
             raise ValueError("Batch wind identity is inconsistent")
         masks = dict(getattr(batch, "domain_mask_hashes"))
-        if masks != {
-            "simulation_valid_mask_sha256": self.identity["simulation_valid_mask_sha256"],
-            "mapped_building_mask_sha256": self.identity["mapped_building_mask_sha256"],
-        }:
+        if (
+            set(masks) != {
+                "simulation_valid_mask_sha256",
+                "mapped_building_mask_sha256",
+                "eligible_mask_t_sha256",
+            }
+            or masks["simulation_valid_mask_sha256"] != self.identity["simulation_valid_mask_sha256"]
+            or masks["mapped_building_mask_sha256"] != self.identity["mapped_building_mask_sha256"]
+            or not isinstance(masks["eligible_mask_t_sha256"], str)
+            or _SHA256.fullmatch(masks["eligible_mask_t_sha256"]) is None
+        ):
             raise ValueError("Batch domain-mask identity is inconsistent")
         grid_id = _text(identity, "grid_id")
         expected_records = observation_record_ids(
