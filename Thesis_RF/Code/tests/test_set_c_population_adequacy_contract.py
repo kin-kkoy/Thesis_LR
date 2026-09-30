@@ -16,6 +16,7 @@ import pytest
 import modules.set_c_population_adequacy as adequacy
 import modules.set_c_population_replay as replay
 import modules.set_c_checkpoint_contract as checkpoint_contract
+import run_set_c_population_replay as replay_runner
 from modules.set_c_population_adequacy import (
     PopulationAdequacyError,
     PopulationFamily,
@@ -807,7 +808,7 @@ def test_policy_replay_is_disabled_and_recomputes_block_only_adequacy(tmp_path):
     with pytest.raises(PermissionError, match="separate one-run approval"):
         replay.replay_policy_v3(source, destination, **expected)
     result = replay.replay_policy_v3(
-        source, destination, synthetic_test=True, **expected)
+        source, destination, synthetic_test=True, resource_probe=_resources, **expected)
     assert result["adequacy_status"] == "pass"
     published = json.loads(destination.read_text(encoding="utf-8"))
     assert published["feature_collision_family_pair_count"] == 1
@@ -830,6 +831,7 @@ def test_policy_replay_rejects_hash_and_count_drift(tmp_path):
         expected_file_sha256=sha256(source.read_bytes()).hexdigest(),
         expected_payload_sha256=report["payload_sha256"],
         expected_revision="synthetic-revision", synthetic_test=True,
+        resource_probe=_resources,
     )
     report["aggregate"]["scenario_families"][0]["class_counts"]["positive_1"] += 1
     source.write_text(json.dumps(report), encoding="utf-8")
@@ -844,6 +846,62 @@ def test_policy_replay_rejects_hash_and_count_drift(tmp_path):
     with pytest.raises(PopulationAdequacyError, match="family totals mismatch"):
         replay.replay_policy_v3(source, tmp_path / "refused.json", **expected)
     assert not (tmp_path / "refused.json").exists()
+
+
+def test_policy_replay_runner_requires_gate_and_routes_only_approved_paths(
+    tmp_path, monkeypatch,
+):
+    source = tmp_path / "approved-source.json"
+    destination = tmp_path / "approved-destination.json"
+    with pytest.raises(SystemExit) as exc:
+        replay_runner.main([])
+    assert exc.value.code == 2
+
+    captured = {}
+
+    def fake_replay(actual_source, actual_destination, **kwargs):
+        captured.update(source=actual_source, destination=actual_destination, **kwargs)
+        return {"path": actual_destination, "payload_sha256": "a" * 64,
+                "component_count": 26, "adequacy_status": "pass"}
+
+    monkeypatch.setattr(replay_runner, "approved_source", lambda: source)
+    monkeypatch.setattr(replay_runner, "approved_destination", lambda: destination)
+    monkeypatch.setattr(replay_runner, "replay_policy_v3", fake_replay)
+    assert replay_runner.main(["--execute-approved-policy-replay"]) == 0
+    assert captured == {
+        "source": source,
+        "destination": destination,
+        "production_authorized": True,
+    }
+
+
+def test_policy_replay_production_paths_and_resources_fail_closed(tmp_path):
+    with pytest.raises(PermissionError, match="paths differ"):
+        replay.replay_policy_v3(
+            tmp_path / "source.json", tmp_path / "destination.json",
+            production_authorized=True, resource_probe=_resources,
+        )
+
+    source = tmp_path / "source-v2.aggregate.json"
+    destination = tmp_path / "replay-v3.aggregate.json"
+    run_population_adequacy(
+        _active_config(), destination=source, source_context=_source_context(),
+        families=_families(), run_executor=_executor(), resource_probe=_resources,
+        synthetic_test=True, aggregate_store_directory=tmp_path,
+    )
+    report = json.loads(source.read_text(encoding="utf-8"))
+
+    def insufficient(_: Path) -> ResourceSnapshot:
+        return replace(_resources(destination), available_memory_bytes=1)
+
+    with pytest.raises(adequacy.PopulationResourceError, match="memory"):
+        replay.replay_policy_v3(
+            source, destination, synthetic_test=True,
+            expected_file_sha256=sha256(source.read_bytes()).hexdigest(),
+            expected_payload_sha256=report["payload_sha256"],
+            expected_revision="synthetic-revision", resource_probe=insufficient,
+        )
+    assert not destination.exists()
 
 
 def test_future_checkpoint_storage_telemetry_and_recovery_fail_closed(tmp_path):

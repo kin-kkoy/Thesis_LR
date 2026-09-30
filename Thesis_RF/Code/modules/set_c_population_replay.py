@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
+import time
 
-from .set_c_pilot import publish_aggregate_report
+from .set_c_pilot import ResourceSnapshot, capture_resource_snapshot, publish_aggregate_report
 from .set_c_population_adequacy import (
     AGGREGATE_SCHEMA_VERSION, APPROVED_CANDIDATE_SHA256,
     APPROVED_INVENTORY_FILE_SHA256, APPROVED_INVENTORY_PAYLOAD_SHA256,
     APPROVED_PRIMARY_SHA256, APPROVED_RESERVE_SHA256, BLOCK_ORIGIN, BLOCK_SIZE,
     EXPECTED_FAMILY_COUNT, EXPECTED_RUN_COUNT, EXPANSION_ID, ROLE_REQUIREMENTS,
+    EXPANSION_RUNTIME_LIMIT_SECONDS, FREE_DISK_FLOOR_BYTES,
+    LAUNCH_MEMORY_FLOOR_BYTES, RSS_CEILING_BYTES, RUNTIME_MEMORY_FLOOR_BYTES,
     WIND_CONDITIONS, _UnionFind,
-    _canonical_json, _require_temp_descendant, _sha256_file,
+    _canonical_json, _check_resources, _current_git_state,
+    _require_temp_descendant, _sha256_file,
     _unexposed_allocation_feasible, _validate_aggregate_only,
     _validate_source_context, PopulationAdequacyError,
 )
@@ -30,6 +35,15 @@ SOURCE_REVISION = "dfc37033526de483e2a35727cd01df597424257e"
 LEGACY_V2_DUPLICATE_SEMANTICS = "sha256_canonical_float32_feature_row.v1"
 SOURCE_RELATIVE_PATH = Path("output/phase9/phase9_set_c_population_adequacy_edge_diagnostic_v2.aggregate.json")
 RESERVED_DESTINATION = Path("output/phase9/phase9_set_c_population_adequacy_policy_replay_v3.aggregate.json")
+REPLAY_RUNTIME_LIMIT_SECONDS = min(300.0, EXPANSION_RUNTIME_LIMIT_SECONDS)
+
+
+def approved_source() -> Path:
+    return (Path(__file__).resolve().parents[1] / SOURCE_RELATIVE_PATH).resolve()
+
+
+def approved_destination() -> Path:
+    return (Path(__file__).resolve().parents[1] / RESERVED_DESTINATION).resolve()
 
 
 def _require(condition: bool, message: str) -> None:
@@ -219,21 +233,47 @@ def _components(report: dict, *, revision: str, require_production: bool) -> tup
 
 def replay_policy_v3(
     source: Path, destination: Path, *, synthetic_test: bool = False,
+    production_authorized: bool = False,
     expected_file_sha256: str = SOURCE_FILE_SHA256,
     expected_payload_sha256: str = SOURCE_PAYLOAD_SHA256,
     expected_revision: str = SOURCE_REVISION,
+    resource_probe: Callable[[Path], ResourceSnapshot] = capture_resource_snapshot,
 ) -> dict[str, object]:
-    """Test a v2-shaped temporary report; production execution stays closed."""
-    if not synthetic_test:
+    """Replay the approved aggregate policy without rerunning simulations."""
+    if synthetic_test and production_authorized:
+        raise PermissionError("Synthetic and production replay modes are mutually exclusive")
+    replay_revision = "synthetic-test"
+    if synthetic_test:
+        source = _require_temp_descendant(source, "replay source")
+        destination = _require_temp_descendant(destination, "replay destination")
+        require_production = False
+    elif production_authorized:
+        source = source.resolve()
+        destination = destination.resolve()
+        if source != approved_source() or destination != approved_destination():
+            raise PermissionError("Production replay paths differ from the approved contract")
+        if (expected_file_sha256 != SOURCE_FILE_SHA256
+                or expected_payload_sha256 != SOURCE_PAYLOAD_SHA256
+                or expected_revision != SOURCE_REVISION):
+            raise PermissionError("Production replay hashes or source revision drifted")
+        replay_revision, dirty = _current_git_state()
+        if dirty:
+            raise PermissionError("Production replay requires a clean Git revision")
+        require_production = True
+    else:
         raise PermissionError("Production policy replay requires separate one-run approval")
-    source = _require_temp_descendant(source, "replay source")
-    destination = _require_temp_descendant(destination, "replay destination")
     if source == destination or destination.exists():
         raise FileExistsError("Replay destination exists or aliases source")
+    before_entries = (
+        set(destination.parent.iterdir()) if destination.parent.is_dir() else set()
+    )
+    started = time.monotonic()
+    launch = resource_probe(destination)
+    _check_resources(launch, launch=True)
     report = _load_bound_report(source, file_hash=_hash(expected_file_sha256),
                                 payload_hash=_hash(expected_payload_sha256))
     components, collision_pairs = _components(
-        report, revision=expected_revision, require_production=False)
+        report, revision=expected_revision, require_production=require_production)
     if expected_revision == SOURCE_REVISION:
         _require(collision_pairs == 97, "approved feature collision count drift")
     qualifying = sum(component["qualifies"] is True for component in components)
@@ -255,6 +295,11 @@ def replay_policy_v3(
         component["qualifies"] for component in components)
     gates["unexposed_role_minima_material_coverage_and_concentration_feasible"] = (
         _unexposed_allocation_feasible(components))
+    before_publication = resource_probe(destination)
+    _check_resources(before_publication, launch=False)
+    elapsed = time.monotonic() - started
+    if elapsed > REPLAY_RUNTIME_LIMIT_SECONDS:
+        raise PopulationAdequacyError("Policy replay exceeded its runtime limit")
     result = {
         "replay_schema_version": REPLAY_SCHEMA,
         "replay_id": REPLAY_ID,
@@ -262,6 +307,7 @@ def replay_policy_v3(
         "source_file_sha256": expected_file_sha256,
         "source_payload_sha256": expected_payload_sha256,
         "source_revision": expected_revision,
+        "replay_source_revision": replay_revision,
         "population_run_count": EXPECTED_RUN_COUNT,
         "policy": "scenario_family_stable_cell_spatial_block_provenance_record; predictor_collisions_audit_only",
         "source_duplicate_semantics": LEGACY_V2_DUPLICATE_SEMANTICS,
@@ -275,9 +321,36 @@ def replay_policy_v3(
         "adequacy": {"status": "pass" if all(gates.values()) else "fail", "gates": gates},
         "integrity": {"row_level_payload_published": False,
                       "split_roles_assigned": False, "estimator_accessed": False,
-                      "protected_spatial_reference_accessed": False},
+                      "protected_spatial_reference_accessed": False,
+                      "sole_persistent_output_is_aggregate_json": True},
+        "resources": {
+            "launch_memory_floor_bytes": LAUNCH_MEMORY_FLOOR_BYTES,
+            "runtime_memory_floor_bytes": RUNTIME_MEMORY_FLOOR_BYTES,
+            "rss_ceiling_bytes": RSS_CEILING_BYTES,
+            "free_disk_floor_bytes": FREE_DISK_FLOOR_BYTES,
+            "minimum_available_memory_bytes": min(
+                launch.available_memory_bytes,
+                before_publication.available_memory_bytes,
+            ),
+            "maximum_process_rss_bytes": max(
+                launch.process_rss_bytes,
+                before_publication.process_rss_bytes,
+            ),
+            "minimum_free_disk_bytes": min(
+                launch.free_disk_bytes,
+                before_publication.free_disk_bytes,
+            ),
+            "sample_count": 2,
+            "elapsed_seconds": elapsed,
+            "runtime_limit_seconds": REPLAY_RUNTIME_LIMIT_SECONDS,
+        },
     }
     _validate_aggregate_only(result)
     path, payload = publish_aggregate_report(result, destination)
+    added = set(destination.parent.iterdir()).difference(before_entries)
+    if added != {destination}:
+        raise PopulationAdequacyError("Policy replay created an unexpected persistent output")
     return {"path": path, "payload_sha256": payload,
-            "adequacy_status": result["adequacy"]["status"]}
+            "adequacy_status": result["adequacy"]["status"],
+            "component_count": len(components),
+            "feature_collision_family_pair_count": collision_pairs}
