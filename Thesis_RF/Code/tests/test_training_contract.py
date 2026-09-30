@@ -13,6 +13,7 @@ from modules.feature_pipeline import (
     TARGET_VERSION,
 )
 from modules.model_trainer import ModelTrainer
+from modules.set_c_leakage import build_joint_leakage_components
 from train_rf_optuna import (
     _split_membership_hash,
     _validate_observation_wind_manifest,
@@ -130,6 +131,32 @@ def test_duplicate_group_cannot_cross_roles():
     frame.loc[2, "duplicate_group_id"] = frame.loc[0, "duplicate_group_id"]
     with pytest.raises(ValueError, match="duplicate_group_id crosses split roles"):
         ModelTrainer._validate_dataset_contract(frame)
+
+
+def test_equal_predictors_do_not_create_cross_family_leakage_without_record_identity():
+    observations = pd.DataFrame([
+        {"event_id": "event-a", "scenario_family_id": "family-a",
+         "spatial_block_id": "block-a", "stable_cell_id": "cell-a",
+         "duplicate_group_id": "record-a"},
+        {"event_id": "event-a", "scenario_family_id": "family-b",
+         "spatial_block_id": "block-b", "stable_cell_id": "cell-b",
+         "duplicate_group_id": "record-b"},
+    ])
+    components = build_joint_leakage_components(observations)
+    assert components.nunique() == 2
+
+
+def test_actual_record_identity_still_forms_a_leakage_component():
+    observations = pd.DataFrame([
+        {"event_id": "event-a", "scenario_family_id": "family-a",
+         "spatial_block_id": "block-a", "stable_cell_id": "cell-a",
+         "duplicate_group_id": "record-a"},
+        {"event_id": "event-a", "scenario_family_id": "family-b",
+         "spatial_block_id": "block-b", "stable_cell_id": "cell-b",
+         "duplicate_group_id": "record-a"},
+    ])
+    components = build_joint_leakage_components(observations)
+    assert components.nunique() == 1
 
 
 def test_conflicting_label_duplicate_group_is_retained_within_one_role():

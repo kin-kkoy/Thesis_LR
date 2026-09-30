@@ -38,10 +38,11 @@ from .transition_observer import (
 )
 
 
-SET_C_ROW_BATCH_SCHEMA_VERSION = "set_c_row_batch.v1"
+SET_C_ROW_BATCH_SCHEMA_VERSION = "set_c_row_batch.v2"
 SET_C_RUN_SCHEMA_VERSION = "set_c_collected_run.v1"
 SET_C_PUBLICATION_MANIFEST_VERSION = "set_c_test_package_manifest.v1"
-DUPLICATE_IDENTITY_VERSION = "sha256_canonical_float32_feature_row.v1"
+DUPLICATE_IDENTITY_VERSION = "sha256_observation_record_provenance.v2"
+PREDICTOR_COLLISION_IDENTITY_VERSION = "sha256_canonical_float32_feature_row.v1"
 SPATIAL_BLOCK_IDENTITY_VERSION = "sha256_grid_block_coordinates.v1"
 SYNTHETIC_TEST_PUBLISHER_MODE = "synthetic_test_only"
 RUNNER_OWNED_BACKPRESSURE_POLICY = "runner_owned_exact_retry.v1"
@@ -122,11 +123,43 @@ def _json_safe(value: object) -> object:
 
 
 def _sha256_rows(values: np.ndarray) -> np.ndarray:
+    """Ephemeral predictor-collision audit IDs; never a leakage-group key."""
     canonical = np.ascontiguousarray(values, dtype="<f4")
     identifiers = np.asarray(
         [sha256(row.tobytes()).hexdigest().encode("ascii") for row in canonical],
         dtype="S64",
     )
+    identifiers.setflags(write=False)
+    return identifiers
+
+
+def observation_record_ids(
+    identity: Mapping[str, object], *, run_identity_sha256: str,
+    provenance_sha256: str, seed: int, timestep_t: int, timestep_t1: int,
+    rows: np.ndarray, cols: np.ndarray,
+) -> np.ndarray:
+    """Identify the sampled observation, independently of its predictors/label."""
+    if rows.shape != cols.shape or rows.ndim != 1:
+        raise ValueError("Observation record coordinates are inconsistent")
+    shared = {
+        "identity_version": DUPLICATE_IDENTITY_VERSION,
+        "scenario_family_id": identity["scenario_family_id"],
+        "scenario_id": identity["scenario_id"],
+        "run_id": identity["run_id"],
+        "seed": int(seed),
+        "timestep_t": int(timestep_t),
+        "timestep_t1": int(timestep_t1),
+        "grid_id": identity["grid_id"],
+        "feature_schema_version": SET_C_SCHEMA_VERSION,
+        "target_version": TARGET_VERSION,
+        "run_identity_sha256": run_identity_sha256,
+        "provenance_sha256": provenance_sha256,
+    }
+    identifiers = np.asarray([
+        canonical_metadata_hash({**shared, "cell_row": int(row), "cell_col": int(col)})
+        .encode("ascii")
+        for row, col in zip(rows, cols, strict=True)
+    ], dtype="S64")
     identifiers.setflags(write=False)
     return identifiers
 
@@ -592,7 +625,13 @@ class SetCCollector:
                 cell_rows, cell_cols = np.unravel_index(flat, validated.grid_shape)
                 cell_rows = np.asarray(cell_rows, dtype=np.int64)
                 cell_cols = np.asarray(cell_cols, dtype=np.int64)
-                duplicate_ids = _sha256_rows(features)
+                provenance_digest = canonical_metadata_hash(validated.provenance)
+                duplicate_ids = observation_record_ids(
+                    identity, run_identity_sha256=identity_digest,
+                    provenance_sha256=provenance_digest, seed=validated.seed,
+                    timestep_t=validated.timestep_t, timestep_t1=validated.timestep_t1,
+                    rows=cell_rows, cols=cell_cols,
+                )
                 block_ids = _spatial_block_ids(
                     grid_id=str(validated.provenance["grid_id"]),
                     rows=cell_rows,
@@ -613,9 +652,7 @@ class SetCCollector:
                     transition_source_type=AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
                     state_encoding=validated.state_encoding,
                     run_identity_sha256=identity_digest,
-                    provenance_sha256=canonical_metadata_hash(
-                        validated.provenance
-                    ),
+                    provenance_sha256=provenance_digest,
                     observation_index=observation_index,
                     batch_index=batch_index,
                     timestep_t=validated.timestep_t,
@@ -1096,7 +1133,12 @@ class SyntheticSetCPublisher:
             ):
                 raise PermissionError("Batch identity array shape is inconsistent")
             if not np.array_equal(
-                batch.duplicate_group_ids, _sha256_rows(batch.features)
+                batch.duplicate_group_ids, observation_record_ids(
+                    identity, run_identity_sha256=run.run_identity_sha256,
+                    provenance_sha256=batch.provenance_sha256, seed=batch.seed,
+                    timestep_t=batch.timestep_t, timestep_t1=batch.timestep_t1,
+                    rows=batch.cell_rows, cols=batch.cell_cols,
+                )
             ):
                 raise PermissionError("Batch duplicate identities are inconsistent")
             expected_spatial_ids = _spatial_block_ids(

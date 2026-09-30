@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
+from contextlib import closing
+from datetime import datetime, timedelta, timezone
+import sqlite3
+import time
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +14,8 @@ import numpy as np
 import pytest
 
 import modules.set_c_population_adequacy as adequacy
+import modules.set_c_population_replay as replay
+import modules.set_c_checkpoint_contract as checkpoint_contract
 from modules.set_c_population_adequacy import (
     PopulationAdequacyError,
     PopulationFamily,
@@ -47,6 +54,9 @@ class _Batch:
             block_order = 1 if family_order in (1, 2) and (
                 connect_first_two or link_cause in ("block", "joint")
             ) else family_order
+        self.features = np.asarray(
+            [[float(duplicate_order), float(index)] + [0.0] * 9
+             for index in range(10)], dtype=np.float32)
         self.duplicate_group_ids = np.array(
             [f"family-{duplicate_order:02d}-cell-{index:02d}" for index in range(10)],
             dtype="S64",
@@ -636,3 +646,304 @@ def test_censored_count_or_identity_failure_publishes_nothing(tmp_path, updates)
 
     assert not destination.exists()
     assert not list(tmp_path.glob("*.sqlite3*"))
+
+
+def test_synthetic_checkpoint_resumes_complete_runs_and_cleans_up(tmp_path, capsys):
+    destination = tmp_path / "resumed.aggregate.json"
+    checkpoint = tmp_path / "resumed.sqlite3"
+    orders = []
+    first = _executor(fail_order=203)
+
+    def interrupted(spec, consume):
+        orders.append(spec.order)
+        return first(spec, consume)
+
+    arguments = dict(
+        destination=destination, source_context=_source_context(),
+        families=_families(), resource_probe=_resources, synthetic_test=True,
+        checkpoint_path=checkpoint,
+    )
+    with pytest.raises(RuntimeError, match="synthetic run failure"):
+        run_population_adequacy(_active_config(), run_executor=interrupted, **arguments)
+    assert orders == list(range(1, 204))
+    assert capsys.readouterr().out.splitlines() == [
+        "Gate 6 progress: 100/884 runs complete",
+        "Gate 6 progress: 200/884 runs complete",
+    ]
+    with closing(sqlite3.connect(checkpoint)) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM completed_runs").fetchone() == (202,)
+    resumed_orders = []
+    second = _executor()
+
+    def continued(spec, consume):
+        resumed_orders.append(spec.order)
+        return second(spec, consume)
+
+    result = run_population_adequacy(
+        _active_config(), run_executor=continued, resume=True, **arguments)
+    assert result["run_count"] == 884
+    assert resumed_orders == list(range(203, 885))
+    assert capsys.readouterr().out.splitlines() == [
+        f"Gate 6 progress: {order}/884 runs complete"
+        for order in (300, 400, 500, 600, 700, 800, 884)
+    ]
+    assert list(tmp_path.iterdir()) == [destination]
+    report = json.loads(destination.read_text(encoding="utf-8"))
+    assert report["aggregate"]["totals"]["rows"] == 8840
+    assert report["resources"]["sample_count"] == 1 + 2 * 884 + 2
+    assert "checkpoint" not in report
+
+
+def test_checkpoint_drift_and_corruption_reject_before_executor(tmp_path):
+    destination = tmp_path / "resumed.aggregate.json"
+    checkpoint = tmp_path / "resumed.sqlite3"
+    arguments = dict(
+        destination=destination, source_context=_source_context(),
+        families=_families(), resource_probe=_resources, synthetic_test=True,
+        checkpoint_path=checkpoint,
+    )
+    with pytest.raises(RuntimeError):
+        run_population_adequacy(
+            _active_config(), run_executor=_executor(fail_order=3), **arguments)
+    assert checkpoint.exists()
+
+    def forbidden_executor(*_):
+        pytest.fail("executor reached before checkpoint validation")
+
+    drifted = dict(arguments)
+    drifted["source_context"] = {**_source_context(), "source_revision": "drifted"}
+    with pytest.raises(PopulationAdequacyError, match="drifted"):
+        run_population_adequacy(
+            _active_config(), run_executor=forbidden_executor, resume=True, **drifted)
+    with closing(sqlite3.connect(checkpoint)) as connection:
+        connection.execute("UPDATE completed_runs SET run_order=4 WHERE run_order=2")
+        connection.commit()
+    with pytest.raises(PopulationAdequacyError, match="gap"):
+        run_population_adequacy(
+            _active_config(), run_executor=forbidden_executor, resume=True, **arguments)
+    assert not destination.exists()
+    assert checkpoint.exists()
+
+
+def test_checkpoint_rejected_for_production_and_existing_destination(tmp_path):
+    with pytest.raises(PermissionError, match="Production checkpoints"):
+        run_population_adequacy(
+            _active_config(), destination=adequacy.approved_destination(),
+            source_context=_production_source_context(),
+            checkpoint_path=tmp_path / "forbidden.sqlite3", resume=True,
+        )
+    destination = tmp_path / "existing.aggregate.json"
+    destination.write_text("existing", encoding="utf-8")
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        run_population_adequacy(
+            _active_config(), destination=destination,
+            source_context=_source_context(), families=_families(),
+            run_executor=_executor(), resource_probe=_resources,
+            synthetic_test=True, checkpoint_path=tmp_path / "new.sqlite3",
+        )
+    assert not (tmp_path / "new.sqlite3").exists()
+
+
+def test_failed_attempt_charges_runtime_and_crash_downtime_fails_closed(tmp_path):
+    checkpoint = tmp_path / "attempt.sqlite3"
+    destination = tmp_path / "attempt.aggregate.json"
+    arguments = dict(
+        destination=destination, source_context=_source_context(),
+        families=_families(), resource_probe=_resources, synthetic_test=True,
+        checkpoint_path=checkpoint,
+    )
+    base = _executor()
+
+    def fails_after_consuming(spec, consume):
+        base(spec, consume)
+        time.sleep(0.02)
+        raise RuntimeError("failed after batch")
+
+    with pytest.raises(RuntimeError, match="failed after batch"):
+        run_population_adequacy(
+            _active_config(), run_executor=fails_after_consuming, **arguments)
+    with closing(sqlite3.connect(checkpoint)) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM completed_runs").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM identities").fetchone() == (0,)
+        state = json.loads(connection.execute(
+            "SELECT value FROM checkpoint_meta WHERE key='state'").fetchone()[0])
+        assert state["elapsed_seconds"] >= 0.02
+        assert state["attempt_started_at_utc"] is None
+        state["attempt_started_at_utc"] = (
+            datetime.now(timezone.utc) - timedelta(hours=7)
+        ).isoformat()
+        connection.execute(
+            "UPDATE checkpoint_meta SET value=? WHERE key='state'",
+            (json.dumps(state),),
+        )
+        connection.commit()
+
+    def forbidden_executor(*_):
+        pytest.fail("executor reached after crashed attempt exceeded budget")
+
+    with pytest.raises(PopulationAdequacyError, match="runtime limit"):
+        run_population_adequacy(
+            _active_config(), run_executor=forbidden_executor, resume=True,
+            **arguments)
+    assert not destination.exists()
+
+
+def test_policy_replay_is_disabled_and_recomputes_block_only_adequacy(tmp_path):
+    source = tmp_path / "source-v2.aggregate.json"
+    destination = tmp_path / "replay-v3.aggregate.json"
+    run_population_adequacy(
+        _active_config(), destination=source, source_context=_source_context(),
+        families=_families(), run_executor=_executor(link_cause="duplicate"),
+        resource_probe=_resources, synthetic_test=True,
+        aggregate_store_directory=tmp_path,
+    )
+    source_report = json.loads(source.read_text(encoding="utf-8"))
+    assert source_report["aggregate"]["leakage"]["component_count"] == 25
+    expected = dict(
+        expected_file_sha256=sha256(source.read_bytes()).hexdigest(),
+        expected_payload_sha256=source_report["payload_sha256"],
+        expected_revision="synthetic-revision",
+    )
+    with pytest.raises(PermissionError, match="separate one-run approval"):
+        replay.replay_policy_v3(source, destination, **expected)
+    result = replay.replay_policy_v3(
+        source, destination, synthetic_test=True, **expected)
+    assert result["adequacy_status"] == "pass"
+    published = json.loads(destination.read_text(encoding="utf-8"))
+    assert published["feature_collision_family_pair_count"] == 1
+    assert published["leakage"]["component_count"] == 26
+    assert published["leakage"]["qualifying_component_count"] == 26
+    assert published["leakage"]["role_identities_exposed"] is False
+    assert "components" not in published["leakage"]
+    assert set(tmp_path.iterdir()) == {source, destination}
+
+
+def test_policy_replay_rejects_hash_and_count_drift(tmp_path):
+    source = tmp_path / "source-v2.aggregate.json"
+    run_population_adequacy(
+        _active_config(), destination=source, source_context=_source_context(),
+        families=_families(), run_executor=_executor(), resource_probe=_resources,
+        synthetic_test=True, aggregate_store_directory=tmp_path,
+    )
+    report = json.loads(source.read_text(encoding="utf-8"))
+    expected = dict(
+        expected_file_sha256=sha256(source.read_bytes()).hexdigest(),
+        expected_payload_sha256=report["payload_sha256"],
+        expected_revision="synthetic-revision", synthetic_test=True,
+    )
+    report["aggregate"]["scenario_families"][0]["class_counts"]["positive_1"] += 1
+    source.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(PopulationAdequacyError, match="whole-file hash"):
+        replay.replay_policy_v3(source, tmp_path / "refused.json", **expected)
+    report.pop("payload_sha256")
+    payload = adequacy._canonical_json(report)
+    report["payload_sha256"] = sha256(payload).hexdigest()
+    source.write_bytes(adequacy._canonical_json(report))
+    expected["expected_file_sha256"] = sha256(source.read_bytes()).hexdigest()
+    expected["expected_payload_sha256"] = report["payload_sha256"]
+    with pytest.raises(PopulationAdequacyError, match="family totals mismatch"):
+        replay.replay_policy_v3(source, tmp_path / "refused.json", **expected)
+    assert not (tmp_path / "refused.json").exists()
+
+
+def test_future_checkpoint_storage_telemetry_and_recovery_fail_closed(tmp_path):
+    cp = tmp_path / "journal.sqlite3"
+    cp.touch()
+    telemetry = tmp_path / "resource.jsonl"
+    now = datetime.now(timezone.utc)
+    digest = "a" * 64
+    binding = {
+        "schema": checkpoint_contract.CHECKPOINT_SCHEMA,
+        "package_id": checkpoint_contract.CHECKPOINT_PACKAGE_ID,
+        "expansion_id": checkpoint_contract.CHECKPOINT_PACKAGE_ID,
+        "source_revision": "b" * 40, "source_dirty": False,
+        "hashes": {key: digest for key in checkpoint_contract.REQUIRED_BINDING_HASHES},
+        "source_file_hashes": {
+            path: digest for path in adequacy.PRODUCTION_SOURCE_RELATIVE_PATHS},
+        "input_hashes": {"synthetic_input": digest},
+        "run_count": 884,
+    }
+    checkpoint_state = {
+        "aggregate_counts": {"rows": 1, "positive_1": 1},
+        "identity_totals": {"duplicate": 1, "block": 1},
+        "cumulative_resource": {"elapsed_seconds": 3.0, "samples": 4},
+    }
+    record = {
+        "binding": binding, "execution_id": "synthetic-execution",
+        "created_at_utc": now.isoformat(),
+        "expires_at_utc": (now + timedelta(days=30)).isoformat(),
+        "completed_run_order": 1,
+        "cumulative_resource_sha256": sha256(adequacy._canonical_json(
+            checkpoint_state["cumulative_resource"])).hexdigest(),
+        "aggregate_counts_sha256": sha256(adequacy._canonical_json(
+            checkpoint_state["aggregate_counts"])).hexdigest(),
+        "identity_totals_sha256": sha256(adequacy._canonical_json(
+            checkpoint_state["identity_totals"])).hexdigest(),
+        "checkpoint_state": checkpoint_state,
+    }
+    def storage(_):
+        return {"filesystem": "NTFS", "is_reparse_point": False,
+                "inheritance_enabled": False, "owner_sid": "S-1-test",
+                "allowed_principals": ["S-1-test", "NT AUTHORITY\\SYSTEM",
+                                       "BUILTIN\\Administrators"],
+                "denied_principals": []}
+    def sample(phase, elapsed, completed, run_order, exit_status=None):
+        return {"execution_id": "synthetic-execution", "attempt_id": "attempt-1",
+                "process_id": 42, "process_started_at_utc": now.isoformat(),
+                "captured_at_utc": (now + timedelta(seconds=elapsed)).isoformat(),
+                "monotonic_elapsed_seconds": elapsed, "phase": phase,
+                "run_order": run_order, "available_memory_bytes": 8_000_000_000,
+                "process_rss_bytes": 100_000_000,
+                "process_peak_rss_bytes": 100_000_000,
+                "free_disk_bytes": 10_000_000_000,
+                "completed_run_order": completed, "process_exit_status": exit_status}
+    for item in (sample("launch", 0, 0, None), sample("before_run", 1, 0, 1),
+                 sample("after_run", 2, 1, 1), sample("exit", 3, 1, None, 1)):
+        checkpoint_contract.append_durable_telemetry(
+            telemetry, item, synthetic_test=True)
+    args = dict(
+        checkpoint_path=cp, telemetry_path=telemetry, checkpoint_record=record,
+        expected_binding=binding, storage_verifier=storage,
+        executing_user_sid="S-1-test", report_exists=False, report_verifier=None,
+        sqlite_integrity_ok=True,
+    )
+    with pytest.raises(PermissionError):
+        checkpoint_contract.inspect_resume_contract(**args)
+    assert checkpoint_contract.inspect_resume_contract(
+        **args, synthetic_test=True) == "eligible_for_separately_authorized_resume"
+    assert checkpoint_contract.inspect_resume_contract(
+        **{**args, "report_exists": True, "report_verifier": lambda: {
+            "status": "complete", "whole_file_sha256": digest,
+            "payload_sha256": digest, "complete_run_count": 884,
+            "provenance_verified": True, "integrity_verified": True}},
+        synthetic_test=True) == "published_validate_then_owner_approved_cleanup"
+    with pytest.raises(PopulationAdequacyError, match="Existing report invalid"):
+        checkpoint_contract.inspect_resume_contract(
+            **{**args, "report_exists": True,
+                "report_verifier": lambda: {"status": "failed"}}, synthetic_test=True)
+    with pytest.raises(PopulationAdequacyError, match="ACL"):
+        checkpoint_contract.inspect_resume_contract(
+            **{**args, "storage_verifier": lambda _: {
+                **storage(tmp_path), "inheritance_enabled": True}},
+            synthetic_test=True)
+    intact_telemetry = telemetry.read_bytes()
+    telemetry.write_bytes(b"\n".join(intact_telemetry.splitlines()[:-1]) + b"\n")
+    with pytest.raises(PopulationAdequacyError, match="exit record"):
+        checkpoint_contract.inspect_resume_contract(**args, synthetic_test=True)
+    telemetry.write_bytes(intact_telemetry)
+    mutated = [json.loads(line) for line in intact_telemetry.splitlines()]
+    mutated[2]["process_peak_rss_bytes"] = adequacy.RSS_CEILING_BYTES + 1
+    telemetry.write_bytes(b"\n".join(adequacy._canonical_json(item) for item in mutated) + b"\n")
+    with pytest.raises(PopulationAdequacyError, match="breach"):
+        checkpoint_contract.inspect_resume_contract(**args, synthetic_test=True)
+    mutated[2]["process_peak_rss_bytes"] = 100_000_000
+    mutated[2]["monotonic_elapsed_seconds"] = 7
+    telemetry.write_bytes(b"\n".join(adequacy._canonical_json(item) for item in mutated) + b"\n")
+    with pytest.raises(PopulationAdequacyError, match="sampling gap"):
+        checkpoint_contract.inspect_resume_contract(**args, synthetic_test=True)
+    telemetry.write_bytes(intact_telemetry)
+    expired = {**record, "created_at_utc": (now - timedelta(days=31)).isoformat(),
+               "expires_at_utc": (now - timedelta(days=1)).isoformat()}
+    with pytest.raises(PopulationAdequacyError, match="retention expired"):
+        checkpoint_contract.inspect_resume_contract(
+            **{**args, "checkpoint_record": expired}, synthetic_test=True)

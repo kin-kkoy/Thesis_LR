@@ -373,21 +373,21 @@ def test_single_observation_and_byte_bounds_fail_before_acceptance():
 
 def test_row_payload_identity_work_is_bounded_to_configured_batches(monkeypatch):
     config = _config(batch_rows=3)
-    duplicate_batch_sizes = []
+    observation_batch_sizes = []
     spatial_batch_sizes = []
-    original_duplicate_ids = set_c_collector_module._sha256_rows
+    original_observation_ids = set_c_collector_module.observation_record_ids
     original_spatial_ids = set_c_collector_module._spatial_block_ids
 
-    def recording_duplicate_ids(features):
-        duplicate_batch_sizes.append(int(features.shape[0]))
-        return original_duplicate_ids(features)
+    def recording_observation_ids(*args, **kwargs):
+        observation_batch_sizes.append(int(kwargs["rows"].shape[0]))
+        return original_observation_ids(*args, **kwargs)
 
     def recording_spatial_ids(**kwargs):
         spatial_batch_sizes.append(int(kwargs["rows"].shape[0]))
         return original_spatial_ids(**kwargs)
 
     monkeypatch.setattr(
-        set_c_collector_module, "_sha256_rows", recording_duplicate_ids
+        set_c_collector_module, "observation_record_ids", recording_observation_ids
     )
     monkeypatch.setattr(
         set_c_collector_module, "_spatial_block_ids", recording_spatial_ids
@@ -396,7 +396,7 @@ def test_row_payload_identity_work_is_bounded_to_configured_batches(monkeypatch)
     collector = SetCCollector(_environment(), config)
     collector(_observation(config))
 
-    assert duplicate_batch_sizes == [3, 3, 2]
+    assert observation_batch_sizes == [3, 3, 2]
     assert spatial_batch_sizes == [3, 3, 2]
     assert collector.row_count == 8
     assert [batch.row_count for batch in collector.pending_batches()] == [3, 3, 2]

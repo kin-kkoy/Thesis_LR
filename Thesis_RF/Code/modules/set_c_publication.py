@@ -25,7 +25,7 @@ from .feature_pipeline import (
     TARGET_VERSION,
     validate_feature_values,
 )
-from .set_c_collector import SET_C_ROW_BATCH_SCHEMA_VERSION
+from .set_c_collector import SET_C_ROW_BATCH_SCHEMA_VERSION, observation_record_ids
 from .transition_observer import (
     AUTHORIZED_SIMULATED_TRANSITION_SOURCE,
     TRANSITION_OBSERVATION_SCHEMA_VERSION,
@@ -303,14 +303,22 @@ class SetCPublicationSession:
             "mapped_building_mask_sha256": self.identity["mapped_building_mask_sha256"],
         }:
             raise ValueError("Batch domain-mask identity is inconsistent")
+        grid_id = _text(identity, "grid_id")
+        expected_records = observation_record_ids(
+            identity, run_identity_sha256=run_hash,
+            provenance_sha256=provenance_hash, seed=int(getattr(batch, "seed")),
+            timestep_t=int(getattr(batch, "timestep_t")),
+            timestep_t1=int(getattr(batch, "timestep_t1")),
+            rows=getattr(batch, "cell_rows"), cols=getattr(batch, "cell_cols"),
+        )
+        if not np.array_equal(getattr(batch, "duplicate_group_ids"), expected_records):
+            raise PermissionError("Batch observation-record identities are inconsistent")
         run_dir = self.staging_path / "runs" / run_hash / "batches"
         run_dir.mkdir(parents=True, exist_ok=True)
         name = f"{int(getattr(batch, 'observation_index')):06d}-{int(getattr(batch, 'batch_index')):06d}.csv"
         path = run_dir / name
         if path.exists():
             raise FileExistsError(f"Duplicate staged batch: {name}")
-
-        grid_id = _text(identity, "grid_id")
         values = zip(
             getattr(batch, "cell_rows"), getattr(batch, "cell_cols"),
             getattr(batch, "duplicate_group_ids"), getattr(batch, "spatial_block_ids"),

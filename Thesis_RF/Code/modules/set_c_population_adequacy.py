@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from itertools import combinations
@@ -30,6 +30,7 @@ from .model_free_teacher import (
 from .set_c_collector import (
     RUNNER_OWNED_BACKPRESSURE_POLICY,
     SetCCollector,
+    _sha256_rows,
 )
 from .set_c_pilot import (
     EXPECTED_MAPPED_BUILDING_SHA256,
@@ -498,18 +499,29 @@ class _UnionFind:
 class _IdentityStore:
     """Exact file-backed identity aggregates with a fixed SQLite page cache."""
 
-    def __init__(self, directory: Path | None = None) -> None:
-        descriptor, name = tempfile.mkstemp(
-            prefix="set-c-adequacy-", suffix=".sqlite3", dir=directory
-        )
-        os.close(descriptor)
-        self.path = Path(name)
+    def __init__(self, directory: Path | None = None, *, checkpoint: Path | None = None,
+                 resume: bool = False) -> None:
+        if checkpoint is None:
+            descriptor, name = tempfile.mkstemp(
+                prefix="set-c-adequacy-", suffix=".sqlite3", dir=directory
+            )
+            os.close(descriptor)
+            self.path = Path(name)
+        else:
+            self.path = checkpoint
+            if resume:
+                if not self.path.is_file():
+                    raise PopulationAdequacyError("Checkpoint is missing")
+            else:
+                with self.path.open("xb"):
+                    pass
         self.connection = sqlite3.connect(self.path)
         self.connection.execute(f"PRAGMA cache_size=-{SQLITE_CACHE_KIB}")
         self.connection.execute("PRAGMA temp_store=FILE")
         self.connection.execute("PRAGMA journal_mode=DELETE")
         self.connection.execute("PRAGMA synchronous=FULL")
-        self.connection.execute(
+        if not resume:
+            self.connection.execute(
             """
             CREATE TABLE identities (
                 kind INTEGER NOT NULL,
@@ -520,9 +532,13 @@ class _IdentityStore:
                 PRIMARY KEY (kind, identity)
             ) WITHOUT ROWID
             """
-        )
+            )
+            if checkpoint is not None:
+                self.connection.execute("CREATE TABLE checkpoint_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID")
+                self.connection.execute("CREATE TABLE completed_runs (run_order INTEGER PRIMARY KEY, payload TEXT NOT NULL, digest TEXT NOT NULL)")
         self.connection.commit()
         self.closed = False
+        self.checkpoint = checkpoint is not None
 
     def merge(
         self,
@@ -579,15 +595,16 @@ class _IdentityStore:
             "conflicting_label_group_count": int(conflicting),
         }
 
-    def close(self) -> None:
+    def close(self, *, keep_checkpoint: bool = False) -> None:
         if self.closed:
             return
         try:
             self.connection.rollback()
             self.connection.close()
         finally:
-            for suffix in ("", "-journal", "-wal", "-shm"):
-                Path(f"{self.path}{suffix}").unlink(missing_ok=True)
+            if not (keep_checkpoint and self.checkpoint):
+                for suffix in ("", "-journal", "-wal", "-shm"):
+                    Path(f"{self.path}{suffix}").unlink(missing_ok=True)
             self.closed = True
 
 
@@ -599,12 +616,14 @@ class _AggregateAccumulator:
         families: Sequence[PopulationFamily],
         *,
         store_directory: Path | None = None,
+        checkpoint: Path | None = None,
+        resume: bool = False,
     ) -> None:
         self.families = {family.family_id: family for family in families}
         self.family_counts: dict[str, list[int]] = {
             family.family_id: [0, 0] for family in families
         }
-        self.identities = _IdentityStore(store_directory)
+        self.identities = _IdentityStore(store_directory, checkpoint=checkpoint, resume=resume)
         self.runs: list[dict[str, object]] = []
         self.total_rows = 0
         self.total_positive = 0
@@ -648,7 +667,8 @@ class _AggregateAccumulator:
             raise PopulationAdequacyError("Per-run row ceiling exceeded")
         if self.total_rows + self.current_rows > TOTAL_ROW_CEILING:
             raise PopulationAdequacyError("Total row ceiling exceeded")
-        self.identities.merge(0, duplicates, labels, spec.family.order)
+        # V2 aggregate kind 0 means exact predictor collisions, never record identity.
+        self.identities.merge(0, _sha256_rows(batch.features), labels, spec.family.order)
         self.identities.merge(1, blocks, labels, spec.family.order)
 
     def finish(self, spec: PopulationRunSpec, result: PopulationRunResult, elapsed: float) -> None:
@@ -691,7 +711,6 @@ class _AggregateAccumulator:
             raise PopulationAdequacyError(
                 f"Run {spec.run_id} is failed, partial, censored, count-mismatched, or identity-invalid"
             )
-        self.identities.commit()
         self.total_rows += self.current_rows
         self.total_positive += self.current_positive
         self.total_negative += self.current_negative
@@ -812,8 +831,163 @@ class _AggregateAccumulator:
             "joint": {"component_count": len(joint_sizes), "family_counts": joint_sizes},
         }
 
-    def close(self) -> None:
-        self.identities.close()
+    def close(self, *, keep_checkpoint: bool = False) -> None:
+        self.identities.close(keep_checkpoint=keep_checkpoint)
+
+
+def _checkpoint_binding(config, source_context, families, specs):
+    return sha256(_canonical_json({
+        "schema": AGGREGATE_SCHEMA_VERSION,
+        "expansion": EXPANSION_ID,
+        "config": config,
+        "source_context": source_context,
+        "families": [asdict(family) for family in families],
+        "run_order": [spec.run_id for spec in specs],
+    })).hexdigest()
+
+
+def _checkpoint_load(aggregate, binding, specs):
+    connection = aggregate.identities.connection
+    try:
+        if connection.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+            raise ValueError("SQLite integrity check failed")
+        names = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        if names != {"identities", "checkpoint_meta", "completed_runs"}:
+            raise ValueError("Checkpoint table inventory drifted")
+        if tuple(row[1] for row in connection.execute("PRAGMA table_info(identities)")) != (
+                "kind", "identity", "row_count", "class_mask", "family_mask"):
+            raise ValueError("Checkpoint identity schema drifted")
+        meta_rows = connection.execute("SELECT key, value FROM checkpoint_meta").fetchall()
+        if len(meta_rows) != 2 or {key for key, _ in meta_rows} != {"binding", "state"}:
+            raise ValueError("Checkpoint metadata is incomplete")
+        meta = dict(meta_rows)
+        if meta["binding"] != binding:
+            raise ValueError("Checkpoint provenance, manifest, schema, or run order drifted")
+        state = json.loads(meta["state"])
+        if set(state) != {"elapsed_seconds", "sample_count", "launch_count", "attempt_started_at_utc", "minimum_available_memory_bytes",
+                          "maximum_process_rss_bytes", "minimum_free_disk_bytes"}:
+            raise ValueError("Checkpoint resource state is invalid")
+        if (not isinstance(state["elapsed_seconds"], (int, float))
+                or not 0 <= state["elapsed_seconds"] <= EXPANSION_RUNTIME_LIMIT_SECONDS
+                or not isinstance(state["sample_count"], int)
+                or state["sample_count"] < 1
+                or type(state["launch_count"]) is not int or state["launch_count"] < 1
+                or not all(type(state[key]) is int and state[key] >= 0 for key in (
+                    "minimum_available_memory_bytes", "maximum_process_rss_bytes",
+                    "minimum_free_disk_bytes"))
+                or state["minimum_available_memory_bytes"] < RUNTIME_MEMORY_FLOOR_BYTES
+                or state["maximum_process_rss_bytes"] > RSS_CEILING_BYTES
+                or state["minimum_free_disk_bytes"] < FREE_DISK_FLOOR_BYTES):
+            raise ValueError("Checkpoint resource bounds are invalid")
+        attempt = state["attempt_started_at_utc"]
+        if attempt is not None:
+            if not isinstance(attempt, str):
+                raise ValueError("Checkpoint attempt timestamp is invalid")
+            started = datetime.fromisoformat(attempt)
+            if started.tzinfo is None:
+                raise ValueError("Checkpoint attempt timestamp has no timezone")
+            downtime = (datetime.now(timezone.utc) - started).total_seconds()
+            if downtime < 0:
+                raise ValueError("Checkpoint attempt timestamp is in the future")
+            state["elapsed_seconds"] += downtime
+            if state["elapsed_seconds"] > EXPANSION_RUNTIME_LIMIT_SECONDS:
+                raise ValueError("Checkpoint attempt exceeded aggregate runtime limit")
+            state["attempt_started_at_utc"] = None
+        completed = connection.execute(
+            "SELECT run_order, payload, digest FROM completed_runs ORDER BY run_order"
+        ).fetchall()
+        if len(completed) > EXPECTED_RUN_COUNT:
+            raise ValueError("Checkpoint has excess runs")
+        for expected_order, (order, payload, digest) in enumerate(completed, start=1):
+            if order != expected_order or sha256(payload.encode("utf-8")).hexdigest() != digest:
+                raise ValueError("Checkpoint run gap or corrupted journal")
+            record = json.loads(payload)
+            _validate_aggregate_only(record)
+            spec = specs[expected_order - 1]
+            if (set(record) != {"order", "run_id", "scenario_family_id", "scenario_id",
+                                "seed", "wind_condition_ordinal", "replicate_ordinal",
+                                "rows", "class_counts", "batch_count", "observation_count",
+                                "termination", "configuration_sha256", "run_identity_sha256",
+                                "provenance_sha256", "runtime_seconds"}
+                    or set(record.get("class_counts", {})) != {"negative_0", "positive_1"}
+                    or set(record.get("termination", {})) != {"reason", "completeness_status",
+                                                                  "authoritative", "final_timestep",
+                                                                  "expected_transition_count",
+                                                                  "captured_transition_count"}
+                    or record.get("order") != order or record.get("run_id") != spec.run_id
+                    or record.get("scenario_family_id") != spec.family.family_id
+                    or record.get("scenario_id") != spec.scenario_id
+                    or record.get("seed") != spec.seed
+                    or record.get("wind_condition_ordinal") != spec.wind_condition_ordinal
+                    or record.get("replicate_ordinal") != spec.replicate_ordinal
+                    or record.get("termination", {}).get("reason") != TERMINATION_INACTIVE
+                    or record.get("termination", {}).get("completeness_status") != COMPLETENESS_COMPLETE
+                    or record.get("termination", {}).get("authoritative") is not True
+                    or record.get("rows") != sum(record.get("class_counts", {}).values())
+                    or record.get("rows", 0) < 1 or record["rows"] > PER_RUN_ROW_CEILING):
+                raise ValueError("Checkpoint run record is invalid")
+            if (not all(isinstance(record.get(key), str) and len(record[key]) == 64
+                        and all(character in "0123456789abcdef" for character in record[key])
+                        for key in ("configuration_sha256", "run_identity_sha256", "provenance_sha256"))
+                    or not 0 <= record["runtime_seconds"] <= RUN_RUNTIME_LIMIT_SECONDS
+                    or not 0 < record["termination"]["final_timestep"] <= SAFETY_LIMIT_TIMESTEPS
+                    or not (record["termination"]["expected_transition_count"] ==
+                            record["termination"]["captured_transition_count"] ==
+                            record["observation_count"])):
+                raise ValueError("Checkpoint run validation drifted")
+            aggregate.runs.append(record)
+            negative = record["class_counts"]["negative_0"]
+            positive = record["class_counts"]["positive_1"]
+            if not all(type(value) is int and value >= 0 for value in (negative, positive)):
+                raise ValueError("Checkpoint class counts are invalid")
+            aggregate.total_rows += record["rows"]
+            aggregate.total_negative += negative
+            aggregate.total_positive += positive
+            counts = aggregate.family_counts[spec.family.family_id]
+            counts[0] += negative
+            counts[1] += positive
+        if aggregate.total_rows > TOTAL_ROW_CEILING:
+            raise ValueError("Checkpoint total row bound exceeded")
+        for kind in (0, 1):
+            summary = connection.execute(
+                "SELECT COALESCE(SUM(row_count), 0), COUNT(*) FROM identities WHERE kind=?",
+                (kind,),
+            ).fetchone()
+            if summary[0] != aggregate.total_rows or (completed and summary[1] == 0):
+                raise ValueError("Checkpoint identity counts disagree with runs")
+        invalid = connection.execute(
+            "SELECT COUNT(*) FROM identities WHERE kind NOT IN (0,1) OR length(identity)=0 "
+            "OR row_count<1 OR class_mask NOT IN (1,2,3) OR family_mask<1 "
+            "OR family_mask>=?", (1 << EXPECTED_FAMILY_COUNT,)
+        ).fetchone()[0]
+        if invalid:
+            raise ValueError("Checkpoint identity domain is invalid")
+        if state["sample_count"] < state["launch_count"] + 2 * len(completed):
+            raise ValueError("Checkpoint resource sample count drifted")
+        return state
+    except (sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+        raise PopulationAdequacyError(f"Invalid synthetic checkpoint: {exc}") from exc
+
+
+def _checkpoint_commit(aggregate, state):
+    record = aggregate.runs[-1]
+    payload = _canonical_json(record).decode("utf-8")
+    connection = aggregate.identities.connection
+    connection.execute(
+        "INSERT INTO completed_runs(run_order,payload,digest) VALUES (?,?,?)",
+        (record["order"], payload, sha256(payload.encode("utf-8")).hexdigest()),
+    )
+    _checkpoint_save_state(connection, state)
+    aggregate.identities.commit()
+
+
+def _checkpoint_save_state(connection, state):
+    connection.execute(
+        "UPDATE checkpoint_meta SET value=? WHERE key='state'",
+        (_canonical_json(state).decode("utf-8"),),
+    )
 
 
 def _unexposed_allocation_feasible(components: Sequence[Mapping[str, object]]) -> bool:
@@ -1255,6 +1429,8 @@ def _run_population_adequacy_impl(
     resource_probe: Callable[[Path], ResourceSnapshot] = capture_resource_snapshot,
     synthetic_test: bool = False,
     aggregate_store_directory: Path | None = None,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
     _cleanup: list[_AggregateAccumulator],
 ) -> dict[str, object]:
     """Run sequentially and publish one immutable aggregate report on success."""
@@ -1272,7 +1448,15 @@ def _run_population_adequacy_impl(
             raise PermissionError("Synthetic tests cannot use the production destination")
         if families is None or run_executor is None:
             raise PopulationAdequacyError("Synthetic tests require injected families and executor")
+        if checkpoint_path is not None:
+            checkpoint_path = _require_temp_descendant(checkpoint_path, "checkpoint_path")
+            if checkpoint_path == destination:
+                raise PermissionError("Checkpoint cannot be the aggregate destination")
+        elif resume:
+            raise PermissionError("Resume requires a synthetic checkpoint path")
     else:
+        if checkpoint_path is not None or resume:
+            raise PermissionError("Production checkpoints and resume require separate approval")
         if resource_probe is not capture_resource_snapshot:
             raise PermissionError("Production execution requires exact resource telemetry")
         if aggregate_store_directory is not None:
@@ -1296,28 +1480,95 @@ def _run_population_adequacy_impl(
     specs = build_run_matrix(families)
     if destination.exists():
         raise FileExistsError(f"Refusing to overwrite adequacy report: {destination}")
+    if checkpoint_path is not None and checkpoint_path.exists() and not resume:
+        raise FileExistsError(f"Refusing to overwrite synthetic checkpoint: {checkpoint_path}")
+    if resume and checkpoint_path is not None and not checkpoint_path.is_file():
+        raise PopulationAdequacyError("Synthetic checkpoint is missing")
     launch = resource_probe(destination)
     _check_resources(launch, launch=True)
-    start = time.monotonic()
-    samples = [launch]
     aggregate = _AggregateAccumulator(
-        families, store_directory=aggregate_store_directory
+        families, store_directory=aggregate_store_directory,
+        checkpoint=checkpoint_path, resume=resume,
     )
     _cleanup.append(aggregate)
-    for spec in specs:
+    binding = _checkpoint_binding(config, source_context, families, specs) if checkpoint_path else None
+    if resume:
+        state = _checkpoint_load(aggregate, binding, specs)
+        state["sample_count"] += 1
+        state["launch_count"] += 1
+        state["minimum_available_memory_bytes"] = min(
+            state["minimum_available_memory_bytes"], launch.available_memory_bytes)
+        state["maximum_process_rss_bytes"] = max(
+            state["maximum_process_rss_bytes"], launch.process_rss_bytes)
+        state["minimum_free_disk_bytes"] = min(
+            state["minimum_free_disk_bytes"], launch.free_disk_bytes)
+    else:
+        state = {
+            "elapsed_seconds": 0.0,
+            "sample_count": 1,
+            "launch_count": 1,
+            "attempt_started_at_utc": None,
+            "minimum_available_memory_bytes": launch.available_memory_bytes,
+            "maximum_process_rss_bytes": launch.process_rss_bytes,
+            "minimum_free_disk_bytes": launch.free_disk_bytes,
+        }
+        if checkpoint_path is not None:
+            aggregate.identities.connection.executemany(
+                "INSERT INTO checkpoint_meta(key,value) VALUES (?,?)",
+                (("binding", binding), ("state", _canonical_json(state).decode("utf-8"))),
+            )
+            aggregate.identities.commit()
+    start = time.monotonic() - state["elapsed_seconds"]
+    for spec in specs[len(aggregate.runs):]:
         if time.monotonic() - start > EXPANSION_RUNTIME_LIMIT_SECONDS:
             raise PopulationResourceError("Aggregate expansion runtime limit exceeded")
-        before = resource_probe(destination)
-        samples.append(before)
-        _check_resources(before, launch=False)
-        aggregate.begin(spec)
-        run_start = time.monotonic()
-        result = run_executor(spec, aggregate.consume)
-        elapsed = time.monotonic() - run_start
-        aggregate.finish(spec, result, elapsed)
-        after = resource_probe(destination)
-        samples.append(after)
-        _check_resources(after, launch=False)
+        if checkpoint_path is not None:
+            state["attempt_started_at_utc"] = datetime.now(timezone.utc).isoformat()
+            _checkpoint_save_state(aggregate.identities.connection, state)
+            aggregate.identities.commit()
+        try:
+            before = resource_probe(destination)
+            for sample in (before,):
+                state["minimum_available_memory_bytes"] = min(
+                    state["minimum_available_memory_bytes"], sample.available_memory_bytes)
+                state["maximum_process_rss_bytes"] = max(
+                    state["maximum_process_rss_bytes"], sample.process_rss_bytes)
+                state["minimum_free_disk_bytes"] = min(
+                    state["minimum_free_disk_bytes"], sample.free_disk_bytes)
+                state["sample_count"] += 1
+            _check_resources(before, launch=False)
+            aggregate.begin(spec)
+            run_start = time.monotonic()
+            result = run_executor(spec, aggregate.consume)
+            elapsed = time.monotonic() - run_start
+            aggregate.finish(spec, result, elapsed)
+            after = resource_probe(destination)
+            state["minimum_available_memory_bytes"] = min(
+                state["minimum_available_memory_bytes"], after.available_memory_bytes)
+            state["maximum_process_rss_bytes"] = max(
+                state["maximum_process_rss_bytes"], after.process_rss_bytes)
+            state["minimum_free_disk_bytes"] = min(
+                state["minimum_free_disk_bytes"], after.free_disk_bytes)
+            state["sample_count"] += 1
+            _check_resources(after, launch=False)
+            state["elapsed_seconds"] = time.monotonic() - start
+            if state["elapsed_seconds"] > EXPANSION_RUNTIME_LIMIT_SECONDS:
+                raise PopulationResourceError("Aggregate expansion runtime limit exceeded")
+            state["attempt_started_at_utc"] = None
+            if checkpoint_path is None:
+                aggregate.identities.commit()
+            else:
+                _checkpoint_commit(aggregate, state)
+        except BaseException:
+            if checkpoint_path is not None:
+                aggregate.identities.connection.rollback()
+                state["attempt_started_at_utc"] = None
+                state["elapsed_seconds"] = time.monotonic() - start
+                _checkpoint_save_state(aggregate.identities.connection, state)
+                aggregate.identities.commit()
+            raise
+        if spec.order % 100 == 0 or spec.order == EXPECTED_RUN_COUNT:
+            print(f"Gate 6 progress: {spec.order}/{EXPECTED_RUN_COUNT} runs complete", flush=True)
     if len(aggregate.runs) != EXPECTED_RUN_COUNT or aggregate.total_rows > TOTAL_ROW_CEILING:
         raise PopulationAdequacyError("Complete expansion count contract failed")
     components = aggregate.leakage_components()
@@ -1419,12 +1670,10 @@ def _run_population_adequacy_impl(
         },
         "adequacy": {"status": "pass" if all(gates.values()) else "fail", "gates": gates},
         "resources": {
-            "minimum_available_memory_bytes": min(
-                sample.available_memory_bytes for sample in samples
-            ),
-            "maximum_process_rss_bytes": max(sample.process_rss_bytes for sample in samples),
-            "minimum_free_disk_bytes": min(sample.free_disk_bytes for sample in samples),
-            "sample_count": len(samples),
+            "minimum_available_memory_bytes": state["minimum_available_memory_bytes"],
+            "maximum_process_rss_bytes": state["maximum_process_rss_bytes"],
+            "minimum_free_disk_bytes": state["minimum_free_disk_bytes"],
+            "sample_count": state["sample_count"],
             "elapsed_seconds": time.monotonic() - start,
         },
         "integrity": {
@@ -1472,6 +1721,8 @@ def run_population_adequacy(
     resource_probe: Callable[[Path], ResourceSnapshot] = capture_resource_snapshot,
     synthetic_test: bool = False,
     aggregate_store_directory: Path | None = None,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
 ) -> dict[str, object]:
     """Run the expansion and always remove its temporary exact aggregate store."""
     cleanup: list[_AggregateAccumulator] = []
@@ -1486,11 +1737,14 @@ def run_population_adequacy(
             resource_probe=resource_probe,
             synthetic_test=synthetic_test,
             aggregate_store_directory=aggregate_store_directory,
+            checkpoint_path=checkpoint_path,
+            resume=resume,
             _cleanup=cleanup,
         )
     finally:
         for aggregate in cleanup:
-            aggregate.close()
+            aggregate.close(keep_checkpoint=checkpoint_path is not None and
+                            not Path(destination).exists())
 
 
 __all__ = [

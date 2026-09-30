@@ -17,7 +17,7 @@ from modules.feature_pipeline import (
     TARGET_VERSION,
 )
 from modules.ca_state import STATE_ENCODING
-from modules.set_c_collector import SET_C_ROW_BATCH_SCHEMA_VERSION
+from modules.set_c_collector import SET_C_ROW_BATCH_SCHEMA_VERSION, observation_record_ids
 from modules.set_c_leakage import (
     build_joint_leakage_components,
     deterministic_allocation_policy_contract,
@@ -112,7 +112,11 @@ def _batch() -> SimpleNamespace:
         labels=labels,
         cell_rows=np.array([1, 2], dtype=np.int64),
         cell_cols=np.array([3, 4], dtype=np.int64),
-        duplicate_group_ids=np.array([b"2" * 64, b"3" * 64], dtype="S64"),
+        duplicate_group_ids=observation_record_ids(
+            identity, run_identity_sha256=identity_hash,
+            provenance_sha256=identity_hash, seed=42, timestep_t=0,
+            timestep_t1=1, rows=np.array([1, 2], dtype=np.int64),
+            cols=np.array([3, 4], dtype=np.int64)),
         spatial_block_ids=np.array([b"4" * 64, b"5" * 64], dtype="S64"),
         run_identity_sha256=identity_hash,
         provenance_sha256=identity_hash,
