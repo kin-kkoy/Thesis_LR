@@ -442,3 +442,14 @@
 - **Validation:** Focused policy/checkpoint/training tests passed 47/47; complete RF synthetic suite passed 286/286 with cache and bytecode disabled. No production replay, teacher expansion, dataset, split, model, calibration, final-test, or protected-ground-truth operation occurred.
 - **Consequences:** The existing v2 adequacy failure remains immutable evidence, not a result to be overwritten. Under the approved block/provenance policy, aggregate replay is expected to yield 26 singleton components and constructive feasibility, but execution requires a separate exact one-run authorization. Gate 7 and Phase 11 remain blocked.
 - **Supersedes / superseded by:** Supersedes only the duplicate-edge portion of D-015 for future source implementation; it does not claim statistical independence or real-fire validity and does not authorize replay or production checkpoint use.
+
+## D-030 — Revise RF Engineer and RF Validator model defaults
+
+- **Date:** 2026-09-30
+- **Status:** APPROVED
+- **Scope:** Project-scoped RF agent model and reasoning defaults
+- **Owner/approver:** Thesis owner, by explicit instruction before Gate 7 review
+- **Decision:** Pin `rf_engineer` to `gpt-6-luna` with `model_reasoning_effort = "medium"`, and `rf_validator` to `gpt-6-sol` with `model_reasoning_effort = "medium"`. Leave the `tech_lead` and `thesis_researcher` settings unchanged.
+- **Evidence:** `.codex/agents/rf-engineer.toml`; `.codex/agents/rf-validator.toml`; successful TOML parse.
+- **Consequences and follow-up:** Future project-scoped RF Engineer and RF Validator tasks use these defaults. This changes tooling only and authorizes no production execution, dataset publication, split, training, final-test access, or protected-path write.
+- **Supersedes / superseded by:** Supersedes D-022 only for the RF Engineer and RF Validator model/effort settings; all other D-022 boundaries remain in force.

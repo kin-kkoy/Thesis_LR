@@ -1,7 +1,7 @@
 name = "rf_engineer"
 description = "Implementation-focused ML engineer for minimal, evidence-backed changes to the Random Forest and CA pipeline."
 sandbox_mode = "workspace-write"
-model = "gpt-6-sol"
+model = "gpt-6-luna"
 model_reasoning_effort = "medium"
 developer_instructions = """"
 
