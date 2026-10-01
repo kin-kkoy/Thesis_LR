@@ -4,24 +4,24 @@
 
 - **Purpose:** Compact, Git-reviewable navigation and current-state index. Source, identified inputs, immutable artifacts, configurations, commands, and raw records remain the primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-09-30.
-- **Last reviewed base revision:** `f40e8c327327bc4ccd25a2c086aed22952b97b1a`.
-- **Worktree note:** Gate 6 v2 recorded `source_dirty: false`; `Thesis-try.qgz` remains preserved.
-- **Current reviewed RF work:** Gate 6 v3 passed independent validation. The first authorized Gate 7 generation invocation failed when the publisher rejected a required timestep-specific eligible-mask hash; no immutable package exists. The repair at `da25565` passed independent RF Validator review and 299/299 full synthetic tests.
+- **Last updated:** 2026-10-01.
+- **Last reviewed base revision:** `161b8d0ce5ee616a96cc94a7da3f994cd8ec8775`.
+- **Worktree note:** The package records `source_dirty: false`; `Thesis-try.qgz` remains preserved.
+- **Current reviewed RF work:** The repaired Gate 7 runner produced the immutable authoritative Set C v1 package from clean revision `161b8d0`; independent validation passed its manifest, CSV, all 884 runs, and all 1,508 batches. The package has 10,733 rows (797 positive, 9,936 negative). Actual peak resource telemetry is unavailable.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Seek fresh exact one-run Gate 7 authorization bound to the clean repaired revision. Do not rerun generation under the consumed approval.
+- **Active objective:** Complete Phase 11 methodological and data validation of the immutable Set C package before any split or model work.
 - **Methodology:** D-009–D-015 define next-timestep eligible-cell ignition, canonical Set C predictors, `all_eligible`, model-free teacher labels, 128×128 conservative grouping, controlled population expansion, duplicate containment, and role-level adequacy gates.
 - **Accepted source:** Phase 7 supplies the fail-closed model-free teacher and bounded 11-feature collector. Phase 8 v2 revision `df65217b91c1624bbfcff82e95cca15a45a6df2c` supplies the disabled aggregate-only pilot extension; 110 focused synthetic tests passed before execution.
 - **Accepted diagnostic artifact:** `Thesis_RF/Code/output/phase8/phase8_set_c_feasibility_pilot_v2.aggregate.json`; canonical payload SHA-256 `9a4f48ea6b2b7f882985d63ff3cad7ef3c785736e223860f82637fdd9e45cbf3`; whole-file SHA-256 `b62a7bf542d0ab74a3ac71399e85048b3169d0a04b33c95625aec3ee39339d17`.
 - **Diagnostic result:** All 32 runs were inactive, complete, authoritative, and count-matched. They produced 384 aggregate-observed eligible rows: 26 positive and 358 negative. Every diagnostic block size yielded five authoritative leakage components, all five independently containing both labels; four-role allocation is mathematically feasible, but no roles or final block dimensions were assigned.
-- **Current authorization:** Gate 6 is complete. The one-run Gate 7 generation authorization was consumed by a failed invocation; a retry needs a fresh exact approval. Checkpoints/resume, splits, models, and final-test access remain unauthorized.
+- **Current authorization:** Gate 6 is complete. The fresh one-run Gate 7 generation authorization was consumed by the successful package execution. Checkpoints/resume, splits, models, and final-test access remain unauthorized.
 - **Hard boundary:** Do not run the aggregate expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
-- **Next gate:** Rebind the exact package, hashes, resource envelope, and one-time command to the clean repaired revision in a fresh owner authorization.
+- **Next gate:** Review the package's data quality, lineage, and leakage identities independently; seek separate approval before any role assignment or training.
 - **Agent tooling:** `rf_engineer` is pinned to `gpt-6-luna`/`medium`; `rf_validator` to `gpt-6-sol`/`medium`; `tech_lead` remains `gpt-6-sol`/`high`; and `thesis_researcher` remains `gpt-6-sol`/`medium` (D-030). The `tech_lead` instruction conflict remains governed by the parent agent and repository boundaries.
 <!-- END CODEX DIGEST -->
 
@@ -53,6 +53,8 @@
 | `VERIFIED` | The disabled Gate 7 runner connects the approved 26-family/884-run plan to sequential model-free collection and bounded immutable publication. It binds per-run configuration hashes and approved run order, reserves publication disk, and enforces the shared runtime deadline through atomic promotion. | Revision `df63ef5`; focused 18/18 and complete RF 298/298; independent RF Validator PASS | Runner, publisher, approved artifacts, limits, or authorization changes. |
 | `FAIL` | The first Gate 7 production invocation from revision `45733b1` raised `Batch domain-mask identity is inconsistent` during batch staging. The batch includes a timestep-specific eligible-mask hash that the publisher's two-key equality check omitted. The subsequent collector finalization error followed the staging exception. No immutable package exists. | Owner traceback; transition observer, collector, and publisher source; destination absence | Repaired source passes independent validation, clean revision, and fresh one-run authorization. |
 | `VERIFIED` | The publisher now requires the two stable package mask hashes plus one valid timestep-specific eligible-mask hash. The failed attempt left no package or staging residue. | Repair `da25565`; focused 19/19; full RF 299/299; independent RF Validator PASS | A fresh authorized production execution or source change. |
+| `VERIFIED` | The authorized Set C v1 package from clean revision `161b8d0` has 884 ordered complete, inactive, authoritative runs and 10,733 rows (797 positive, 9,936 negative). Its manifest, dataset, all run/batch hashes, and exact 3,902-file inventory passed independent validation; no split role was published. | Manifest file SHA-256 `b700f1b9...e9e3c`, payload `7e993176...e8cbd`; independent RF Validator PASS | Package bytes or validation contract change. |
+| `WARNING` | The package binds the approved resource limits but does not contain independent observed peak RSS, memory/disk minima, or elapsed-time telemetry. | Package manifest and independent RF Validator review | Independent execution telemetry is provided and verified. |
 | `WARNING` | `tech_lead` still has contradictory delegation/output instructions: parent-owned delegation and no human prompt copying conflict with “Prompt to Copy,” direct researcher invocation, and a request to update Markdown despite read-only/manuscript boundaries. | `.codex/agents/tech-lead.toml` lines 21, 42, 50–54 | Profile wording is explicitly repaired and reviewed. |
 | `NEEDS VERIFICATION` | Historical Set A/B/C metric claims are reproducible from identified datasets, models, configurations, splits, commands, and immutable outputs. | `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md` | Close only with primary provenance. |
 
@@ -69,11 +71,11 @@
 2. `WARNING` — V2 contains 20 conflicting-label duplicate groups. Phase 9 must keep each duplicate/leakage-connected group intact; random row splitting is prohibited.
 3. `APPROVED POLICY` — Use 128×128-cell blocks at origin `(0,0)` as conservative containment; do not claim measured decorrelation or spatial independence.
 4. `PASS` — The disabled aggregate site-inventory source and synthetic contracts passed read-only RF validation: four primary and four reserve candidates for each material class 1–5.
-5. `NEEDS EVIDENCE` — Discover, validate, and separately approve exact new-family coordinates, ignition hashes, material contexts, component identities, and block footprints.
+5. `PASS` — The exact new-family coordinates, ignition hashes, material contexts, component identities, and block footprints were validated and approved in the Gate 4 v2 manifest.
 6. `PASS` — D-018 approves deterministic class-1-to-5 ownership and global footprint reservation for mixed-material components.
-7. `PASS` — The immutable v2 report, exact 20 primaries and 20 reserves, and Gate 5 source-only harness are approved and independently validated; no production expansion has run.
+7. `PASS` — The immutable Gate 4 v2 inventory, exact 20 primaries and 20 reserves, and Gate 5 source-only harness were approved and independently validated.
 8. `PASS` — Gate 6 v3 replay preserves the v2 execution evidence, treats its 97 predictor collisions as audit-only, yields 26 qualifying block-only components, and passes every D-015 adequacy gate without rerunning simulations.
-9. `NEEDS EVIDENCE` — RF search space, tuning budget/objective, class weight, calibration, reporting threshold, protected final test, dataset/split identities, and final evaluation remain unset.
+9. `NEEDS EVIDENCE` — The immutable dataset identity is fixed by D-033; RF search space, tuning budget/objective, class weight, calibration, reporting threshold, protected final test, split identity, and final evaluation remain unset.
 10. `BLOCKED` — Training, tuning, calibration, final-test access, model/raster publication, manuscripts, and `Thesis_LR/**` writes remain unauthorized.
 
 ## Known-good navigation

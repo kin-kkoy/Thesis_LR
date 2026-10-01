@@ -477,3 +477,15 @@
 - **Authorization boundary:** No retry, dataset publication, split, training, calibration, final-test or ground-truth access, checkpoint/resume, manuscript, `Thesis_LR/**`, or `Thesis-try.qgz` change is authorized by this record.
 - **Consequences and follow-up:** Request a fresh exact one-run authorization bound to the final clean revision before any manual retry.
 - **Supersedes / superseded by:** Consumes the prior one-run Gate 7 generation approval without changing D-015, D-017, or D-029 methodology.
+
+## D-033 — Record authoritative Set C v1 package generation and integrity review
+
+- **Date:** 2026-10-01
+- **Status:** GENERATED; INDEPENDENT PACKAGE INTEGRITY PASS
+- **Scope:** One owner-authorized manual Gate 7 execution from clean revision `161b8d0ce5ee616a96cc94a7da3f994cd8ec8775`
+- **Decision:** Preserve `Thesis_RF/Code/output/datasets/authoritative_set_c/v1` as the immutable authoritative Set C observation package. Treat the fresh one-run generation authorization as consumed. Package integrity and recorded completeness passed independent read-only validation; later data-quality and methodological review remains separate.
+- **Evidence:** Manifest whole-file SHA-256 `b700f1b9f196893f23e7190daf1bc3c68b0f569f99a977ec9e919f0de73e9e3c`, payload SHA-256 `7e993176acbb57e46d7d229d838351d488b4be063b4f11b37009a57c863e8cbd`; 26 families, 884 ordered complete/inactive/authoritative/count-matched runs, 10,733 rows (797 positive, 9,936 negative), 1,508 batches, and exactly 3,902 expected files. CSV header, predictor values, labels, source/configuration/input and Gate 4/Gate 6 hashes, and no-overwrite/sole-output boundaries passed independent checks; `split_status` remains `unassigned`.
+- **Limitation:** The package binds approved resource limits but contains no independent telemetry establishing observed peak RSS, minimum available memory/disk, or elapsed runtime. This integrity result does not establish real-fire accuracy or authorize grouped splitting, training, calibration, or final-test access.
+- **Authorization boundary:** Do not rerun generation, overwrite the package, create roles or splits, train/tune/calibrate, access final test or ground truth, publish models/rasters, change manuscripts or `Thesis_LR/**`, or modify `Thesis-try.qgz` without separate approval.
+- **Consequences and follow-up:** Continue Phase 11 with independent data-quality and methodology validation of this exact package before deciding whether it is suitable for later grouped allocation.
+- **Supersedes / superseded by:** Records the successful fresh execution after D-032; it does not revise the approved Set C methodology.
