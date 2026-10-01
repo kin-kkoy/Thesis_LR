@@ -84,6 +84,7 @@
 |---|---|
 | Durable methodology | `docs/ai/DECISIONS.md` D-009–D-015 |
 | Phase 9 handoff | `docs/HandoffPhase9.md` |
+| Phase 11 handoff | `docs/HandoffPhase11.md` |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
 | Raster loading/domains | `Thesis_RF/Code/modules/data_loader.py` |
 | Model-free teacher | `Thesis_RF/Code/modules/model_free_teacher.py`; `modules/automata_engine.py` |
