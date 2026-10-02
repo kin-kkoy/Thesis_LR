@@ -47,6 +47,7 @@ from modules.model_trainer import (
     ModelTrainer,
     SUPPORTED_CLASS_WEIGHT_STRATEGIES,
     class_weight_for_estimator,
+    load_verified_development_release,
 )
 from modules.wind_convention import WindContract
 
@@ -71,13 +72,16 @@ def validate_class_weight_candidates(configured: object) -> tuple[str, ...]:
 
 
 def load_grouped_data(
-    csv_path: Path,
-    split_manifest_path: Path,
+    release_dir: Path,
+    *,
+    expected_attestation_sha256: str,
+    allow_synthetic: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, tuple[pd.DataFrame, pd.Series]]]:
-    observations = pd.read_csv(csv_path)
-    assignments = pd.read_csv(split_manifest_path)
-    data = ModelTrainer.merge_split_assignments(observations, assignments)
-    ModelTrainer._validate_dataset_contract(data)
+    data, _ = load_verified_development_release(
+        release_dir,
+        expected_attestation_sha256=expected_attestation_sha256,
+        allow_synthetic=allow_synthetic,
+    )
     partitions: dict[str, tuple[pd.DataFrame, pd.Series]] = {}
     for role in DEVELOPMENT_SPLIT_ROLES:
         selected = data[data["split_role"] == role]
@@ -644,167 +648,9 @@ def build_summary(
 
 
 def main() -> None:
-    code_dir = Path(__file__).resolve().parent
-    config_path = code_dir / "config" / "default_experiment.yaml"
-    with config_path.open("r", encoding="utf-8") as file_obj:
-        config = yaml.safe_load(file_obj)
-    ml_cfg = dict(config.get("ml_model", {}))
-    if not bool(ml_cfg.get("artifact_write_enabled", False)):
-        raise PermissionError(
-            "ml_model.artifact_write_enabled is false; artifact-producing training is not authorized"
-        )
-
-    required_text = (
-        "training_csv",
-        "artifact_version",
-        "source_revision",
-        "source_dirty_state",
-        "calibration_method",
-        "dataset_manifest_path",
-        "split_manifest_path",
-        "training_command",
-        "environment_record",
-        "calibration_selection_record_path",
+    raise PermissionError(
+        "Phase 12 is source-only; RF training remains disabled pending separate approval"
     )
-    missing = [name for name in required_text if ml_cfg.get(name) in (None, "")]
-    if missing:
-        raise ValueError(f"Missing approved training provenance configuration: {missing}")
-    if ml_cfg.get("classification_threshold") is not None:
-        raise ValueError("Numeric classification threshold is not approved")
-    if ml_cfg.get("positive_label") != POSITIVE_LABEL:
-        raise ValueError("ml_model.positive_label must be integer 1")
-    if ml_cfg.get("inference_mode") != "stochastic_probability":
-        raise ValueError("Only threshold-free stochastic probability inference is approved")
-    class_weight_candidates = validate_class_weight_candidates(
-        ml_cfg.get("class_weight_candidates")
-    )
-
-    version = str(ml_cfg["artifact_version"])
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", version):
-        raise ValueError("artifact_version must be a safe, path-free identifier")
-
-    csv_path = Path(ml_cfg["training_csv"])
-    if not csv_path.is_absolute():
-        csv_path = code_dir / csv_path
-    manifest_path = Path(ml_cfg["dataset_manifest_path"])
-    if not manifest_path.is_absolute():
-        manifest_path = code_dir / manifest_path
-    dataset_manifest = load_dataset_manifest(manifest_path, csv_path)
-    split_manifest_path = Path(ml_cfg["split_manifest_path"])
-    if not split_manifest_path.is_absolute():
-        split_manifest_path = code_dir / split_manifest_path
-    split_manifest_metadata_path = split_manifest_path.with_suffix(
-        split_manifest_path.suffix + ".manifest.json"
-    )
-    split_manifest_metadata = load_split_manifest_metadata(
-        split_manifest_metadata_path, split_manifest_path, csv_path, manifest_path
-    )
-    data, partitions = load_grouped_data(csv_path, split_manifest_path)
-    observed_counts = {
-        str(key): int(value)
-        for key, value in data[TARGET_NAME].value_counts().sort_index().items()
-    }
-    if len(data) != dataset_manifest["row_count"] or observed_counts != {
-        str(key): int(value) for key, value in dataset_manifest["target_counts"].items()
-    }:
-        raise ValueError("Dataset contents disagree with manifest row/class counts")
-    if set(data["experiment_id"].astype(str)) != {
-        str(dataset_manifest["experiment_id"])
-    }:
-        raise ValueError("Dataset experiment_id disagrees with its manifest")
-    split_membership_sha256 = _split_membership_hash(data)
-    calibration_selection_path = Path(ml_cfg["calibration_selection_record_path"])
-    if not calibration_selection_path.is_absolute():
-        calibration_selection_path = code_dir / calibration_selection_path
-    calibration_selection_record = load_calibration_selection_record(
-        calibration_selection_path,
-        configured_method=str(ml_cfg["calibration_method"]),
-        csv_path=csv_path,
-        split_manifest_path=split_manifest_path,
-        split_membership_sha256=split_membership_sha256,
-        experiment_id=str(dataset_manifest["experiment_id"]),
-    )
-    x_train, y_train = partitions["train"]
-    x_validation, y_validation = partitions["validation"]
-    x_calibration, y_calibration = partitions["calibration"]
-
-    output_dir = code_dir / "models"
-    final_dir = output_dir / version
-    _require_new_paths([final_dir])
-
-    study = optuna.create_study(
-        direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=SEED),
-        study_name=f"rf_fire_{ml_cfg['artifact_version']}",
-    )
-    study.optimize(
-        create_objective(
-            x_train,
-            y_train,
-            x_validation,
-            y_validation,
-            class_weight_candidates,
-        ),
-        n_trials=int(ml_cfg.get("n_trials", 100)),
-        show_progress_bar=True,
-    )
-    model = fit_calibrated_model(
-        study.best_params,
-        x_train,
-        y_train,
-        x_validation,
-        y_validation,
-        x_calibration,
-        y_calibration,
-        str(ml_cfg["calibration_method"]),
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    staging_dir = Path(tempfile.mkdtemp(prefix=f".{version}.staging-", dir=output_dir))
-    try:
-        staged_model = staging_dir / f"fire_rf_model_{version}.joblib"
-        staged_study = staging_dir / f"optuna_study_rf_{version}.joblib"
-        staged_summary = staging_dir / f"rf_provenance_{version}.json"
-        final_model = final_dir / staged_model.name
-        final_study = final_dir / staged_study.name
-        joblib.dump(model, staged_model)
-        joblib.dump(study, staged_study)
-        summary = build_summary(
-            data=data,
-            csv_path=csv_path,
-            config_path=config_path,
-            source_revision=str(ml_cfg["source_revision"]),
-            source_dirty_state=str(ml_cfg["source_dirty_state"]),
-            artifact_version=version,
-            calibration_method=str(ml_cfg["calibration_method"]),
-            dataset_manifest_path=manifest_path,
-            dataset_manifest=dataset_manifest,
-            split_manifest_path=split_manifest_path,
-            split_manifest_metadata_path=split_manifest_metadata_path,
-            split_manifest_metadata=split_manifest_metadata,
-            calibration_selection_path=calibration_selection_path,
-            calibration_selection_record=calibration_selection_record,
-            training_command=str(ml_cfg["training_command"]),
-            environment_record=str(ml_cfg["environment_record"]),
-            class_weight_candidates=class_weight_candidates,
-            best_params=study.best_params,
-            best_score=study.best_value,
-            model=model,
-        )
-        summary.update(
-            model_path=str(final_model),
-            model_sha256=_file_sha256(staged_model),
-            study_path=str(final_study),
-            study_sha256=_file_sha256(staged_study),
-        )
-        staged_summary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-        if final_dir.exists():
-            raise FileExistsError(f"Refusing to overwrite immutable artifact set: {final_dir}")
-        staging_dir.rename(final_dir)
-    except Exception:
-        if staging_dir.exists():
-            shutil.rmtree(staging_dir)
-        raise
-
 
 if __name__ == "__main__":
     main()

@@ -8,6 +8,7 @@ import pickle
 from pathlib import Path
 import re
 import shutil
+import stat
 import tempfile
 from typing import Literal
 
@@ -43,9 +44,83 @@ from .feature_pipeline import (
     validate_feature_values,
     validate_model_feature_schema,
 )
+from .set_c_split_release import (
+    APPROVED_CSV_SHA256,
+    APPROVED_POLICY_VERSION,
+    ATTESTATION_SCHEMA_VERSION,
+    DEVELOPMENT_DIRECTORY_NAME,
+    RELEASE_SCHEMA_VERSION,
+    load_development_release,
+)
 
 
 SUPPORTED_CLASS_WEIGHT_STRATEGIES = ("none", "balanced", "balanced_subsample")
+
+
+def _validate_development_release_path(release_dir: str | Path, *, allow_synthetic: bool) -> Path:
+    """Constrain training inputs before any release file is opened."""
+    supplied = Path(release_dir)
+    if ".." in supplied.parts:
+        raise PermissionError("Development release paths cannot contain parent traversal")
+    root = supplied.absolute()
+    forbidden = {
+        "setc_protected", "authoritative_set_c", "final_test", "complete_mapping",
+        "canonical.csv", "set_c.v1.csv",
+    }
+    if forbidden.intersection(part.lower() for part in root.parts):
+        raise PermissionError("Training loaders cannot read canonical, mapping, or final-test inputs")
+    for candidate in (root, *root.parents):
+        try:
+            attributes = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(attributes.st_mode) or getattr(attributes, "st_file_attributes", 0) & 0x400:
+            raise PermissionError("Development release path contains a reparse point")
+    if allow_synthetic:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        resolved = root.resolve(strict=True)
+        if resolved == temp_root or not resolved.is_relative_to(temp_root):
+            raise PermissionError("Synthetic training releases are limited to the OS temp tree")
+    else:
+        repository = Path(__file__).absolute().parents[3]
+        approved = repository / DEVELOPMENT_DIRECTORY_NAME / "set_c_v1"
+        if root != approved:
+            raise PermissionError("Training loaders accept only the approved D-038 development release")
+    if not root.is_dir():
+        raise ValueError("Development release must be a directory")
+    return root
+
+
+def load_verified_development_release(
+    release_dir: str | Path,
+    *,
+    expected_attestation_sha256: str,
+    allow_synthetic: bool = False,
+) -> tuple[pd.DataFrame, dict]:
+    """Apply the entry-point path boundary, then verify the release contract."""
+    root = _validate_development_release_path(release_dir, allow_synthetic=allow_synthetic)
+    data, attestation = load_development_release(
+        root,
+        expected_attestation_sha256=expected_attestation_sha256,
+        allow_synthetic=allow_synthetic,
+    )
+    if (
+        attestation.get("schema_version") != ATTESTATION_SCHEMA_VERSION
+        or attestation.get("release_schema_version") != RELEASE_SCHEMA_VERSION
+        or attestation.get("final_test_used") is not False
+    ):
+        raise ValueError("Development release identity or schema is invalid")
+    if attestation.get("synthetic") is True:
+        if not allow_synthetic:
+            raise PermissionError("Synthetic release is forbidden in production loading")
+    elif (
+        attestation.get("synthetic") is not False
+        or attestation.get("source_csv_sha256") != APPROVED_CSV_SHA256
+        or attestation.get("policy_version") != APPROVED_POLICY_VERSION
+        or not isinstance(attestation.get("source_provenance"), dict)
+    ):
+        raise ValueError("Development release is not bound to approved Set C v1 provenance")
+    return data, attestation
 
 
 def class_weight_for_estimator(configured: str | None) -> str | None:
@@ -66,19 +141,23 @@ class ModelTrainer:
 
     def __init__(
         self,
-        csv_path: str,
-        split_manifest_path: str,
+        release_dir: str,
         output_dir: str,
+        *,
+        expected_attestation_sha256: str,
         seed: int = 42,
+        allow_synthetic: bool = False,
     ):
-        self.csv_path = str(csv_path)
+        self.release_dir = str(release_dir)
         self.output_dir = Path(output_dir)
         self.seed = int(seed)
-        observations = pd.read_csv(self.csv_path)
-        assignments = pd.read_csv(split_manifest_path)
-        data = self.merge_split_assignments(observations, assignments)
-        self._validate_dataset_contract(data)
+        data, attestation = load_verified_development_release(
+            release_dir,
+            expected_attestation_sha256=expected_attestation_sha256,
+            allow_synthetic=allow_synthetic,
+        )
         self.data = data
+        self.release_attestation = attestation
         self.feature_names = list(CANONICAL_FEATURE_NAMES)
         self.model: object | None = None
         self.model_name: str | None = None

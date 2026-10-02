@@ -1,5 +1,9 @@
 from hashlib import sha256
 import json
+import os
+from pathlib import Path
+import stat
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -12,13 +16,17 @@ from modules.feature_pipeline import (
     TARGET_NAME,
     TARGET_VERSION,
 )
-from modules.model_trainer import ModelTrainer
+import modules.model_trainer as model_trainer_module
+from modules.model_trainer import ModelTrainer, load_verified_development_release
+from modules import set_c_split_release as release_module
+from modules.set_c_split_release import publish_synthetic_development_release
 from modules.set_c_leakage import build_joint_leakage_components
 from train_rf_optuna import (
     _split_membership_hash,
     _validate_observation_wind_manifest,
     class_weight_for_estimator,
     load_calibration_selection_record,
+    load_grouped_data,
     validate_class_weight_candidates,
 )
 from modules.feature_pipeline import CALIBRATION_SELECTION_VERSION
@@ -90,8 +98,189 @@ def _wind_manifest() -> dict[str, object]:
     ).to_manifest()
 
 
+def _synthetic_role_frames() -> dict[str, pd.DataFrame]:
+    frames = {}
+    for role in ("train", "validation", "calibration"):
+        rows = []
+        for label in (0, 1):
+            row = {name: 0.0 for name in CANONICAL_FEATURE_NAMES}
+            row.update(building_presence=1.0, material_class=1.0, material_risk=0.95,
+                       composite_flammability=0.95, neighbor_burning_count=1.0)
+            row[TARGET_NAME] = label
+            rows.append(row)
+        frames[role] = pd.DataFrame(
+            rows, columns=[*CANONICAL_FEATURE_NAMES, TARGET_NAME]
+        )
+    return frames
+
+
 def test_grouped_dataset_contract_accepts_separate_roles():
     ModelTrainer._validate_dataset_contract(_contract_frame())
+
+
+def test_both_development_entry_points_accept_pinned_synthetic_release(tmp_path):
+    root, digest = publish_synthetic_development_release(
+        _synthetic_role_frames(), tmp_path / "development_release"
+    )
+
+    trainer = ModelTrainer(
+        str(root), str(tmp_path / "models"),
+        expected_attestation_sha256=digest, allow_synthetic=True,
+    )
+    data, partitions = load_grouped_data(
+        root, expected_attestation_sha256=digest, allow_synthetic=True
+    )
+
+    assert len(trainer.data) == 6
+    assert len(data) == 6
+    assert set(partitions) == {"train", "validation", "calibration"}
+
+
+def test_development_entry_points_accept_hash_bound_production_shape(tmp_path, monkeypatch):
+    root, _ = publish_synthetic_development_release(
+        _synthetic_role_frames(), tmp_path / "development_release"
+    )
+    source_digest, manifest_digest = "a" * 64, "b" * 64
+    monkeypatch.setattr(release_module, "APPROVED_CSV_SHA256", source_digest)
+    monkeypatch.setattr(release_module, "APPROVED_MANIFEST_SHA256", manifest_digest)
+    monkeypatch.setattr(model_trainer_module, "APPROVED_CSV_SHA256", source_digest)
+    manifest = {
+        "manifest_schema_version": "set_c_authoritative_package.v1",
+        "artifact_kind": "authoritative_set_c_observation_package",
+        "split_status": "unassigned",
+        "dataset_sha256": source_digest,
+        "row_count": 6,
+        "canonical_csv_columns": list(release_module.AUTHORITATIVE_CSV_COLUMNS),
+        "manifest_payload_sha256": "c" * 64,
+    }
+    provenance = release_module._production_provenance(
+        manifest, manifest_digest=manifest_digest, source_digest=source_digest,
+        row_count=6, source_revision="d" * 40,
+        authorization_reference="synthetic-production-shape-test",
+    )
+    attestation_path = root / "attestation.json"
+    attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+    attestation.update(
+        source_csv_sha256=source_digest,
+        policy_version=release_module.APPROVED_POLICY_VERSION,
+        synthetic=False,
+        source_provenance=provenance,
+    )
+    attestation["publication_receipt"].update(
+        protected_attestation_sha256="e" * 64,
+        source_csv_sha256=source_digest,
+        policy_version=release_module.APPROVED_POLICY_VERSION,
+        source_revision="d" * 40,
+    )
+    attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+    digest = sha256(attestation_path.read_bytes()).hexdigest()
+
+    trainer = ModelTrainer(
+        str(root), str(tmp_path / "models"),
+        expected_attestation_sha256=digest, allow_synthetic=True,
+    )
+    data, partitions = load_grouped_data(
+        root, expected_attestation_sha256=digest, allow_synthetic=True
+    )
+    assert len(trainer.data) == len(data) == 6
+    assert set(partitions) == {"train", "validation", "calibration"}
+
+
+@pytest.mark.parametrize(
+    "forbidden_path",
+    [
+        "SetC_Protected/set_c_v1",
+        "output/datasets/authoritative_set_c/v1/set_c.v1.csv",
+        "SetC_Protected/set_c_v1/complete_mapping.csv",
+        "SetC_Protected/set_c_v1/final_test_rows.csv",
+    ],
+)
+def test_training_entry_points_reject_protected_inputs_before_open(
+    tmp_path, monkeypatch, forbidden_path
+):
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("protected input reached the release reader")
+
+    monkeypatch.setattr(model_trainer_module, "load_development_release", unexpected_open)
+    supplied = tmp_path / forbidden_path
+    digest = "a" * 64
+
+    with pytest.raises(PermissionError, match="cannot read canonical, mapping, or final-test"):
+        load_verified_development_release(
+            supplied, expected_attestation_sha256=digest, allow_synthetic=True
+        )
+    with pytest.raises(PermissionError, match="cannot read canonical, mapping, or final-test"):
+        ModelTrainer(
+            str(supplied), str(tmp_path / "models"),
+            expected_attestation_sha256=digest, allow_synthetic=True,
+        )
+    with pytest.raises(PermissionError, match="cannot read canonical, mapping, or final-test"):
+        load_grouped_data(
+            supplied, expected_attestation_sha256=digest, allow_synthetic=True
+        )
+
+
+def test_legacy_full_dataset_and_assignment_arguments_are_rejected(tmp_path, monkeypatch):
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("legacy inputs reached the release reader")
+
+    monkeypatch.setattr(model_trainer_module, "load_development_release", unexpected_open)
+    with pytest.raises(TypeError):
+        ModelTrainer(
+            str(tmp_path / "release"), str(tmp_path / "models"),
+            expected_attestation_sha256="a" * 64,
+            csv_path=tmp_path / "canonical.csv",
+            assignment_path=tmp_path / "complete_mapping.csv",
+        )
+    with pytest.raises(TypeError):
+        load_grouped_data(
+            tmp_path / "release",
+            expected_attestation_sha256="a" * 64,
+            csv_path=tmp_path / "canonical.csv",
+            assignment_path=tmp_path / "complete_mapping.csv",
+        )
+
+
+def test_development_release_rejects_temporary_reparse_alias_before_open(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / "release_target"
+    target.mkdir()
+    alias = tmp_path / "release_alias"
+    try:
+        os.symlink(target, alias, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"Host cannot create a temporary symlink: {error}")
+
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("reparse path reached the release reader")
+
+    monkeypatch.setattr(model_trainer_module, "load_development_release", unexpected_open)
+    with pytest.raises(PermissionError, match="contains a reparse point"):
+        load_verified_development_release(
+            alias, expected_attestation_sha256="a" * 64, allow_synthetic=True
+        )
+
+
+def test_development_release_rejects_reparse_attribute_before_open(tmp_path, monkeypatch):
+    release = tmp_path / "synthetic_release"
+    release.mkdir()
+    original_lstat = Path.lstat
+
+    def simulated_reparse_lstat(path):
+        if path == release:
+            return SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+        return original_lstat(path)
+
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("reparse path reached the release reader")
+
+    monkeypatch.setattr(Path, "lstat", simulated_reparse_lstat)
+    monkeypatch.setattr(model_trainer_module, "load_development_release", unexpected_open)
+    with pytest.raises(PermissionError, match="contains a reparse point"):
+        load_verified_development_release(
+            release, expected_attestation_sha256="a" * 64, allow_synthetic=True
+        )
 
 
 def test_observation_manifest_accepts_complete_canonical_wind_contract():
