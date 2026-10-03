@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import numpy as np
 import pytest
 
 from modules.feature_pipeline import (
@@ -371,7 +372,7 @@ def test_second_publication_failure_preserves_incomplete_protected_bundle(tmp_pa
         real_publish(stage, target)
 
     monkeypatch.setattr(release, "_atomic_publish_directory", fail_development)
-    with pytest.raises(RuntimeError, match="protected publication remains incomplete"):
+    with pytest.raises(RuntimeError, match="protected publication remains incomplete") as caught:
         release.export_set_c_split(
             source,
             protected_destination=protected,
@@ -379,6 +380,8 @@ def test_second_publication_failure_preserves_incomplete_protected_bundle(tmp_pa
             synthetic=True,
             **provenance,
         )
+    assert caught.value.set_c_diagnostic["stage"] == "development_publication"
+    assert caught.value.__cause__.set_c_diagnostic["stage"] == "development_publication"
     assert protected.exists()
     assert not development.exists()
     assert {path.name for path in protected.iterdir()} == {
@@ -424,7 +427,7 @@ def test_pair_verification_failure_preserves_protected_only_state(tmp_path, monk
         raise OSError("synthetic pair verification failure")
 
     monkeypatch.setattr(release, "_verify_publication_pair", fail_pair_verification)
-    with pytest.raises(RuntimeError, match="requires human recovery"):
+    with pytest.raises(RuntimeError, match="requires human recovery") as caught:
         release.export_set_c_split(
             source,
             protected_destination=protected,
@@ -433,6 +436,8 @@ def test_pair_verification_failure_preserves_protected_only_state(tmp_path, monk
             **provenance,
         )
 
+    assert caught.value.set_c_diagnostic["stage"] == "pair_validation"
+    assert caught.value.__cause__.set_c_diagnostic["stage"] == "pair_validation"
     assert protected.exists() and not development.exists()
     protected_record = json.loads((protected / "attestation.json").read_text(encoding="utf-8"))
     assert protected_record["publication_state"] == "protected_only_incomplete_until_paired_release"
@@ -478,7 +483,7 @@ def test_unpublished_development_stage_is_rejected_after_receipt_before_rename(t
         raise OSError("synthetic interruption after receipt creation")
 
     monkeypatch.setattr(release, "_atomic_publish_directory", interrupt_before_development_rename)
-    with pytest.raises(RuntimeError, match="requires human recovery"):
+    with pytest.raises(RuntimeError, match="requires human recovery") as caught:
         release.export_set_c_split(
             source,
             protected_destination=protected,
@@ -487,6 +492,8 @@ def test_unpublished_development_stage_is_rejected_after_receipt_before_rename(t
             **provenance,
         )
 
+    assert caught.value.set_c_diagnostic["stage"] == "development_publication"
+    assert caught.value.__cause__.set_c_diagnostic["stage"] == "development_publication"
     assert protected.exists() and not development.exists()
     assert json.loads((protected / "attestation.json").read_text())["publication_state"] == (
         "protected_only_incomplete_until_paired_release"
@@ -547,3 +554,147 @@ def test_abandoned_stage_is_preserved_and_blocks_a_new_publication(tmp_path):
         release._validate_output_path(parent / "set_c_v1", synthetic=True, kind="protected")
 
     assert marker.read_text(encoding="utf-8") == "preserve"
+
+
+def _allocation_inventory():
+    return pd.DataFrame([
+        {"component_id": f"synthetic-{index:02d}", "positives": 21, "negatives": 81,
+         **{column: 1 for column in release.MATERIAL_COLUMNS}}
+        for index in range(26)
+    ])
+
+
+@pytest.mark.parametrize("success,status,incumbent", [
+    (False, 1, False), (False, 1, True), (False, 2, False),
+    (False, 3, False), (False, 4, False), (True, 0, False),
+    (False, 0, True), (True, 1, True),
+])
+def test_allocator_retains_failure_context_without_accepting_incumbent(
+    monkeypatch, success, status, incumbent,
+):
+    calls = []
+
+    def unsuccessful(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            success=success, status=status, x=np.zeros(112) if incumbent else None,
+            message="SENSITIVE_SOLVER_TEXT", fun=123, mip_dual_bound=122, mip_gap=1,
+        )
+
+    monkeypatch.setattr(release, "milp", unsuccessful)
+    with pytest.raises(RuntimeError, match="did not prove an exact optimum") as caught:
+        release.allocate_synthetic_components(_allocation_inventory(), dataset_sha256="0" * 64)
+    context = caught.value.set_c_diagnostic
+    assert len(calls) == 1
+    assert calls[0]["options"] == {"time_limit": 3, "mip_rel_gap": 0}
+    assert context["stage"] == "allocation"
+    assert context["objective_phase"] == "positive_deviation"
+    assert context["objective_index"] == context["objective_ordinal"] == 1
+    assert context["solver_status"] == status
+    assert context["solver_success"] is success
+    assert context["has_solution"] is incumbent
+    assert context["mip_node_count"] is None  # Optional result field may be absent.
+    assert context["failure_reason"] == "exact_optimum_not_proven"
+    assert context["elapsed_seconds"] >= 0
+    assert not {"x", "message", "fun", "mip_dual_bound", "mip_gap"} & context.keys()
+
+
+@pytest.mark.parametrize("fractional,reason,message", [
+    (True, "fractional_solution", "fractional solution"),
+    (False, "hard_constraint_violation", "hard constraint"),
+])
+def test_allocator_retains_distinct_solution_rejection_reasons(monkeypatch, fractional, reason, message):
+    values = np.zeros(112)
+    if fractional:
+        values[0] = 0.5
+    monkeypatch.setattr(release, "milp", lambda *args, **kwargs: SimpleNamespace(
+        success=True, status=0, x=values, mip_node_count=7,
+    ))
+    with pytest.raises(RuntimeError, match=message) as caught:
+        release.allocate_synthetic_components(_allocation_inventory(), dataset_sha256="0" * 64)
+    assert caught.value.set_c_diagnostic["failure_reason"] == reason
+    assert caught.value.set_c_diagnostic["mip_node_count"] == 7
+
+
+@pytest.mark.parametrize("failure_index,phase,ordinal", [
+    (2, "positive_deviation", 2), (6, "row_deviation", 2),
+    (9, "tie_break", 1), (34, "tie_break", 26),
+])
+def test_allocator_identifies_later_failed_objective(monkeypatch, failure_index, phase, ordinal):
+    # Uniform counts make these deviation optima and ordered role ties exact.
+    values = np.zeros(112)
+    component = 0
+    for role, count in enumerate(release.ROLE_COMPONENT_TARGETS):
+        for _ in range(count):
+            values[component * 4 + role] = 1
+            component += 1
+        values[104 + role] = abs(count * 21 - release.ROLE_POSITIVE_BALANCE[role])
+        values[108 + role] = abs(count * 102 - release.ROLE_ROW_BALANCE[role])
+    calls = 0
+
+    def fail_later(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        assert kwargs["options"] == {"time_limit": 3, "mip_rel_gap": 0}
+        return SimpleNamespace(
+            success=calls != failure_index, status=0 if calls != failure_index else 1,
+            x=values.copy() if calls != failure_index else None,
+        )
+
+    monkeypatch.setattr(release, "milp", fail_later)
+    with pytest.raises(RuntimeError, match="exact optimum") as caught:
+        release.allocate_synthetic_components(_allocation_inventory(), dataset_sha256="0" * 64)
+    context = caught.value.set_c_diagnostic
+    assert calls == context["objective_index"] == failure_index
+    assert (context["objective_phase"], context["objective_ordinal"]) == (phase, ordinal)
+
+
+def test_solver_exception_keeps_original_type_and_safe_context(monkeypatch):
+    error = RuntimeError("SENSITIVE_DEPENDENCY_TEXT")
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(release, "milp", fail)
+    with pytest.raises(RuntimeError) as caught:
+        release.allocate_synthetic_components(_allocation_inventory(), dataset_sha256="0" * 64)
+    assert caught.value is error
+    assert caught.value.set_c_diagnostic["failure_reason"] == "solver_exception"
+    assert "SENSITIVE" not in json.dumps(caught.value.set_c_diagnostic)
+
+
+def test_allocator_failure_prevents_any_export_staging(tmp_path, monkeypatch):
+    source = tmp_path / "synthetic.csv"
+    provenance = _synthetic_source(source)
+    protected_parent, development_parent = tmp_path / "protected", tmp_path / "development"
+    protected_parent.mkdir()
+    development_parent.mkdir()
+    monkeypatch.setattr(release, "milp", lambda *args, **kwargs: SimpleNamespace(
+        success=False, status=1, x=None,
+    ))
+    touched = []
+
+    def unexpected(*args, **kwargs):
+        touched.append(True)
+        raise AssertionError("Allocation failure reached staging/publication")
+
+    monkeypatch.setattr(release.tempfile, "mkdtemp", unexpected)
+    monkeypatch.setattr(release, "_atomic_publish_directory", unexpected)
+    with pytest.raises(RuntimeError, match="exact optimum") as caught:
+        release.export_set_c_split(
+            source, protected_destination=protected_parent / "set_c_v1",
+            development_destination=development_parent / "set_c_v1", synthetic=True, **provenance,
+        )
+    assert caught.value.set_c_diagnostic["stage"] == "allocation"
+    assert not touched
+    assert not list(protected_parent.iterdir()) and not list(development_parent.iterdir())
+
+
+def test_diagnostic_attachment_failure_does_not_mask_original_error():
+    class RefusesContext(RuntimeError):
+        def __setattr__(self, name, value):
+            raise TypeError("cannot attach")
+
+    error = RefusesContext("original")
+    release._attach_failure_context(error, {"stage": "allocation"})
+    assert str(error) == "original"

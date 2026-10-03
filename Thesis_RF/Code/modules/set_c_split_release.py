@@ -11,6 +11,7 @@ import shutil
 import sys
 import subprocess
 import tempfile
+import time
 
 import pandas as pd
 import numpy as np
@@ -56,6 +57,14 @@ ALLOCATION_CONFIG_VERSION = "set_c_allocation_config.v1"
 SOURCE_REVISION_VERSION = "set_c_source_revision.v1"
 AUTHORIZATION_VERSION = "set_c_export_authorization.v1"
 SPLIT_MANIFEST_COLUMNS = (*AUTHORITATIVE_SPLIT_ASSIGNMENT_KEY_NAMES, "leakage_component_id", "split_role")
+
+
+def _attach_failure_context(error: Exception, context: dict) -> None:
+    """Diagnostics must never replace an allocation/publication failure."""
+    try:
+        error.set_c_diagnostic = context
+    except Exception:
+        pass
 
 
 def _sha256(path: Path) -> str:
@@ -503,9 +512,12 @@ def export_set_c_split(
     validate_feature_values(source_frame.loc[:, list(CANONICAL_FEATURE_NAMES)].to_numpy(dtype="float32"))
     protected_stage = None
     development_stage = None
+    failure_stage = "protected_staging"
     try:
         protected_stage = Path(tempfile.mkdtemp(prefix=".set-c-protected-", dir=protected_target.parent))
+        failure_stage = "development_staging"
         development_stage = Path(tempfile.mkdtemp(prefix=".set-c-development-", dir=development_target.parent))
+        failure_stage = "protected_bundle"
         shutil.copyfile(source_path, protected_stage / "canonical.csv")
         row_roles = pd.Series(component_ids, index=source_frame.index).map(assignments)
         component_series = pd.Series(component_ids, index=source_frame.index)
@@ -565,6 +577,7 @@ def export_set_c_split(
         with protected_attestation.open("x", encoding="utf-8") as stream:
             json.dump(protected_inventory, stream, sort_keys=True, separators=(",", ":"))
 
+        failure_stage = "development_bundle"
         role_files = {}
         for role in DEVELOPMENT_SPLIT_ROLES:
             role_rows = source_frame.loc[row_roles.eq(role), list(RELEASE_COLUMNS)]
@@ -592,12 +605,15 @@ def export_set_c_split(
             "source_provenance": provenance,
         }
 
+        failure_stage = "protected_validation"
         _validate_protected_stage(protected_stage, source_digest, source_frame)
         # Stage on each destination volume so publication is a same-volume rename.
         if protected_stage.stat().st_dev != protected_target.parent.stat().st_dev or development_stage.stat().st_dev != development_target.parent.stat().st_dev:
             raise OSError("Staging and destination must be on the same volume")
+        failure_stage = "protected_publication"
         _atomic_publish_directory(protected_stage, protected_target)
         try:
+            failure_stage = "pair_receipt"
             protected_attestation_path = protected_target / "attestation.json"
             development_attestation["publication_receipt"] = {
                 "schema_version": PAIR_PUBLICATION_SCHEMA_VERSION,
@@ -611,12 +627,14 @@ def export_set_c_split(
             with dev_attestation_path.open("x", encoding="utf-8") as stream:
                 json.dump(development_attestation, stream, sort_keys=True, separators=(",", ":"))
             dev_hash = _sha256(dev_attestation_path)
+            failure_stage = "development_validation"
             _load_development_release(
                 development_stage,
                 expected_attestation_sha256=dev_hash,
                 allow_synthetic=True,
                 allow_staging=True,
             )
+            failure_stage = "pair_validation"
             _verify_publication_pair(
                 protected_target,
                 development_stage,
@@ -627,13 +645,18 @@ def export_set_c_split(
             # Final fallible operation: only publish after both staged attestations
             # and protected artifact hashes verify. This no-replace rename is the
             # paired-publication completion signal.
+            failure_stage = "development_publication"
             _atomic_publish_directory(development_stage, development_target)
         except Exception as error:
-            raise RuntimeError(
+            _attach_failure_context(error, {"stage": failure_stage})
+            failure = RuntimeError(
                 "Development publication failed; protected publication remains incomplete and requires human recovery"
-            ) from error
+            )
+            _attach_failure_context(failure, {"stage": failure_stage})
+            raise failure from error
         return protected_target, development_target
-    except Exception:
+    except Exception as error:
+        _attach_failure_context(error, {"stage": failure_stage})
         if protected_stage is not None and protected_stage.exists():
             shutil.rmtree(protected_stage)
         if development_stage is not None and development_stage.exists():
@@ -1103,38 +1126,67 @@ def _allocate_components(
     )
     integrality = np.ones(variable_count, dtype="int8")
 
-    def solve(objective: np.ndarray) -> np.ndarray:
-        result = milp(
-            objective,
-            integrality=integrality,
-            bounds=bounds,
-            constraints=LinearConstraint(np.vstack(constraints), lower, upper),
-            options={"time_limit": 3, "mip_rel_gap": 0},
-        )
-        if not result.success or result.status != 0 or result.x is None:
-            raise RuntimeError("D-035 allocation did not prove an exact optimum")
-        rounded = np.rint(result.x).astype("int64")
-        if not np.allclose(result.x, rounded, atol=1e-6):
-            raise RuntimeError("D-035 allocation has a fractional solution")
-        observed = np.vstack(constraints) @ rounded
-        if (np.any(observed < np.asarray(lower) - 1e-6)
-                or np.any(observed > np.asarray(upper) + 1e-6)):
-            raise RuntimeError("D-035 allocation violates a hard constraint")
-        return rounded
+    solve_index = 0
+
+    def solve(objective: np.ndarray, *, phase: str, ordinal: int) -> np.ndarray:
+        nonlocal solve_index
+        solve_index += 1
+        context = {
+            "stage": "allocation", "objective_phase": phase,
+            "objective_index": solve_index, "objective_ordinal": ordinal,
+            "time_limit": 3, "mip_rel_gap": 0, "failure_reason": "solver_exception",
+        }
+        started = time.monotonic()
+        try:
+            result = milp(
+                objective,
+                integrality=integrality,
+                bounds=bounds,
+                constraints=LinearConstraint(np.vstack(constraints), lower, upper),
+                options={"time_limit": 3, "mip_rel_gap": 0},
+            )
+            status = getattr(result, "status", None)
+            nodes = getattr(result, "mip_node_count", None)
+            success = getattr(result, "success", None)
+            context.update(
+                solver_status=int(status) if isinstance(status, (int, np.integer)) else None,
+                solver_success=bool(success) if isinstance(success, (bool, np.bool_)) else None,
+                has_solution=getattr(result, "x", None) is not None,
+                mip_node_count=int(nodes) if isinstance(nodes, (int, np.integer)) else None,
+            )
+            if not result.success or result.status != 0 or result.x is None:
+                context["failure_reason"] = "exact_optimum_not_proven"
+                raise RuntimeError("D-035 allocation did not prove an exact optimum")
+            rounded = np.rint(result.x).astype("int64")
+            if not np.allclose(result.x, rounded, atol=1e-6):
+                context["failure_reason"] = "fractional_solution"
+                raise RuntimeError("D-035 allocation has a fractional solution")
+            observed = np.vstack(constraints) @ rounded
+            if (np.any(observed < np.asarray(lower) - 1e-6)
+                    or np.any(observed > np.asarray(upper) + 1e-6)):
+                context["failure_reason"] = "hard_constraint_violation"
+                raise RuntimeError("D-035 allocation violates a hard constraint")
+            return rounded
+        except Exception as error:
+            context["elapsed_seconds"] = round(time.monotonic() - started, 6)
+            _attach_failure_context(error, context)
+            raise
 
     # Sequential integer objectives implement D-035's lexicographic order.
     solution = None
     for index in range(binary_count, variable_count):
         objective = np.zeros(variable_count)
         objective[index] = 1
-        solution = solve(objective)
+        deviation = index - binary_count
+        phase = "positive_deviation" if deviation < role_count else "row_deviation"
+        solution = solve(objective, phase=phase, ordinal=deviation % role_count + 1)
         fixed = np.zeros(variable_count)
         fixed[index] = 1
         add(fixed, int(solution[index]), int(solution[index]))
     for component in range(component_count):
         objective = np.zeros(variable_count)
         objective[component * role_count:(component + 1) * role_count] = range(role_count)
-        solution = solve(objective)
+        solution = solve(objective, phase="tie_break", ordinal=component + 1)
         add(objective, int(objective @ solution), int(objective @ solution))
     assert solution is not None
     assigned = solution[:binary_count].reshape(component_count, role_count)

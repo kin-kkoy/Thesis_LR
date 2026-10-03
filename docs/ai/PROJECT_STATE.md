@@ -4,22 +4,22 @@
 
 - **Purpose:** Compact, Git-reviewable navigation and current-state index. Source, identified inputs, immutable artifacts, configurations, commands, and raw records remain the primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-10-02.
-- **Last reviewed repository revision:** `a091b3ba2245b898d2e227dd25e2d45deeb69b04`.
-- **Worktree note:** The package records `source_dirty: false`; `Thesis-try.qgz` remains preserved.
-- **Current reviewed RF work:** Phase 11 formally accepted Set C v1 for later grouped-allocation policy planning after both independent reports and package hashes were reviewed together. No split execution or model operation is authorized.
+- **Last updated:** 2026-10-03 (Asia/Manila).
+- **Last reviewed repository revision:** D-042 diff against `1c5a9727ae6c74b9017efae042eb1999b036a8f0`; resulting commit is identified by Git HEAD. No clean production pin.
+- **Worktree note:** D-043 authorizes committing six reviewed edits; untracked `docs/Phase12Block.md` remains unchanged. Git status governs cleanliness.
+- **Current reviewed RF work:** D-042 diagnostics passed synthetic/independent review. R2 consumed; historical cause unknown; production/model work blocked.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Prepare a separately gated one-run Phase 12 split contract after D-040 source acceptance.
+- **Active objective:** Commit the reviewed diagnostics and verify synthetically; historical allocation cause remains unknown.
 - **Methodology:** D-009–D-015 define the Set C estimand, 11 predictors, model-free `all_eligible` labels, 128×128 containment, controlled population, duplicate policy, and adequacy gates. D-029 makes predictor collisions audit-only.
 - **Accepted evidence:** Phase 8/9 immutable aggregate reports establish the controlled population and prospective feasibility; D-033/D-034 identify and accept Set C v1 after Tasks 11.1/11.2.
-- **Current authorization:** D-040/D-041 permit source-only work; the owner reports H.1/H.2 PASS. Split, folders, models, and final-test access remain unauthorized.
+- **Current authorization:** D-042/D-043: six-file diagnostics repair, commit after validator PASS, synthetic checks only. R2 consumed; package/real parents untouched.
 - **Hard boundary:** Do not run the aggregate expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
-- **Next gate:** Resolve the execution-checkout versus D-038 approved-path mismatch, set a supervised overall resource ceiling and protected-validation scope, then review an exact preflight before separate owner execution approval.
+- **Next gate:** Resolve untracked handoff disposition and clean pin, then separately approve exact supervised run card, retained redacted logs, and protected-validation scope. No solver-limit change.
 - **Agent tooling:** `rf_engineer` is pinned to `gpt-6-luna`/`medium`; `rf_validator` to `gpt-6-sol`/`medium`; `tech_lead` remains `gpt-6-sol`/`high`; and `thesis_researcher` remains `gpt-6-sol`/`medium` (D-030). The `tech_lead` instruction conflict remains governed by the parent agent and repository boundaries.
 <!-- END CODEX DIGEST -->
 
@@ -49,9 +49,10 @@
 | `VERIFIED` | Task 11.1 found no checked row/schema/domain/identity/count defect. All 1,508 batches and 884 runs reconcile; all runs are inactive, complete, authoritative, and transition-count matched. | `docs/Phase11_Tasks_11_1_11_2_Report.md`; independent RF Validator | Package, validator contract, or approved methodology changes. |
 | `VERIFIED` | Task 11.2 reconstructed 26 singleton-family components with 9–58 positives and 188–496 negatives each. A role-blind solve satisfied every D-015 component/class/material/concentration minimum without publishing assignments. | Same report; actual CSV; Gate 6 v3 comparison | Package bytes or D-015/D-029 policy changes. |
 | `VERIFIED` | D-035 approves exact 11/5/5/5 component counts, D-015 minima, material coverage, ≤50% positive concentration, seedless digest order, and soft balance targets. | D-035; Task 12.1 report | Owner revises policy or dataset identity. |
-| `VERIFIED` | D-040 accepts the repaired Phase 12F/12G synthetic source contract. Public loaders reject receipt-bearing unpublished staging; roles stay protected. Real export/runner remain disabled. Focused 48/1 skipped; full RF 329/1 skipped. | `modules/set_c_split_release.py`; focused tests; independent RF Validator; primary reruns | Source or approval changes. |
-| `VERIFIED` | D-041 approves a default-deny procedural command with opt-in and an unauthenticated audit reference. The separate checkout is clean at `46701689dbf6fea6b2dfb2d9561614c605365e63`; execution is unapproved. | D-041; pinned checkout Git status and runner | Source or approval changes. |
-| `WARNING` | The clean checkout derives input/output paths from `.codex/worktrees`, not the D-038 main root; input and release parents are absent there. No overall runtime or memory/disk ceiling is enforced. | Pinned runner/module; path-presence checks | Resolve execution location and limits. |
+| `VERIFIED` | D-040 staging rejection and D-041 default-deny opt-in/audit-reference/clean-pin guards remain active. | Runner/exporter; focused tests | Source/approval change. |
+| `VERIFIED` (recorded) | R2 at main HEAD `1c5a9727` exited 1/RuntimeError after 37.846 s. Parents recorded empty; no targets/stages observed. No fresh path inspection. | `docs/Phase12Block.md` §§5–8; D-042 | New authorized evidence. |
+| `NEEDS EVIDENCE` | Historical message/traceback/objective missing; timeout hypothetical. Resource floors passed sampled checks only; peak RSS unknown. | Same report; source | New authorized evidence. |
+| `VERIFIED` | Unstaged diagnostics retain safe solver/stage context and redact chains; primary/independent tests 76/1 skipped. | D-042; four RF edits | Source/test/environment change. |
 | `VERIFIED` | Read-only reconstruction of the generation runner's loaded and activated configuration reproduces manifest `configuration_sha256` `f18953d5854286d29e9082caf8e5cd35f1719038627840a2c227ba42227dddfe`; the configuration-file hash also matches. | `run_set_c_generation.py`; `orchestrator.py::load_config`; `set_c_population_adequacy.py::activate_approved_population_config`; `set_c_generation.py::_canonical_hash`; manifest | Configuration, normalization source, or package changes. |
 | `WARNING` | The CSV supports source/provenance-consistent `all_eligible` and state-at-`t` timing, but row publication alone cannot prove execution behavior without teacher replay. | Task 11.1 evidence limits | A bounded replay is approved and verified. |
 | `WARNING` | The package binds the approved resource limits but does not contain independent observed peak RSS, memory/disk minima, or elapsed-time telemetry. | Package manifest and independent RF Validator review | Independent execution telemetry is provided and verified. |
@@ -60,15 +61,16 @@
 
 ## Active blockers and authorized follow-up
 
-1. `PASS` — Phase 11 is formally accepted for Set C v1 row quality and grouped-evaluation feasibility; exact manifest/CSV/replay hashes and normalized configuration hash were rechecked. No role assignment was created.
+1. `PASS` — Phase 11 acceptance remains historical evidence; package hashes and contents were not rechecked during the current source-only diagnosis/repair.
 2. `WARNING` — 128×128 blocks are conservative containment, not measured independence. Predictor collisions remain audit-only under D-029; 543 conflicting-label vectors are retained.
 3. `NEEDS EVIDENCE` — Actual resource extrema and independent execution proof of teacher timing/complete eligible capture remain unverified.
-4. `PASS` — D-035 approves exact 11/5/5/5 grouped numerical policy and seedless lexicographic balance targets for the bound Set C CSV; no assignment exists.
+4. `PASS` — D-035 unchanged. No real assignment derived here; failed-run internal progress unknown.
 5. `PASS` — D-038 locates the ordinary `SetC_Protected/set_c_v1` and `SetC_Development/set_c_v1` folders inside the repository checkout and removes the `SetCDev` requirement. This is a procedural holdout, not OS-enforced blindness; the canonical CSV and deterministic policy permit recomputation of membership.
-6. `PASS` — D-039 accepts the synthetic source gate: Git exclusions, pinned development loading, and synthetic allocation/export. Primary rerun: 38 passed, 1 skipped. Neither real folder exists.
+6. `PASS` — D-039 exclusions/loading boundary remain. Preserve R2's existing real parents; no folder change here.
 7. `PASS` — D-040 accepts repaired source-only Phase 12F/12G after independent review; receipt-bearing staging is rejected publicly.
-8. `NEEDS EVIDENCE` — H.1/H.2 PASS is owner-reported and a clean commit exists, but its paths miss D-038. Runtime/resource limits, real preflight, and protected validation remain unresolved. No split exists; partial publication requires manual recovery.
-9. `BLOCKED` — Real split, folder/ACL changes, model work, final-test access, manuscripts, and `Thesis_LR/**` writes remain unauthorized.
+8. `NEEDS EVIDENCE` — Historical cause/production performance unknown. Stub reproduces pre-stage failure; varied fixture passed eight objectives before budget stop. No historical/production proof.
+9. `BLOCKED` — R2 consumed; real data, roles, protected inspection, production, folders/ACL, models, ground truth, manuscripts and LR remain prohibited. Protected-only publication requires manual recovery.
+10. `PASS` — Diagnostics validated; D-043 conditionally authorizes the six-file commit. No numerical/limit change. Future supervision must retain actual redacted output.
 
 ## Known-good navigation
 
@@ -79,6 +81,7 @@
 | Phase 11 handoff | `docs/HandoffPhase11.md` |
 | Phase 11 validation report | `docs/Phase11_Tasks_11_1_11_2_Report.md` |
 | Phase 12 Task 12.1 policy review | `docs/Phase12_Task12_1_Grouped_Allocation_Policy_Review.md` |
+| Phase 12 failed run / diagnostics scope | Preserved `docs/Phase12Block.md`; D-042; runner/exporter and focused tests |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
 | Raster loading/domains | `Thesis_RF/Code/modules/data_loader.py` |
 | Model-free teacher | `Thesis_RF/Code/modules/model_free_teacher.py`; `modules/automata_engine.py` |
@@ -92,6 +95,7 @@
 ## Test and review evidence
 
 - Phase 7–11 test commands, immutable hashes, and validation limits are recorded in D-015, D-029, D-033–D-034, and the Phase 11 report; the table above indexes the current claims.
+- D-042: unstaged RF patch on `1c5a9727`; primary 76/1 skipped (9.00 s), independent 76/1 skipped (8.96 s). Command/environment/limits in D-042. Windows symlink privilege case skipped; simulated reparse passed.
 
 ## Update procedure
 
