@@ -2,25 +2,25 @@
 
 ## Record contract
 
-- **Purpose:** Compact, Git-reviewable navigation and current-state index. Source, identified inputs, immutable artifacts, configurations, commands, and raw records remain the primary evidence.
+- **Purpose:** Navigation index; source, identified inputs/artifacts, commands and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-10-03 (Asia/Manila).
-- **Last reviewed repository revision:** D-042 diff against `1c5a9727ae6c74b9017efae042eb1999b036a8f0`; resulting commit is identified by Git HEAD. No clean production pin.
-- **Worktree note:** D-043 authorizes committing six reviewed edits; untracked `docs/Phase12Block.md` remains unchanged. Git status governs cleanliness.
-- **Current reviewed RF work:** D-042 diagnostics passed synthetic/independent review. R2 consumed; historical cause unknown; production/model work blocked.
+- **Last updated:** 2026-10-05 (Asia/Manila).
+- **Last reviewed repository revision:** Diagnostics `7f6730bccc6e19d4b5b5c419b420be36104c26be`; D-044 successor SHA/cleanliness come from Git.
+- **Worktree note:** D-044/D-045 authorize the reviewed five-file commit; handoff unchanged. Git status governs cleanliness.
+- **Current reviewed RF work:** D-045 supervisor repair PASS, tests 131/1 skipped. Diagnostics committed; R2 consumed; cause unknown; Phase 12 open; production blocked.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Commit the reviewed diagnostics and verify synthetically; historical allocation cause remains unknown.
+- **Active objective:** Establish the clean five-file successor; prepare exact run card and separate owner one-run approval.
 - **Methodology:** D-009–D-015 define the Set C estimand, 11 predictors, model-free `all_eligible` labels, 128×128 containment, controlled population, duplicate policy, and adequacy gates. D-029 makes predictor collisions audit-only.
 - **Accepted evidence:** Phase 8/9 immutable aggregate reports establish the controlled population and prospective feasibility; D-033/D-034 identify and accept Set C v1 after Tasks 11.1/11.2.
-- **Current authorization:** D-042/D-043: six-file diagnostics repair, commit after validator PASS, synthetic checks only. R2 consumed; package/real parents untouched.
+- **Current authorization:** D-044/D-045 reviewed five-file commit only; no production/protected validation. R2 consumed; package/real parents untouched.
 - **Hard boundary:** Do not run the aggregate expansion, publish rows, assign roles, train/tune/calibrate, access the final test, publish models/rasters, access `stack_ground_truth.tif`, change manuscripts, or write `Thesis_LR/**`.
-- **Next gate:** Resolve untracked handoff disposition and clean pin, then separately approve exact supervised run card, retained redacted logs, and protected-validation scope. No solver-limit change.
-- **Agent tooling:** `rf_engineer` is pinned to `gpt-6-luna`/`medium`; `rf_validator` to `gpt-6-sol`/`medium`; `tech_lead` remains `gpt-6-sol`/`high`; and `thesis_researcher` remains `gpt-6-sol`/`medium` (D-030). The `tech_lead` instruction conflict remains governed by the parent agent and repository boundaries.
+- **Next gate:** Verify clean reviewed successor; separately approve one supervised invocation/log retention and protected validation. No solver-limit change; Phase 12 closure needs owner acceptance.
+- **Agent tooling:** D-030 pins engineer `gpt-6-luna`/medium, validator/researcher `gpt-6-sol`/medium, lead `gpt-6-sol`/high. Parent/repository boundaries govern the lead conflict.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state
@@ -52,7 +52,8 @@
 | `VERIFIED` | D-040 staging rejection and D-041 default-deny opt-in/audit-reference/clean-pin guards remain active. | Runner/exporter; focused tests | Source/approval change. |
 | `VERIFIED` (recorded) | R2 at main HEAD `1c5a9727` exited 1/RuntimeError after 37.846 s. Parents recorded empty; no targets/stages observed. No fresh path inspection. | `docs/Phase12Block.md` §§5–8; D-042 | New authorized evidence. |
 | `NEEDS EVIDENCE` | Historical message/traceback/objective missing; timeout hypothetical. Resource floors passed sampled checks only; peak RSS unknown. | Same report; source | New authorized evidence. |
-| `VERIFIED` | Unstaged diagnostics retain safe solver/stage context and redact chains; primary/independent tests 76/1 skipped. | D-042; four RF edits | Source/test/environment change. |
+| `VERIFIED` | Diagnostics at `7f6730b` retain safe solver/stage context and redact chains; recorded tests 76/1 skipped. | D-042/D-043; Git commit | Source/test/environment change. |
+| `PASS` / `VERIFIED` | A1 normalizes unknown frame functions to `[external]`, retains safe diagnostics, and rejects malformed frames/fields. Fresh tests 131/1 skipped. | Repaired source; independent review; D-045 | Source/test/environment change. |
 | `VERIFIED` | Read-only reconstruction of the generation runner's loaded and activated configuration reproduces manifest `configuration_sha256` `f18953d5854286d29e9082caf8e5cd35f1719038627840a2c227ba42227dddfe`; the configuration-file hash also matches. | `run_set_c_generation.py`; `orchestrator.py::load_config`; `set_c_population_adequacy.py::activate_approved_population_config`; `set_c_generation.py::_canonical_hash`; manifest | Configuration, normalization source, or package changes. |
 | `WARNING` | The CSV supports source/provenance-consistent `all_eligible` and state-at-`t` timing, but row publication alone cannot prove execution behavior without teacher replay. | Task 11.1 evidence limits | A bounded replay is approved and verified. |
 | `WARNING` | The package binds the approved resource limits but does not contain independent observed peak RSS, memory/disk minima, or elapsed-time telemetry. | Package manifest and independent RF Validator review | Independent execution telemetry is provided and verified. |
@@ -65,12 +66,12 @@
 2. `WARNING` — 128×128 blocks are conservative containment, not measured independence. Predictor collisions remain audit-only under D-029; 543 conflicting-label vectors are retained.
 3. `NEEDS EVIDENCE` — Actual resource extrema and independent execution proof of teacher timing/complete eligible capture remain unverified.
 4. `PASS` — D-035 unchanged. No real assignment derived here; failed-run internal progress unknown.
-5. `PASS` — D-038 locates the ordinary `SetC_Protected/set_c_v1` and `SetC_Development/set_c_v1` folders inside the repository checkout and removes the `SetCDev` requirement. This is a procedural holdout, not OS-enforced blindness; the canonical CSV and deterministic policy permit recomputation of membership.
+5. `PASS` — D-038 fixes in-repository protected/development paths. Same-account procedural holdout cannot enforce blindness or prevent recomputation from the canonical CSV.
 6. `PASS` — D-039 exclusions/loading boundary remain. Preserve R2's existing real parents; no folder change here.
 7. `PASS` — D-040 accepts repaired source-only Phase 12F/12G after independent review; receipt-bearing staging is rejected publicly.
 8. `NEEDS EVIDENCE` — Historical cause/production performance unknown. Stub reproduces pre-stage failure; varied fixture passed eight objectives before budget stop. No historical/production proof.
 9. `BLOCKED` — R2 consumed; real data, roles, protected inspection, production, folders/ACL, models, ground truth, manuscripts and LR remain prohibited. Protected-only publication requires manual recovery.
-10. `PASS` — Diagnostics validated; D-043 conditionally authorizes the six-file commit. No numerical/limit change. Future supervision must retain actual redacted output.
+10. `PASS` — D-045 closes the frame mismatch and restores the exact conditional commit gate. Retain JSONL and terminal JSON; 1800 s/4 GiB/2 GiB defaults need separate run approval. No solver change.
 
 ## Known-good navigation
 
@@ -81,7 +82,7 @@
 | Phase 11 handoff | `docs/HandoffPhase11.md` |
 | Phase 11 validation report | `docs/Phase11_Tasks_11_1_11_2_Report.md` |
 | Phase 12 Task 12.1 policy review | `docs/Phase12_Task12_1_Grouped_Allocation_Policy_Review.md` |
-| Phase 12 failed run / diagnostics scope | Preserved `docs/Phase12Block.md`; D-042; runner/exporter and focused tests |
+| Phase 12 failure / supervisor | Unchanged `docs/Phase12Block.md`; D-042–D-045; `run_set_c_supervised.py`; focused tests |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
 | Raster loading/domains | `Thesis_RF/Code/modules/data_loader.py` |
 | Model-free teacher | `Thesis_RF/Code/modules/model_free_teacher.py`; `modules/automata_engine.py` |
@@ -95,7 +96,7 @@
 ## Test and review evidence
 
 - Phase 7–11 test commands, immutable hashes, and validation limits are recorded in D-015, D-029, D-033–D-034, and the Phase 11 report; the table above indexes the current claims.
-- D-042: unstaged RF patch on `1c5a9727`; primary 76/1 skipped (9.00 s), independent 76/1 skipped (8.96 s). Command/environment/limits in D-042. Windows symlink privilege case skipped; simulated reparse passed.
+- D-042/D-043: diagnostics `7f6730b`, recorded 76/1 skipped (9.05 s). D-044 frame mismatch superseded by D-045 repair/source PASS and fresh 131/1 skipped (21.51 s); no production/optimality proof.
 
 ## Update procedure
 
