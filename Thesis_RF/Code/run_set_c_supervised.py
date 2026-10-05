@@ -659,7 +659,7 @@ def _validate_child_diagnostic(raw: bytes) -> dict:
                 raise ValueError("diagnostic boolean invalid")
             bounds = {"objective_index": (1, 34), "objective_ordinal": (1, 26),
                       "solver_status": (0, 4), "mip_node_count": (0, 10**12),
-                      "elapsed_seconds": (0, 10**9), "time_limit": (3, 3), "mip_rel_gap": (0, 0)}
+                      "elapsed_seconds": (0, 10**9), "time_limit": (60, 60), "mip_rel_gap": (0, 0)}
             if key in bounds:
                 low, high = bounds[key]
                 if type(val) not in (int, float) or not low <= val <= high:

@@ -53,8 +53,8 @@ def _diagnostic(**exception_changes):
         "solver_status": 1,
         "solver_success": False,
         "has_solution": False,
-        "elapsed_seconds": 3.1,
-        "time_limit": 3,
+        "elapsed_seconds": 60.1,
+        "time_limit": 60,
         "mip_rel_gap": 0,
         "failure_reason": "exact_optimum_not_proven",
     }
@@ -222,6 +222,12 @@ def test_malformed_partial_or_unknown_diagnostic_is_explicitly_rejected(raw):
         supervisor._validate_child_diagnostic(raw)
 
 
+@pytest.mark.parametrize("time_limit", [3, 30, 61, 0, 60.0, True])
+def test_supervisor_rejects_wrong_time_limit_alone(time_limit):
+    with pytest.raises(ValueError):
+        supervisor._validate_child_diagnostic(_diagnostic(time_limit=time_limit).encode())
+
+
 def test_sensitive_text_unknown_fields_and_untrusted_frames_never_persist(tmp_path):
     unsafe = _diagnostic(message="SENSITIVE_ROWS")
     code = "import sys; sys.stderr.write(" + repr(unsafe) + "); raise SystemExit(1)\n"
@@ -271,7 +277,7 @@ def SENSITIVE_FUNCTION():
             'stage': 'allocation', 'objective_phase': 'positive_deviation',
             'objective_index': 2, 'objective_ordinal': 2, 'solver_status': 1,
             'solver_success': False, 'has_solution': False, 'elapsed_seconds': 4.5,
-            'time_limit': 3, 'mip_rel_gap': 0,
+            'time_limit': 60, 'mip_rel_gap': 0,
             'failure_reason': 'exact_optimum_not_proven',
         }
         raise error from cause
@@ -308,7 +314,7 @@ def SENSITIVE_FUNCTION():
     assert exceptions[0]["solver_success"] is False
     assert exceptions[0]["has_solution"] is False
     assert exceptions[0]["objective_phase"] == "positive_deviation"
-    assert exceptions[0]["time_limit"] == 3
+    assert exceptions[0]["time_limit"] == 60
     assert exceptions[0]["mip_rel_gap"] == 0
     assert exceptions[0]["failure_reason"] == "exact_optimum_not_proven"
     retained = log_path.read_text(encoding="utf-8")

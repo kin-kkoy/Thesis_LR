@@ -1134,7 +1134,7 @@ def _allocate_components(
         context = {
             "stage": "allocation", "objective_phase": phase,
             "objective_index": solve_index, "objective_ordinal": ordinal,
-            "time_limit": 3, "mip_rel_gap": 0, "failure_reason": "solver_exception",
+            "time_limit": 60, "mip_rel_gap": 0, "failure_reason": "solver_exception",
         }
         started = time.monotonic()
         try:
@@ -1143,7 +1143,7 @@ def _allocate_components(
                 integrality=integrality,
                 bounds=bounds,
                 constraints=LinearConstraint(np.vstack(constraints), lower, upper),
-                options={"time_limit": 3, "mip_rel_gap": 0},
+                options={"time_limit": 60, "mip_rel_gap": 0},
             )
             status = getattr(result, "status", None)
             nodes = getattr(result, "mip_node_count", None)

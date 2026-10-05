@@ -109,7 +109,7 @@ def test_cli_retains_sanitized_chain_and_excludes_sensitive_data(monkeypatch, ca
                 "stage": "development_publication", "objective_phase": "tie_break",
                 "objective_index": 9, "objective_ordinal": 1, "solver_status": 1,
                 "solver_success": False, "has_solution": True, "mip_node_count": 17,
-                "elapsed_seconds": 3.1, "time_limit": 3, "mip_rel_gap": 0,
+                "elapsed_seconds": 3.1, "time_limit": 60, "mip_rel_gap": 0,
                 "failure_reason": "exact_optimum_not_proven",
                 "x": ["SENSITIVE_SOLUTION"], "message": "SENSITIVE_SOLVER_TEXT",
                 "fun": 3, "mip_dual_bound": 2, "mip_gap": 0.25,
@@ -144,6 +144,21 @@ def test_failure_record_rejects_untyped_out_of_bounds_and_unknown_metadata():
     item = runner._failure_record(error)["exceptions"][0]
     assert set(item) == {"type", "message", "stage", "frames"}
     assert item["message"] == "[redacted]"
+
+
+@pytest.mark.parametrize("time_limit", [3, 30, 61, 0, 60.0, True])
+def test_failure_record_rejects_wrong_time_limit_alone(time_limit):
+    error = ValueError("SENSITIVE_UNKNOWN_ERROR")
+    error.set_c_diagnostic = {
+        "stage": "allocation", "objective_phase": "row_deviation",
+        "failure_reason": "exact_optimum_not_proven", "objective_index": 7,
+        "objective_ordinal": 3, "solver_status": 1, "mip_node_count": 1,
+        "solver_success": False, "has_solution": True, "elapsed_seconds": 60.1,
+        "time_limit": time_limit, "mip_rel_gap": 0,
+    }
+    item = runner._failure_record(error)["exceptions"][0]
+    assert item["objective_index"] == 7 and item["mip_rel_gap"] == 0
+    assert "time_limit" not in item
 
 
 def test_failure_record_bounds_cyclic_exception_chain_and_redacts_unknown_type():

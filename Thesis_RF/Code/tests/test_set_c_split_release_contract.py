@@ -586,7 +586,7 @@ def test_allocator_retains_failure_context_without_accepting_incumbent(
         release.allocate_synthetic_components(_allocation_inventory(), dataset_sha256="0" * 64)
     context = caught.value.set_c_diagnostic
     assert len(calls) == 1
-    assert calls[0]["options"] == {"time_limit": 3, "mip_rel_gap": 0}
+    assert calls[0]["options"] == {"time_limit": 60, "mip_rel_gap": 0}
     assert context["stage"] == "allocation"
     assert context["objective_phase"] == "positive_deviation"
     assert context["objective_index"] == context["objective_ordinal"] == 1
@@ -595,6 +595,7 @@ def test_allocator_retains_failure_context_without_accepting_incumbent(
     assert context["has_solution"] is incumbent
     assert context["mip_node_count"] is None  # Optional result field may be absent.
     assert context["failure_reason"] == "exact_optimum_not_proven"
+    assert context["time_limit"] == 60
     assert context["elapsed_seconds"] >= 0
     assert not {"x", "message", "fun", "mip_dual_bound", "mip_gap"} & context.keys()
 
@@ -635,7 +636,7 @@ def test_allocator_identifies_later_failed_objective(monkeypatch, failure_index,
     def fail_later(*args, **kwargs):
         nonlocal calls
         calls += 1
-        assert kwargs["options"] == {"time_limit": 3, "mip_rel_gap": 0}
+        assert kwargs["options"] == {"time_limit": 60, "mip_rel_gap": 0}
         return SimpleNamespace(
             success=calls != failure_index, status=0 if calls != failure_index else 1,
             x=values.copy() if calls != failure_index else None,
@@ -647,6 +648,7 @@ def test_allocator_identifies_later_failed_objective(monkeypatch, failure_index,
     context = caught.value.set_c_diagnostic
     assert calls == context["objective_index"] == failure_index
     assert (context["objective_phase"], context["objective_ordinal"]) == (phase, ordinal)
+    assert context["time_limit"] == 60
 
 
 def test_solver_exception_keeps_original_type_and_safe_context(monkeypatch):

@@ -85,8 +85,8 @@ def _failure_record(error: Exception) -> dict:
             elapsed = context.get("elapsed_seconds")
             if type(elapsed) in (int, float) and math.isfinite(elapsed) and 0 <= elapsed <= 10**9:
                 item["elapsed_seconds"] = elapsed
-            if type(context.get("time_limit")) is int and context["time_limit"] == 3:
-                item["time_limit"] = 3
+            if type(context.get("time_limit")) is int and context["time_limit"] == 60:
+                item["time_limit"] = 60
             if type(context.get("mip_rel_gap")) is int and context["mip_rel_gap"] == 0:
                 item["mip_rel_gap"] = 0
         chain.append(item)
