@@ -256,6 +256,152 @@ def test_pair_verification_rejects_protected_attestation_tampering(tmp_path):
         )
 
 
+def test_export_validates_float_and_numeric_identity_rows_losslessly(tmp_path, monkeypatch):
+    source = tmp_path / "synthetic.csv"
+    provenance = _synthetic_source(source)
+    source_frame = pd.read_csv(source)
+
+    real_graph_inventory = release._graph_inventory
+
+    def stable_family_ids(frame, **kwargs):
+        graph_ids, component_inventory = real_graph_inventory(frame, **kwargs)
+        family_by_graph_id = {}
+        for graph_id, family_id in zip(graph_ids, frame["scenario_family_id"].astype(str)):
+            family_by_graph_id.setdefault(graph_id, family_id)
+        graph_ids = [family_by_graph_id[graph_id] for graph_id in graph_ids]
+        component_inventory = component_inventory.copy()
+        component_inventory["component_id"] = component_inventory["component_id"].map(
+            family_by_graph_id
+        )
+        return graph_ids, component_inventory
+
+    monkeypatch.setattr(release, "_graph_inventory", stable_family_ids)
+    component_ids, inventory = release._graph_inventory(source_frame, complete_event_ids=(), synthetic=True)
+    def fixed_assignments(current_inventory):
+        result = {}
+        offset = 0
+        components = sorted(current_inventory["component_id"].astype(str))
+        for role, count in zip(release.FOUR_ROLES, release.ROLE_COMPONENT_TARGETS):
+            for component_id in components[offset:offset + count]:
+                result[component_id] = role
+            offset += count
+        return result
+
+    initial_assignments = fixed_assignments(inventory)
+    final_components = {
+        component for component, role in initial_assignments.items() if role == "final_test"
+    }
+    component_series = pd.Series(component_ids, index=source_frame.index)
+    final_mask = component_series.isin(final_components)
+    source_frame.loc[final_mask, "stable_cell_id"] = [
+        f"{index:06d}" for index in source_frame.index[final_mask]
+    ]
+    source_frame.loc[~final_mask, "stable_cell_id"] = [
+        f"event-{index}" for index in source_frame.index[~final_mask]
+    ]
+    source_frame.loc[final_mask, CANONICAL_FEATURE_NAMES[0]] = (
+        0.3066101993807095471566981359501369297504425048828125
+    )
+    source_frame.to_csv(source, index=False)
+    source_digest = sha256(source.read_bytes()).hexdigest()
+    provenance["source_manifest"]["source_csv_sha256"] = source_digest
+    source_frame = pd.read_csv(source)
+    component_ids, inventory = release._graph_inventory(
+        source_frame, complete_event_ids=(), synthetic=True,
+    )
+    assignments = fixed_assignments(inventory)
+    monkeypatch.setattr(release, "_allocate_components", lambda current, **_kwargs: {
+        component: assignments[str(component)] for component in current["component_id"]
+    })
+    component_series = pd.Series(component_ids, index=source_frame.index)
+    final_mask = component_series.map(assignments).eq("final_test")
+    expected_final = source_frame.loc[final_mask].copy()
+    expected_final["leakage_component_id"] = component_series.loc[final_mask].to_numpy()
+
+    real_read_csv = pd.read_csv
+    default_reads = []
+
+    def read_staged_with_defaults(path, *args, **kwargs):
+        if Path(path).name == "final_test_rows.csv":
+            frame = real_read_csv(path)
+            default_reads.append(frame)
+            return frame
+        return real_read_csv(path, *args, **kwargs)
+
+    monkeypatch.setattr(release.pd, "read_csv", read_staged_with_defaults)
+    with pytest.raises(ValueError, match="final-test rows disagree"):
+        release.export_set_c_split(
+            source,
+            protected_destination=tmp_path / "default-protected",
+            development_destination=tmp_path / "default-development",
+            synthetic=True,
+            **provenance,
+        )
+    assert len(default_reads) == 1
+    assert not default_reads[0].reset_index(drop=True).equals(expected_final.reset_index(drop=True))
+    assert default_reads[0]["stable_cell_id"].iloc[0] != expected_final["stable_cell_id"].iloc[0]
+    assert expected_final["stable_cell_id"].map(str).str.isdecimal().all()
+    assert source_frame.loc[~final_mask, "stable_cell_id"].map(str).str.startswith("event-").all()
+
+    monkeypatch.setattr(release.pd, "read_csv", real_read_csv)
+    release.export_set_c_split(
+        source,
+        protected_destination=tmp_path / "roundtrip-protected",
+        development_destination=tmp_path / "roundtrip-development",
+        synthetic=True,
+        **provenance,
+    )
+
+
+def test_staged_round_trip_parser_preserves_float64_bits(tmp_path):
+    value = 0.3066101993807095471566981359501369297504425048828125
+    staged_path = tmp_path / "staged.csv"
+    pd.DataFrame({"feature": [value]}).to_csv(staged_path, index=False)
+
+    expected = pd.DataFrame({"feature": [value]})
+    assert not pd.read_csv(staged_path).equals(expected)
+    restored = pd.read_csv(staged_path, float_precision="round_trip")
+    assert restored.equals(expected)
+
+
+@pytest.mark.parametrize("column", [CANONICAL_FEATURE_NAMES[0], "stable_cell_id"])
+def test_protected_stage_rejects_hash_rebound_final_row_tampering(tmp_path, column):
+    source = tmp_path / "synthetic.csv"
+    provenance = _synthetic_source(source)
+    protected_parent = tmp_path / "protected-parent"
+    development_parent = tmp_path / "development-parent"
+    protected_parent.mkdir()
+    development_parent.mkdir()
+    protected, _ = release.export_set_c_split(
+        source,
+        protected_destination=protected_parent / "set_c_v1",
+        development_destination=development_parent / "set_c_v1",
+        synthetic=True,
+        **provenance,
+    )
+
+    final_rows_path = protected / "final_test_rows.csv"
+    source_frame = pd.read_csv(source)
+    final_rows = pd.read_csv(
+        final_rows_path,
+        dtype={**source_frame.dtypes.to_dict(), "leakage_component_id": str},
+        float_precision="round_trip",
+    )
+    if column == "stable_cell_id":
+        final_rows.loc[0, column] = f"tampered-{final_rows.loc[0, column]}"
+    else:
+        final_rows.loc[0, column] += 1.0
+    final_rows.to_csv(final_rows_path, index=False)
+    protected_attestation_path = protected / "attestation.json"
+    protected_record = json.loads(protected_attestation_path.read_text(encoding="utf-8"))
+    protected_record["final_test_rows_sha256"] = sha256(final_rows_path.read_bytes()).hexdigest()
+    protected_attestation_path.write_text(json.dumps(protected_record), encoding="utf-8")
+
+    source_digest = sha256(source.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="final-test rows disagree"):
+        release._validate_protected_stage(protected, source_digest, source_frame)
+
+
 def test_production_source_revision_requires_exact_clean_checkout(tmp_path, monkeypatch):
     calls = []
 

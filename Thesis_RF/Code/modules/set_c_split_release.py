@@ -737,12 +737,16 @@ def _validate_protected_stage(
         ).sum()
         if (component_positive_counts * 2 > positives).any():
             raise ValueError("Protected split manifest violates the D-035 concentration limit")
-    final_rows = pd.read_csv(stage / "final_test_rows.csv")
-    if tuple(final_rows.columns) != (*AUTHORITATIVE_CSV_COLUMNS, "leakage_component_id"):
-        raise ValueError("Protected final-test row schema is invalid")
     final_mapping = mapping.loc[mapping["split_role"].eq("final_test")]
     expected_final = source_frame.loc[final_mapping.index].copy()
     expected_final["leakage_component_id"] = final_mapping["leakage_component_id"].to_numpy()
+    final_rows = pd.read_csv(
+        stage / "final_test_rows.csv",
+        dtype=expected_final.dtypes.to_dict(),
+        float_precision="round_trip",
+    )
+    if tuple(final_rows.columns) != (*AUTHORITATIVE_CSV_COLUMNS, "leakage_component_id"):
+        raise ValueError("Protected final-test row schema is invalid")
     if not final_rows.reset_index(drop=True).equals(expected_final.reset_index(drop=True)):
         raise ValueError("Protected final-test rows disagree with the complete split manifest")
     if len(final_rows) != record["final_test_rows"] or len(final_rows) != record["role_counts"]["final_test"]["rows"]:

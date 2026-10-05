@@ -5,21 +5,21 @@
 - **Purpose:** Navigation index; source, identified inputs/artifacts, commands and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
 - **Last updated:** 2026-10-05 (Asia/Manila).
-- **Last reviewed repository revision:** D-049 patch against `c24ec4367826708d6dda406e62d89f08d917725b`; successor SHA/cleanliness from Git.
-- **Worktree note:** D-049 authorizes eight-file commit; retained D-047 stash. Git status governs cleanliness.
-- **Current reviewed RF work:** D-048: owner-approved cap 60; engineer, primary, validator and lead source/synthetic PASS.
+- **Last reviewed repository revision:** D-052 repair against `ac6259abc0a3d5d1eb3e0b58fb7665c207b5a96d`; successor identity comes from Git.
+- **Worktree note:** Planned scoped successor includes two RF files and reconciled memory; both older stashes retained.
+- **Current reviewed RF work:** D-052 staged CSV dtype/float fidelity; cap 60 and exact guards unchanged.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Prepare R4 at the reviewed cap-60 successor for separate owner approval.
+- **Active objective:** Review the minimal R4 row-consistency repair and execute owner-authorized R5 after all gates pass.
 - **Methodology:** D-009–D-015 define the Set C estimand, 11 predictors, model-free `all_eligible` labels, 128×128 containment, controlled population, duplicate policy, and adequacy gates. D-029 makes predictor collisions audit-only.
 - **Accepted evidence:** Phase 8/9 immutable aggregate reports establish the controlled population and prospective feasibility; D-033/D-034 identify and accept Set C v1 after Tasks 11.1/11.2.
-- **Current authorization:** D-049 eight-file commit only. R2/R3 consumed; R4 unapproved; conditional protected review inactive.
-- **Hard boundary:** No further allocation/publication/protected validation, expansion, model work, ground truth, manuscripts, ACLs or LR. Preserve evidence/artifacts.
-- **Next gate:** Clean reviewed SHA, fresh R4 approval/preflight. Protected review/owner acceptance follow publication.
+- **Current authorization:** R2/R3/R4 consumed. Owner authorizes one fresh R5 after independent review, clean successor and preflight.
+- **Hard boundary:** Preserve evidence; no automatic retry/recovery, model work, ground truth, manuscripts, ACLs or LR. Protected review conditional on successful retained paired publication; acceptance separate.
+- **Next gate:** D-052 independent synthetic PASS, scoped commit, fresh R5 card and preflight.
 - **Agent tooling:** D-030 pins engineer `gpt-6-luna`/medium, validator/researcher `gpt-6-sol`/medium, lead `gpt-6-sol`/high. Parent/repository boundaries govern the lead conflict.
 <!-- END CODEX DIGEST -->
 
@@ -53,12 +53,13 @@
 | `VERIFIED` (recorded) | R2 at main HEAD `1c5a9727` exited 1/RuntimeError after 37.846 s. Parents recorded empty; no targets/stages observed. No fresh path inspection. | `docs/Phase12Block.md` §§5–8; D-042 | New authorized evidence. |
 | `NEEDS EVIDENCE` | Historical message/traceback/objective missing; timeout hypothetical. Resource floors passed sampled checks only; peak RSS unknown. | Same report; source | New authorized evidence. |
 | `VERIFIED` | Diagnostics at `7f6730b` retain safe solver/stage context and redact chains; recorded tests 76/1 skipped. | D-042/D-043; Git commit | Source/test/environment change. |
-| `PASS` / `VERIFIED` | A1 redaction retained; cap 60 synchronized across allocator/diagnostics. Engineer and independent suites each 143/1 skipped. Production sufficiency untested. | D-045; D-048; six-file diff | Source/test/environment or approved run changes. |
+| `PASS` / `VERIFIED` | A1 redaction/cap 60 synchronized; recorded suites each 143/1 skipped. Production sufficiency untested. | D-045/D-048 | Source/test/run changes. |
 | `FAIL` / `VERIFIED` | R3 exited 1 after 40.210 s: objective 7, calibration row deviation, exact optimum not proven. Resources/evidence PASS; no targets/stages. | D-047; retained JSONL/final response | Separately authorized evidence review or source/run change. |
+| `FAIL` / `VERIFIED` | R4 failed internal prepublication final-row consistency, exit 1/172.242 s. Capture/resources PASS; no targets/stages. | D-051; retained response | Owner-directed diagnosis. |
 | `VERIFIED` | Read-only reconstruction of the generation runner's loaded and activated configuration reproduces manifest `configuration_sha256` `f18953d5854286d29e9082caf8e5cd35f1719038627840a2c227ba42227dddfe`; the configuration-file hash also matches. | `run_set_c_generation.py`; `orchestrator.py::load_config`; `set_c_population_adequacy.py::activate_approved_population_config`; `set_c_generation.py::_canonical_hash`; manifest | Configuration, normalization source, or package changes. |
 | `WARNING` | The CSV supports source/provenance-consistent `all_eligible` and state-at-`t` timing, but row publication alone cannot prove execution behavior without teacher replay. | Task 11.1 evidence limits | A bounded replay is approved and verified. |
 | `WARNING` | The package binds the approved resource limits but does not contain independent observed peak RSS, memory/disk minima, or elapsed-time telemetry. | Package manifest and independent RF Validator review | Independent execution telemetry is provided and verified. |
-| `WARNING` | `tech_lead` still has contradictory delegation/output instructions: parent-owned delegation and no human prompt copying conflict with “Prompt to Copy,” direct researcher invocation, and a request to update Markdown despite read-only/manuscript boundaries. | `.codex/agents/tech-lead.toml` lines 21, 42, 50–54 | Profile wording is explicitly repaired and reviewed. |
+| `WARNING` | Lead profile delegation/output wording conflicts with parent and read-only boundaries; parent/user rules govern. | `.codex/agents/tech-lead.toml`; D-030 | Profile repair. |
 | `NEEDS VERIFICATION` | Historical Set A/B/C metric claims are reproducible from identified datasets, models, configurations, splits, commands, and immutable outputs. | `docs/findings_SetA.md`, `docs/findings_SetB.md`, `docs/findings_SetC.md` | Close only with primary provenance. |
 
 ## Active blockers and authorized follow-up
@@ -71,8 +72,8 @@
 6. `PASS` — R3 destination metadata: parents present, both targets absent, zero stages; no cleanup or ACL changes.
 7. `PASS` — D-040 accepts repaired source-only Phase 12F/12G after independent review; receipt-bearing staging is rejected publicly.
 8. `WARNING` — R2 cause unknown. R3 status 1 means iteration/time limit; per-solve timeout is INFERRED from 3.003328 s at cap 3. No optimum proof or production success.
-9. `BLOCKED` — R2/R3 consumed; no retry/recovery. D-049 commit approved; fresh pinned R4 approval required.
-10. `WARNING` — R3 evidence retained. D-048 cap 60 is unproven; 34×60=2040 s exceeds unchanged 1800 s overall.
+9. `AUTHORIZED / GATED` — D-052 minimal repair and one fresh R5; no automatic retry. Actual R4 mismatch subtype unknown.
+10. `PASS` — R4 diagnosis, JSONL and lossless response retained. No independent optimality certificate or Phase 12 acceptance.
 
 ## Known-good navigation
 
@@ -84,7 +85,7 @@
 | Phase 11 validation report | `docs/Phase11_Tasks_11_1_11_2_Report.md` |
 | Phase 12 Task 12.1 policy review | `docs/Phase12_Task12_1_Grouped_Allocation_Policy_Review.md` |
 | Phase 12 failure / supervisor | Unchanged `docs/Phase12Block.md`; D-042–D-045; `run_set_c_supervised.py`; focused tests |
-| Current source / execution hold | D-049 commit/R4 gates; D-048 cap PASS; D-047 retained R3 identities |
+| Current source / execution gate | D-052 repair/R5; D-051 R4 retained failure; D-047 R3 identities |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
 | Raster loading/domains | `Thesis_RF/Code/modules/data_loader.py` |
 | Model-free teacher | `Thesis_RF/Code/modules/model_free_teacher.py`; `modules/automata_engine.py` |
@@ -100,6 +101,7 @@
 - Phase 7–11 test commands, immutable hashes, and validation limits are recorded in D-015, D-029, D-033–D-034, and the Phase 11 report; the table above indexes the current claims.
 - D-042/D-043: diagnostics `7f6730b`, recorded 76/1 skipped (9.05 s). D-044 frame mismatch superseded by D-045 repair/source PASS and fresh 131/1 skipped (21.51 s); no production/optimality proof.
 - D-047: capture/evidence PASS; production FAIL. D-048: engineer 143/1 skipped (14.31 s), validator 143/1 skipped (14.21 s); synthetic only.
+- D-052: engineer and independent validator each 147/1 skipped; strict CSV fidelity/tamper checks PASS. Synthetic only; actual R4 subtype unknown.
 
 ## Update procedure
 
