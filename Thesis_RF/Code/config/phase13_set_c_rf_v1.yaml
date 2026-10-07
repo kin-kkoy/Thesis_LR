@@ -1,0 +1,75 @@
+schema_version: phase13_set_c_rf_config.v1
+protocol_id: phase13_set_c_rf_protocol.v1
+protocol_sha256: 69c39d1d97430ebb903ec2d856e6205a2c1b8ad77641798955d6ad2bdb671637
+release_dir: C:\Users\gibgib\Thesis-Cellular-Automata\SetC_Development\set_c_v1
+release_attestation_sha256: 4fcf286156892c9da0289e56712210e90cccdcd608641c7ee573a8db1dcea23f
+role_sha256:
+  train: 20987f233ce6ad8fd8fb030b0c80eec9505a63efedcd264c9c669f3c7ba593e2
+  validation: 64b4949564b5f064ae150860598056edec0b9fbdfff582b3946a0c790d84e4a3
+source_provenance:
+  source_csv_sha256: 7f0f1867445141f365687d127e449117f234348cec571990d70bc2b226ba40f6
+  source_manifest_sha256: b700f1b9f196893f23e7190daf1bc3c68b0f569f99a977ec9e919f0de73e9e3c
+  export_revision: 8b750ae733ab0346d5cb9291780310c87c2cc752
+feature_schema_version: set_c.v1
+target_version: ignition_t_plus_1.v1
+feature_names:
+  - slope_risk
+  - proximity_risk
+  - building_presence
+  - material_risk
+  - material_class
+  - wind_speed
+  - wind_sin
+  - wind_cos
+  - neighbor_burning_count
+  - composite_flammability
+  - wind_weighted_score
+target_name: Ignited
+target_dtype: int8
+feature_dtype: float32
+positive_label: 1
+expected_role_counts:
+  train: {rows: 4541, positives: 338, negatives: 4203}
+  validation: {rows: 2064, positives: 153, negatives: 1911}
+  refit: {rows: 6605, positives: 491, negatives: 6114}
+search:
+  n_estimators: [200, 400, 600]
+  max_depth: [null, 5, 10, 15, 20]
+  min_samples_split: [2, 5, 10, 20]
+  min_samples_leaf: [1, 2, 4, 8, 16]
+  max_features: [sqrt, 0.5, 1.0]
+  class_weight: [none, balanced, balanced_subsample]
+baselines:
+  - {n_estimators: 200, max_depth: 15, min_samples_split: 2, min_samples_leaf: 1, max_features: sqrt, class_weight: none}
+  - {n_estimators: 200, max_depth: 15, min_samples_split: 2, min_samples_leaf: 1, max_features: sqrt, class_weight: balanced}
+  - {n_estimators: 200, max_depth: 15, min_samples_split: 2, min_samples_leaf: 1, max_features: sqrt, class_weight: balanced_subsample}
+fixed_estimator:
+  criterion: gini
+  bootstrap: true
+  random_state: 42
+  n_jobs: 2
+  oob_score: false
+  warm_start: false
+  max_samples: null
+  max_leaf_nodes: null
+  min_weight_fraction_leaf: 0.0
+  min_impurity_decrease: 0.0
+  ccp_alpha: 0.0
+  monotonic_cst: null
+  verbose: 0
+sampler: {name: TPESampler, seed: 42, n_startup_trials: 10, multivariate: false, group: false, constant_liar: false}
+pruner: NopPruner
+study: {direction: maximize, n_trials: 60, n_jobs: 1, timeout_seconds: 5400, exact_tie: smallest_trial_number}
+environment:
+  python: 3.14.3
+  scikit_learn: 1.8.0
+  optuna: 4.8.0
+resource_limits:
+  min_available_physical_memory_bytes: 4294967296
+  min_free_c_bytes: 2147483648
+  monitor_interval_seconds: 60
+  overall_stop_seconds: 7200
+destination: C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\phase13\set_c_rf_v1
+evidence_parent: C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\phase13\evidence
+manifest_schema: set_c_rf_phase13_run.v1
+artifact_kind: set_c_rf_uncalibrated_candidate_run

@@ -49,8 +49,11 @@ from .set_c_split_release import (
     APPROVED_POLICY_VERSION,
     ATTESTATION_SCHEMA_VERSION,
     DEVELOPMENT_DIRECTORY_NAME,
+    PHASE13_SET_C_RF_PROTOCOL_ID,
+    PHASE13_SET_C_RF_PROTOCOL_SHA256,
     RELEASE_SCHEMA_VERSION,
     load_development_release,
+    load_development_train_validation_release,
 )
 
 
@@ -121,6 +124,51 @@ def load_verified_development_release(
     ):
         raise ValueError("Development release is not bound to approved Set C v1 provenance")
     return data, attestation
+
+
+def load_verified_train_validation_release(
+    release_dir: str | Path,
+    *,
+    expected_attestation_sha256: str,
+    allow_synthetic: bool = False,
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series, dict, dict]:
+    """Return verified development train/validation data without loading calibration."""
+    _validate_development_release_path(release_dir, allow_synthetic=allow_synthetic)
+    roles, attestation = load_development_train_validation_release(
+        release_dir,
+        expected_attestation_sha256=expected_attestation_sha256,
+        allow_synthetic=allow_synthetic,
+    )
+    if (
+        attestation.get("schema_version") != ATTESTATION_SCHEMA_VERSION
+        or attestation.get("release_schema_version") != RELEASE_SCHEMA_VERSION
+        or attestation.get("final_test_used") is not False
+    ):
+        raise ValueError("Development release identity or schema is invalid")
+    if attestation.get("synthetic") is not True and (
+        attestation.get("synthetic") is not False
+        or attestation.get("source_csv_sha256") != APPROVED_CSV_SHA256
+        or attestation.get("policy_version") != APPROVED_POLICY_VERSION
+        or not isinstance(attestation.get("source_provenance"), dict)
+    ):
+        raise ValueError("Development release is not bound to approved Set C v1 provenance")
+
+    partitions = []
+    for role in ("train", "validation"):
+        frame = roles[role]
+        x = frame.loc[:, list(CANONICAL_FEATURE_NAMES)].copy()
+        y = frame[TARGET_NAME].copy()
+        if tuple(x.columns) != CANONICAL_FEATURE_NAMES or x.dtypes.ne(np.dtype("float32")).any():
+            raise ValueError(f"{role} features do not match the ordered float32 schema")
+        if y.dtype != np.dtype("int8"):
+            raise ValueError(f"{role} labels must use int8")
+        partitions.extend((x, y))
+    provenance = {
+        "protocol_id": PHASE13_SET_C_RF_PROTOCOL_ID,
+        "protocol_sha256": PHASE13_SET_C_RF_PROTOCOL_SHA256,
+        "source_provenance": attestation["source_provenance"],
+    }
+    return (*partitions, attestation, provenance)
 
 
 def class_weight_for_estimator(configured: str | None) -> str | None:

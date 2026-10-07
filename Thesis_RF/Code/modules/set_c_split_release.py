@@ -33,6 +33,8 @@ from .set_c_publication import PACKAGE_SCHEMA_VERSION, validate_published_packag
 
 RELEASE_SCHEMA_VERSION = "set_c_development_projection.v1"
 ATTESTATION_SCHEMA_VERSION = "set_c_development_attestation.v1"
+PHASE13_SET_C_RF_PROTOCOL_ID = "phase13_set_c_rf_protocol.v1"
+PHASE13_SET_C_RF_PROTOCOL_SHA256 = "69c39d1d97430ebb903ec2d856e6205a2c1b8ad77641798955d6ad2bdb671637"
 APPROVED_CSV_SHA256 = "7f0f1867445141f365687d127e449117f234348cec571990d70bc2b226ba40f6"
 APPROVED_MANIFEST_SHA256 = "b700f1b9f196893f23e7190daf1bc3c68b0f569f99a977ec9e919f0de73e9e3c"
 RELEASE_COLUMNS = (*CANONICAL_FEATURE_NAMES, TARGET_NAME)
@@ -893,12 +895,47 @@ def load_development_release(
     )
 
 
+def load_development_train_validation_release(
+    release_dir: str | Path,
+    *,
+    expected_attestation_sha256: str,
+    allow_synthetic: bool = False,
+) -> tuple[dict[str, pd.DataFrame], dict]:
+    """Verify and load only the pinned train and validation role files."""
+    supplied = Path(release_dir)
+    if ".." in supplied.parts:
+        raise PermissionError("Development release paths cannot contain parent traversal")
+    root = supplied.absolute()
+    if allow_synthetic:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        if not root.resolve(strict=True).is_relative_to(temp_root) or root.resolve() == temp_root:
+            raise PermissionError("Synthetic training releases are limited to the OS temp tree")
+    else:
+        approved = Path(__file__).resolve().parents[3] / DEVELOPMENT_DIRECTORY_NAME / "set_c_v1"
+        if root != approved:
+            raise PermissionError("Training loader accepts only the approved development release")
+    data, attestation = _load_development_release(
+        root,
+        expected_attestation_sha256=expected_attestation_sha256,
+        allow_synthetic=allow_synthetic,
+        selected_roles=("train", "validation"),
+    )
+    roles = {
+        role: data.loc[data["split_role"].eq(role), list(RELEASE_COLUMNS)].reset_index(drop=True)
+        for role in ("train", "validation")
+    }
+    dtype_map = {**dict.fromkeys(CANONICAL_FEATURE_NAMES, np.float32), TARGET_NAME: np.int8}
+    roles = {role: frame.astype(dtype_map) for role, frame in roles.items()}
+    return roles, attestation
+
+
 def _load_development_release(
     release_dir: str | Path,
     *,
     expected_attestation_sha256: str,
     allow_synthetic: bool = False,
     allow_staging: bool = False,
+    selected_roles: tuple[str, ...] = DEVELOPMENT_SPLIT_ROLES,
 ) -> tuple[pd.DataFrame, dict]:
     """Private validator may inspect a pre-rename stage during exporter preflight."""
     if len(expected_attestation_sha256) != 64 or any(
@@ -909,8 +946,9 @@ def _load_development_release(
     expected_files = {"attestation.json", *(f"{role}.csv" for role in DEVELOPMENT_SPLIT_ROLES)}
     if {item.name for item in root.iterdir()} != expected_files:
         raise PermissionError("Development release contains missing or unexpected files")
+    entries = {item.name: item for item in root.iterdir()}
     if any(item.is_symlink() or (getattr(os.lstat(item), "st_file_attributes", 0) & 0x400)
-           for item in root.iterdir()):
+           or not item.is_file() for item in entries.values()):
         raise PermissionError("Development release contains a reparse point")
     attestation_path = root / "attestation.json"
     if _sha256(attestation_path) != expected_attestation_sha256:
@@ -965,12 +1003,20 @@ def _load_development_release(
     if not isinstance(role_files, dict) or set(role_files) != set(DEVELOPMENT_SPLIT_ROLES):
         raise ValueError("Development release role inventory is invalid")
 
-    frames = []
     for role in DEVELOPMENT_SPLIT_ROLES:
+        record = role_files[role]
+        if (not isinstance(record, dict)
+                or set(record) != {"sha256", "rows", "positives", "negatives"}
+                or not _is_sha256(record.get("sha256"))
+                or any(type(record.get(key)) is not int or record[key] <= 0
+                       for key in ("rows", "positives", "negatives"))
+                or record["positives"] + record["negatives"] != record["rows"]):
+            raise ValueError(f"Development release {role} inventory is invalid")
+
+    frames = []
+    for role in selected_roles:
         path = root / f"{role}.csv"
         record = role_files[role]
-        if not isinstance(record, dict) or set(record) != {"sha256", "rows", "positives", "negatives"}:
-            raise ValueError(f"Development release {role} inventory is invalid")
         if _sha256(path) != record["sha256"]:
             raise ValueError(f"Development release {role} hash mismatch")
         with path.open(newline="", encoding="utf-8") as stream:
