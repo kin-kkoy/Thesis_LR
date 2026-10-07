@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
+import math
 import os
 import platform
 from pathlib import Path
@@ -929,12 +930,147 @@ def _validate_destination(config: dict, *, execution: bool, evidence_dir: Path |
     evidence_dir = supplied_evidence.resolve()
     if evidence_dir != supplied_evidence:
         raise PermissionError("Phase 13 evidence path resolves outside its approved identity")
+    if execution and not evidence_dir.is_dir():
+        raise FileNotFoundError("Phase 13 execution requires a fresh supervisor evidence directory")
     if evidence_dir.exists():
         entries = list(evidence_dir.iterdir())
-        allowed_redirects = {"stdout.log", "stderr.log"}
-        if (not execution or any(item.name not in allowed_redirects or item.stat().st_size != 0
-                                 for item in entries)):
-            raise FileExistsError("Phase 13 evidence directory must be absent or empty for execution")
+        if not execution:
+            raise FileExistsError("Phase 13 evidence directory must be absent for preflight")
+        allowed_entries = {
+            "stdout.log", "stderr.log", "supervisor_handoff.json",
+            "process.json", "operator_resources.jsonl",
+        }
+        if any(item.name not in allowed_entries for item in entries):
+            raise FileExistsError("Phase 13 evidence directory contains an unexpected entry")
+        for item in entries:
+            item_stat = item.lstat()
+            if (item.is_symlink() or getattr(item_stat, "st_file_attributes", 0) & 0x400
+                    or not item.is_file()):
+                raise PermissionError("Phase 13 evidence contains a non-regular or reparse entry")
+        for redirect in (evidence_dir / "stdout.log", evidence_dir / "stderr.log"):
+            if not redirect.is_file() or redirect.stat().st_size != 0:
+                raise FileExistsError("Phase 13 redirected logs must be freshly created and empty at preflight")
+
+        handoff_path = evidence_dir / "supervisor_handoff.json"
+        process_nonce = os.environ.get("PHASE13_SUPERVISOR_NONCE", "")
+        if not process_nonce or not re.fullmatch(r"[0-9a-f]{32}", process_nonce):
+            raise PermissionError("Phase 13 execution requires the supervisor's per-process handoff")
+        try:
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError("Phase 13 supervisor handoff is missing or malformed") from error
+        handoff_fields = {
+            "schema_version", "run_id", "nonce", "created_at_utc", "executable",
+        }
+        if (not isinstance(handoff, dict) or set(handoff) != handoff_fields
+                or handoff.get("schema_version") != "phase13_set_c_rf_supervisor_handoff.v1"
+                or handoff.get("run_id") != evidence_dir.name
+                or handoff.get("nonce") != process_nonce):
+            raise PermissionError("Phase 13 supervisor handoff identity is foreign or unexpected")
+
+        def parse_utc(value: object, description: str) -> datetime:
+            if not isinstance(value, str):
+                raise ValueError(f"Phase 13 {description} timestamp is malformed")
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise ValueError(f"Phase 13 {description} timestamp is malformed") from error
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError(f"Phase 13 {description} timestamp must include a timezone")
+            return parsed.astimezone(timezone.utc)
+
+        now_utc = datetime.now(timezone.utc)
+        handoff_time = parse_utc(handoff["created_at_utc"], "handoff")
+        if handoff_time > now_utc + timedelta(seconds=30) or now_utc - handoff_time > timedelta(minutes=15):
+            raise PermissionError("Phase 13 supervisor handoff is stale or future-dated")
+        expected_executable = os.path.normcase(str(Path(sys.executable).resolve()))
+        handoff_executable = os.path.normcase(str(Path(handoff["executable"]).resolve()))
+        if handoff_executable != expected_executable:
+            raise PermissionError("Phase 13 supervisor handoff names a different Python executable")
+
+        process_path = evidence_dir / "process.json"
+        if process_path.exists():
+            try:
+                process_record = json.loads(process_path.read_text(encoding="utf-8-sig"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError("Phase 13 supervisor process record is malformed") from error
+            required_process_fields = {
+                "schema_version", "run_id", "process_id", "process_ids",
+                "process_started_at_utc", "executable", "working_directory",
+            }
+            optional_process_fields = {"stop_reason", "updated_at_utc"}
+            if (not isinstance(process_record, dict)
+                    or not required_process_fields.issubset(process_record)
+                    or set(process_record) - required_process_fields - optional_process_fields
+                    or process_record.get("schema_version") != "phase13_set_c_rf_process.v1"
+                    or process_record.get("run_id") != evidence_dir.name):
+                raise PermissionError("Phase 13 supervisor process record is foreign or unexpected")
+            process_ids = process_record["process_ids"]
+            process_id = process_record["process_id"]
+            if (type(process_id) is not int or process_id not in {os.getpid(), os.getppid()}
+                    or not isinstance(process_ids, list)
+                    or not process_ids or any(type(pid) is not int or pid <= 0 for pid in process_ids)
+                    or len(set(process_ids)) != len(process_ids) or process_id not in process_ids):
+                raise PermissionError("Phase 13 supervisor process record does not bind this child")
+            process_started = parse_utc(process_record["process_started_at_utc"], "process")
+            if (process_started < handoff_time - timedelta(seconds=2)
+                    or process_started > now_utc + timedelta(seconds=30)
+                    or now_utc - process_started > timedelta(minutes=15)):
+                raise PermissionError("Phase 13 supervisor process record is stale or mismatched")
+            process_executable = os.path.normcase(str(Path(process_record["executable"]).resolve()))
+            process_working_directory = os.path.normcase(
+                str(Path(process_record["working_directory"]).resolve())
+            )
+            expected_working_directory = os.path.normcase(str(Path(__file__).resolve().parent))
+            if (process_executable != expected_executable
+                    or process_working_directory != expected_working_directory):
+                raise PermissionError("Phase 13 supervisor process record names an unexpected child")
+            if "stop_reason" in process_record and not isinstance(process_record["stop_reason"], str):
+                raise ValueError("Phase 13 supervisor stop reason is malformed")
+            if "updated_at_utc" in process_record:
+                update_time = parse_utc(process_record["updated_at_utc"], "process update")
+                if update_time < process_started or update_time > now_utc + timedelta(seconds=30):
+                    raise PermissionError("Phase 13 supervisor process update is stale or future-dated")
+
+        resources_path = evidence_dir / "operator_resources.jsonl"
+        if resources_path.exists():
+            raw_resources = None
+            for _attempt in range(20):
+                size_before = resources_path.stat().st_size
+                raw_candidate = resources_path.read_bytes()
+                size_after = resources_path.stat().st_size
+                if size_before == size_after and (not raw_candidate or raw_candidate.endswith(b"\n")):
+                    raw_resources = raw_candidate
+                    break
+                time.sleep(0.01)
+            if raw_resources is None:
+                raise ValueError("Phase 13 supervisor resource log has an incomplete append")
+            try:
+                resource_lines = raw_resources.decode("utf-8-sig").splitlines()
+                resource_records = [json.loads(line) for line in resource_lines if line.strip()]
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise ValueError("Phase 13 supervisor resource log is malformed") from error
+            if resource_lines and not resource_records:
+                raise ValueError("Phase 13 supervisor resource log has no complete samples")
+            resource_fields = {
+                "run_id", "timestamp_utc", "elapsed_seconds",
+                "available_physical_memory_bytes", "free_c_bytes",
+            }
+            limits = config["resource_limits"]
+            for record in resource_records:
+                if not isinstance(record, dict) or set(record) != resource_fields or record["run_id"] != evidence_dir.name:
+                    raise PermissionError("Phase 13 supervisor resource sample is foreign or unexpected")
+                sample_time = parse_utc(record["timestamp_utc"], "resource")
+                elapsed = record["elapsed_seconds"]
+                memory = record["available_physical_memory_bytes"]
+                free_c = record["free_c_bytes"]
+                if (sample_time < handoff_time - timedelta(seconds=2)
+                        or sample_time > now_utc + timedelta(seconds=30)
+                        or type(elapsed) not in (int, float) or not math.isfinite(float(elapsed)) or elapsed < 0
+                        or type(memory) is not int or type(free_c) is not int
+                        or memory < limits["min_available_physical_memory_bytes"]
+                        or free_c < limits["min_free_c_bytes"]):
+                    raise PermissionError("Phase 13 supervisor resource sample is stale or below the approved floor")
     return destination, evidence_dir
 
 

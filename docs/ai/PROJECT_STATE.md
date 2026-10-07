@@ -5,9 +5,9 @@
 - **Purpose:** Navigation index; source, identified inputs/artifacts, commands and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
 - **Last updated:** 2026-10-07 (Asia/Manila).
-- **Last reviewed repository revision:** R5 clean execution pin `8b750ae733ab0346d5cb9291780310c87c2cc752`.
-- **Worktree note:** Existing memory delta and both older stashes preserved; no new commit.
-- **Current reviewed RF work:** 13A accepted; 13B.1 PASS; repaired 13D source gate PASS; 13E preparation ready, launch separately gated.
+- **Last reviewed repository revision:** Phase 13 R1 execution pin `8a8977599a1467ff67415338eaacfc72779e5eb9`.
+- **Worktree note:** Evidence/stashes preserved; only memory updates, no new commit.
+- **Current reviewed RF work:** R2A source gate accepted under owner-approved procedural shutdown; no retry authorized.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
@@ -17,9 +17,9 @@
 - **Active objective:** Plan Phase 13 RF tuning and uncalibrated retraining while preserving the accepted Phase 12 pair and evidence.
 - **Methodology:** D-009–D-015 define the Set C estimand, 11 predictors, model-free `all_eligible` labels, 128×128 containment, controlled population, duplicate policy, and adequacy gates. D-029 makes predictor collisions audit-only.
 - **Accepted evidence:** Phase 8/9 immutable aggregate reports establish the controlled population and prospective feasibility; D-033/D-034 identify and accept Set C v1 after Tasks 11.1/11.2.
-- **Current authorization:** D-054 closes Phase 12; D-055/D-056 govern Phase 13. Protocol accepted; source and production execution remain separately scoped.
+- **Current authorization:** Phase 12 closed; Phase 13 protocol retained. Owner-authorized 13E R1 was invoked and consumed; no retry authorized.
 - **Hard boundary:** Preserve evidence/artifacts/stashes; no rerun, recovery, cleanup, ACL changes or additional protected/model/ground-truth/manuscript/LR access.
-- **Next gate:** Pin clean reviewed Phase 13 source, obtain execution approval, and pass fresh live preflight before the human-run 13E command.
+- **Next gate:** Reviewed clean commit/pin, then separate fresh one-run proposal; no preflight or retry.
 - **Agent tooling:** D-030 pins engineer `gpt-6-luna`/medium, validator/researcher `gpt-6-sol`/medium, lead `gpt-6-sol`/high. Parent/repository boundaries govern the lead conflict.
 <!-- END CODEX DIGEST -->
 
@@ -72,9 +72,9 @@
 5. `PASS` — D-035/D-040 guards retained; R2/R3/R4 causes/limits remain historical. No mathematical optimum certificate.
 6. `PASS` — 13B.1 selective train/validation loader; validator reports 70 passed/1 skip; calibration contents unopened.
 9. `WARNING` — No development component IDs: fixed grouped holdout, not reconstructed CV. Calibration reserved for Phase 14; numerical protocol accepted.
-10. `VERIFIED` — Imports exit 0: sklearn 1.8.0, Optuna 4.8.0, Python 3.14.3; 20 logical processors. Python location warning unresolved; capacity untested.
+10. `VERIFIED` — Owner host: Windows PowerShell 5.1.26100.9444/Desktop; pwsh absent from PATH. Recovery host gate PASS, D-063; exit cause unverified.
 11. `PASS` — Draft 1 accepted; 13B.1 parent source gate accepted after repaired independent tests. Production fitting remains gated.
-12. `PASS` — Repaired completion gate and independent 96 passed/1 skip/1 deselected accepted. 13E preparation ready; clean pin, execution approval and fresh live preflight pending; D-061.
+12. `ACCEPTED` — R2A source gate under owner-approved procedural shutdown, D-067. Strict shutdown bound unproven; R1 consumed. Suite 116/1 skip/1 deselected.
 
 ## Known-good navigation
 
@@ -107,6 +107,7 @@
 - D-053: one R5 and independent protected review PASS; no independent mathematical certificate. D-054 records owner acceptance, 2026-10-06.
 - D-057 / 13B.1: repaired validator run reports 70 passed/1 symlink skip in 11.36 s; reparse-attribute test passed. Repository interpreter, three focused files, `-B -p no:cacheprovider`, fresh OS-temp basetemp. Parent checked source/repairs, not a test rerun. No production evidence.
 - D-058–D-061 / 13D: repaired source reviewed; validator reports 96 passed/1 skip/1 deselected. D-060 defect resolved. Parent verifies hashes/source, not a suite rerun or RF operation.
+- D-062–D-067: R1 consumed. R2A accepted with procedural shutdown; validator 116/1 skip/1 deselected. No retry; strict bound unproven.
 
 ## Update procedure
 

@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 import json
+import os
+import sys
 from types import SimpleNamespace
 from pathlib import Path
 import tempfile
@@ -136,6 +138,58 @@ def _synthetic_executor(tmp_path, monkeypatch, *, completed_count=60, fail_on_fi
     return preflight, study
 
 
+def _synthetic_supervisor_evidence(tmp_path, monkeypatch, *, run_id="synthetic-run",
+                                   process_record=True, resources="valid"):
+    code_dir = tmp_path / "synthetic_code"
+    code_dir.mkdir()
+    script_path = code_dir / "train_rf_optuna.py"
+    script_path.write_text("# synthetic path anchor\n", encoding="utf-8")
+    monkeypatch.setattr(phase13, "__file__", str(script_path))
+    output_root = code_dir / "output" / "phase13"
+    evidence_parent = output_root / "evidence"
+    evidence_dir = evidence_parent / run_id
+    evidence_dir.mkdir(parents=True)
+    nonce = "a" * 32
+    monkeypatch.setenv("PHASE13_SUPERVISOR_NONCE", nonce)
+    now = datetime.now(timezone.utc)
+    (evidence_dir / "stdout.log").write_bytes(b"")
+    (evidence_dir / "stderr.log").write_bytes(b"")
+    (evidence_dir / "supervisor_handoff.json").write_text(json.dumps({
+        "schema_version": "phase13_set_c_rf_supervisor_handoff.v1",
+        "run_id": run_id, "nonce": nonce, "created_at_utc": now.isoformat(),
+        "executable": str(Path(sys.executable).resolve()),
+    }), encoding="utf-8")
+    if process_record:
+        (evidence_dir / "process.json").write_text(json.dumps({
+            "schema_version": "phase13_set_c_rf_process.v1", "run_id": run_id,
+            "process_id": os.getpid(), "process_ids": [os.getpid()],
+            "process_started_at_utc": now.isoformat(), "executable": str(Path(sys.executable).resolve()),
+            "working_directory": str(code_dir.resolve()),
+        }), encoding="utf-8")
+    if resources != "absent":
+        sample_time = now if resources != "stale" else datetime(2000, 1, 1, tzinfo=timezone.utc)
+        sample = {
+            "run_id": run_id, "timestamp_utc": sample_time.isoformat(), "elapsed_seconds": 0.0,
+            "available_physical_memory_bytes": 8 * 1024**3, "free_c_bytes": 4 * 1024**3,
+        }
+        if resources == "empty":
+            content = ""
+        elif resources == "malformed":
+            content = "not-json\n"
+        else:
+            content = json.dumps(sample) + "\n"
+        (evidence_dir / "operator_resources.jsonl").write_text(content, encoding="utf-8")
+    config = {
+        "destination": str(output_root / "set_c_rf_v1"),
+        "evidence_parent": str(evidence_parent),
+        "resource_limits": {
+            "min_available_physical_memory_bytes": 4 * 1024**3,
+            "min_free_c_bytes": 2 * 1024**3,
+        },
+    }
+    return config, evidence_dir
+
+
 def test_pinned_configuration_and_ordered_baselines():
     config = phase13._load_phase13_config(phase13.PHASE13_CONFIG_PATH)
     assert config["protocol_id"] == phase13.PHASE13_PROTOCOL_ID
@@ -148,6 +202,101 @@ def test_pinned_configuration_and_ordered_baselines():
         "direction": "maximize", "n_trials": 60, "n_jobs": 1,
         "timeout_seconds": 5400, "exact_tie": "smallest_trial_number",
     }
+
+
+@pytest.mark.parametrize(
+    ("resources", "process_record"),
+    [("absent", False), ("empty", False), ("valid", True)],
+)
+def test_execution_guard_accepts_only_fresh_bound_supervisor_evidence(
+    tmp_path, monkeypatch, resources, process_record
+):
+    config, evidence = _synthetic_supervisor_evidence(
+        tmp_path, monkeypatch, resources=resources, process_record=process_record,
+    )
+    destination, resolved_evidence = phase13._validate_destination(
+        config, execution=True, evidence_dir=evidence,
+    )
+    assert destination == Path(config["destination"]).resolve()
+    assert resolved_evidence == evidence.resolve()
+
+
+@pytest.mark.parametrize(
+    ("tamper", "exception"),
+    [
+        ("foreign_handoff", PermissionError),
+        ("foreign_nonce", PermissionError),
+        ("stale_handoff", PermissionError),
+        ("foreign_process", PermissionError),
+        ("unexpected", FileExistsError),
+        ("malformed_resources", ValueError),
+        ("stale_resources", PermissionError),
+        ("nonempty_redirect", FileExistsError),
+    ],
+)
+def test_execution_guard_rejects_stale_foreign_or_unexpected_evidence(
+    tmp_path, monkeypatch, tamper, exception
+):
+    config, evidence = _synthetic_supervisor_evidence(tmp_path, monkeypatch)
+    if tamper == "foreign_handoff":
+        handoff_path = evidence / "supervisor_handoff.json"
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        handoff["run_id"] = "another-run"
+        handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    elif tamper == "foreign_nonce":
+        monkeypatch.setenv("PHASE13_SUPERVISOR_NONCE", "b" * 32)
+    elif tamper == "stale_handoff":
+        handoff_path = evidence / "supervisor_handoff.json"
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        handoff["created_at_utc"] = "2000-01-01T00:00:00+00:00"
+        handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    elif tamper == "foreign_process":
+        process_path = evidence / "process.json"
+        record = json.loads(process_path.read_text(encoding="utf-8"))
+        record["process_id"] = os.getpid() + 1
+        process_path.write_text(json.dumps(record), encoding="utf-8")
+    elif tamper == "unexpected":
+        (evidence / "unreviewed.txt").write_text("unexpected", encoding="utf-8")
+    elif tamper == "malformed_resources":
+        (evidence / "operator_resources.jsonl").write_text("not-json\n", encoding="utf-8")
+    elif tamper == "stale_resources":
+        (evidence / "operator_resources.jsonl").write_text(
+            json.dumps({
+                "run_id": evidence.name, "timestamp_utc": "2000-01-01T00:00:00+00:00",
+                "elapsed_seconds": 0.0, "available_physical_memory_bytes": 8 * 1024**3,
+                "free_c_bytes": 4 * 1024**3,
+            }) + "\n",
+            encoding="utf-8",
+        )
+    elif tamper == "nonempty_redirect":
+        (evidence / "stdout.log").write_text("foreign output", encoding="utf-8")
+
+    with pytest.raises(exception):
+        phase13._validate_destination(config, execution=True, evidence_dir=evidence)
+
+
+def test_execution_guard_keeps_default_deny_and_approved_path_checks(tmp_path, monkeypatch):
+    config, evidence = _synthetic_supervisor_evidence(tmp_path, monkeypatch)
+    with pytest.raises(FileExistsError, match="must be absent for preflight"):
+        phase13._validate_destination(config, execution=False, evidence_dir=evidence)
+    config["destination"] = str(tmp_path / "unapproved" / "output")
+    with pytest.raises(FileExistsError, match="absent approved versioned path"):
+        phase13._validate_destination(config, execution=True, evidence_dir=evidence)
+
+
+def test_execution_guard_rejects_reparse_evidence_entries(tmp_path, monkeypatch):
+    config, evidence = _synthetic_supervisor_evidence(tmp_path, monkeypatch)
+    real_lstat = Path.lstat
+    reparse_log = evidence / "stdout.log"
+
+    def reparse_lstat(path):
+        if path == reparse_log:
+            return SimpleNamespace(st_file_attributes=0x400)
+        return real_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", reparse_lstat)
+    with pytest.raises(PermissionError, match="reparse entry"):
+        phase13._validate_destination(config, execution=True, evidence_dir=evidence)
 
 
 def test_sampler_pruner_and_baseline_contract():
