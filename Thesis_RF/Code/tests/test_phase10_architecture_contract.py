@@ -12,7 +12,6 @@ from evaluate_rf_final_test import evaluate_authorized_final_test
 from modules.feature_pipeline import (
     AUTHORITATIVE_CSV_COLUMNS,
     CANONICAL_FEATURE_NAMES,
-    FINAL_TEST_ROLE,
     SET_C_SCHEMA_VERSION,
     TARGET_NAME,
     TARGET_VERSION,
@@ -352,21 +351,5 @@ class _Model:
 def test_final_test_evaluator_is_separate_and_fail_closed():
     rows = pd.DataFrame({name: [0.0, 1.0] for name in CANONICAL_FEATURE_NAMES})
     rows[TARGET_NAME] = pd.Series([0, 1], dtype="int8")
-    rows["split_role"] = FINAL_TEST_ROLE
-    with pytest.raises(PermissionError, match="disabled"):
-        evaluate_authorized_final_test(_Model(), rows, {"enabled": False})
-    with pytest.raises(PermissionError, match="protected_storage_mechanism"):
-        evaluate_authorized_final_test(
-            _Model(), rows, {"enabled": True, "authorization_reference": "approval"}
-        )
-    result = evaluate_authorized_final_test(
-        _Model(),
-        rows,
-        {
-            "enabled": True,
-            "authorization_reference": "synthetic test",
-            "protected_storage_mechanism": "synthetic in-memory fixture",
-        },
-    )
-    assert result["evaluation_scope"] == FINAL_TEST_ROLE
-    assert result["threshold_metrics"] is None
+    with pytest.raises(PermissionError, match="Legacy in-memory"):
+        evaluate_authorized_final_test(_Model(), rows, {"enabled": True})

@@ -26,7 +26,7 @@ def _ps_quote(value: Path | str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _run_harness(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
+def _run_harness(tmp_path: Path, body: str, *, load_runner: bool = True) -> subprocess.CompletedProcess[str]:
     if not WINDOWS_POWERSHELL:
         pytest.fail("Windows runner contract requires powershell.exe 5.1; PowerShell Core is not a substitute")
     harness = tmp_path / "runner_harness.ps1"
@@ -34,11 +34,12 @@ def _run_harness(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
         "if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9444' -or $PSVersionTable.PSEdition -ne 'Desktop') { "
         "throw 'This contract requires Windows PowerShell 5.1.26100.9444 Desktop.' }\n"
         f"$ErrorActionPreference = 'Stop'\ntrap {{ Write-Error $_; exit 1 }}\n"
-        f". {_ps_quote(RUNNER)}\n{body}\n",
+        + (f". {_ps_quote(RUNNER)}\n" if load_runner else "")
+        + f"{body}\n",
         encoding="utf-8",
     )
     return subprocess.run(
-        [WINDOWS_POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(harness)],
+        [WINDOWS_POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(harness)],
         capture_output=True,
         text=True,
         timeout=20,
@@ -72,6 +73,40 @@ def _invoke_arguments(child: Path, destination: Path, evidence: Path, run_id: st
 
 def _completion(evidence: Path) -> dict:
     return json.loads((evidence / "operator_completion.json").read_text(encoding="utf-8-sig"))
+
+
+
+def test_module_and_dot_source_loading_do_not_launch_children(tmp_path: Path):
+    module = RUNNER.parent / "modules" / "phase_supervision.psm1"
+    body = (
+        "$script:launchCalls = 0\n"
+        "function New-Object { $script:launchCalls++; throw 'child construction during load' }\n"
+        "function Start-Process { $script:launchCalls++; throw 'child launch during load' }\n"
+        f"Import-Module {_ps_quote(module)} -ErrorAction Stop\n"
+        "if ((Get-Command Invoke-PhaseSupervisionCore).ModuleName -ne 'phase_supervision') { throw 'core not exported' }\n"
+        f". {_ps_quote(RUNNER)}\n"
+        "if (-not (Get-Command Invoke-Phase13Supervision -CommandType Function)) { throw 'wrapper missing' }\n"
+        "if ($script:launchCalls -ne 0) { throw 'load launched a child' }\n"
+    )
+    result = _run_harness(tmp_path, body, load_runner=False)
+    assert result.returncode == 0, result.stderr
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["runner_harness.ps1"]
+
+
+@pytest.mark.parametrize("argument_count", [0, 1, 2, 4])
+def test_direct_entry_refuses_wrong_argument_count_before_child_launch(tmp_path: Path, argument_count: int):
+    arguments = ", ".join("'synthetic'" for _ in range(argument_count))
+    body = (
+        "$script:launchCalls = 0\n"
+        "function New-Object { $script:launchCalls++; throw 'child construction before refusal' }\n"
+        "function Start-Process { $script:launchCalls++; throw 'child launch before refusal' }\n"
+        f"try {{ & {_ps_quote(RUNNER)} @({arguments}); throw 'entry accepted invalid arguments' }} "
+        "catch { if ($_.Exception.Message -notlike 'Usage: run_phase13_supervised.ps1*') { throw } }\n"
+        "if ($script:launchCalls -ne 0) { throw 'child launch preceded argument refusal' }\n"
+    )
+    result = _run_harness(tmp_path, body, load_runner=False)
+    assert result.returncode == 0, result.stderr
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["runner_harness.ps1"]
 
 
 def test_atomic_process_record_temp_stays_outside_child_visible_evidence(tmp_path: Path):
@@ -133,6 +168,7 @@ def test_valid_receipt_and_zero_exit_still_reject_capture_task_failure(tmp_path:
     evidence = tmp_path / "evidence"
     body = (
         "function Wait-Phase13CaptureTasks { param($Tasks, $TimeoutMilliseconds); "
+        f"Set-Content -LiteralPath {_ps_quote(tmp_path / 'capture_wait_called.txt')} -Value 'called' ; "
         "throw [System.AggregateException]::new('synthetic capture fault') }\n"
         + _invoke_arguments(child, destination, evidence, "capture-fault")
         + "\n"
@@ -145,6 +181,7 @@ def test_valid_receipt_and_zero_exit_still_reject_capture_task_failure(tmp_path:
     assert receipt["capture_complete"] is False
     assert receipt["capture_status"] == "failed"
     assert "synthetic capture fault" in receipt["capture_error"]
+    assert (tmp_path / "capture_wait_called.txt").read_text(encoding="utf-8-sig").strip() == "called"
     assert receipt["stdout_sha256"] is None
     assert receipt["stderr_sha256"] is None
 
@@ -157,7 +194,9 @@ def test_noncompleting_capture_drain_stays_within_overall_budget(tmp_path: Path)
         OverallLimitSeconds="2", SampleIntervalSeconds="1",
     )
     body = (
+        "$script:captureWaitCalls = 0\n"
         "function Wait-Phase13CaptureTasks { param($Tasks, $TimeoutMilliseconds); "
+        "$script:captureWaitCalls++; "
         "$source = [System.Threading.Tasks.TaskCompletionSource[object]]::new(); "
         "$script:drainProbeTask = $source.Task; "
         "$all = [System.Collections.Generic.List[System.Threading.Tasks.Task]]::new(); "
@@ -165,6 +204,7 @@ def test_noncompleting_capture_drain_stays_within_overall_budget(tmp_path: Path)
         "return [System.Threading.Tasks.Task]::WaitAll($all.ToArray(), $TimeoutMilliseconds) }\n"
         + "try { " + invocation + " } catch { if ($_.Exception.Message -notlike 'Phase 13 run incomplete:*') { throw } }; "
         + "if ($script:drainProbeTask.IsCompleted) { throw 'synthetic drain task unexpectedly completed' }; "
+        + "if ($script:captureWaitCalls -ne 1) { throw 'capture injection was not reached exactly once' }; "
         + "Write-Output 'SYNTHETIC_DRAIN_TASK_PENDING'\n"
     )
     started = time.monotonic()

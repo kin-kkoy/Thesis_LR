@@ -37,6 +37,9 @@ PHASE13_SET_C_RF_PROTOCOL_ID = "phase13_set_c_rf_protocol.v1"
 PHASE13_SET_C_RF_PROTOCOL_SHA256 = "69c39d1d97430ebb903ec2d856e6205a2c1b8ad77641798955d6ad2bdb671637"
 APPROVED_CSV_SHA256 = "7f0f1867445141f365687d127e449117f234348cec571990d70bc2b226ba40f6"
 APPROVED_MANIFEST_SHA256 = "b700f1b9f196893f23e7190daf1bc3c68b0f569f99a977ec9e919f0de73e9e3c"
+APPROVED_CALIBRATION_ATTESTATION_SHA256 = "4fcf286156892c9da0289e56712210e90cccdcd608641c7ee573a8db1dcea23f"
+APPROVED_CALIBRATION_CSV_SHA256 = "e424865be9143823f5a15fce27a3eb6df74abe802be84f142505f1209e3a77dc"
+APPROVED_CALIBRATION_COUNTS = (2060, 153, 1907)
 RELEASE_COLUMNS = (*CANONICAL_FEATURE_NAMES, TARGET_NAME)
 _FORBIDDEN_PATH_PARTS = {"setc_protected", "authoritative_set_c"}
 APPROVED_POLICY_VERSION = "set_c_deterministic_allocation_policy.v1"
@@ -893,6 +896,68 @@ def load_development_release(
         expected_attestation_sha256=expected_attestation_sha256,
         allow_synthetic=allow_synthetic,
     )
+
+
+def load_development_calibration_release(
+    release_dir: str | Path,
+    *,
+    expected_attestation_sha256: str = APPROVED_CALIBRATION_ATTESTATION_SHA256,
+    allow_synthetic: bool = False,
+) -> tuple[pd.DataFrame, pd.Series, dict]:
+    """Load only the attested calibration role, without opening other role contents."""
+    supplied = Path(release_dir)
+    if ".." in supplied.parts:
+        raise PermissionError("Development release paths cannot contain parent traversal")
+    root = supplied.absolute()
+    if any(part.lower() in {"canonical", "canonical.csv"} for part in root.parts):
+        raise PermissionError("Calibration loader cannot read a canonical package")
+    if allow_synthetic:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        resolved = root.resolve(strict=True)
+        if resolved == temp_root or not resolved.is_relative_to(temp_root):
+            raise PermissionError("Synthetic calibration releases are limited to the OS temp tree")
+    else:
+        approved = Path(__file__).resolve().parents[3] / DEVELOPMENT_DIRECTORY_NAME / "set_c_v1"
+        if root != approved:
+            raise PermissionError("Calibration loader accepts only the approved D-038 development release")
+        if expected_attestation_sha256 != APPROVED_CALIBRATION_ATTESTATION_SHA256:
+            raise PermissionError("Calibration loader requires the accepted development attestation")
+
+    data, attestation = _load_development_release(
+        root,
+        expected_attestation_sha256=expected_attestation_sha256,
+        allow_synthetic=allow_synthetic,
+        selected_roles=("calibration",),
+    )
+    if allow_synthetic and attestation["synthetic"] is not True:
+        raise PermissionError("Synthetic calibration fixtures must carry explicit synthetic provenance")
+
+    record = attestation["role_files"]["calibration"]
+    if not attestation["synthetic"] and (
+        record["sha256"] != APPROVED_CALIBRATION_CSV_SHA256
+        or (record["rows"], record["positives"], record["negatives"])
+        != APPROVED_CALIBRATION_COUNTS
+    ):
+        raise ValueError("Calibration role identity or accepted counts do not match D-053/D-054")
+
+    frame = data.loc[:, list(RELEASE_COLUMNS)]
+    features = frame.loc[:, list(CANONICAL_FEATURE_NAMES)].astype(np.float32)
+    labels = frame[TARGET_NAME].copy()
+    if tuple(features.columns) != CANONICAL_FEATURE_NAMES or features.dtypes.ne(np.dtype("float32")).any():
+        raise ValueError("Calibration features do not match the ordered float32 schema")
+    if labels.dtype != np.dtype("int8"):
+        raise ValueError("Calibration labels must use int8")
+    provenance = {
+        "attestation_sha256": expected_attestation_sha256,
+        "calibration_csv_sha256": record["sha256"],
+        "rows": record["rows"],
+        "positives": record["positives"],
+        "negatives": record["negatives"],
+        "source_csv_sha256": attestation["source_csv_sha256"],
+        "source_revision": attestation["source_provenance"]["source_revision"]["revision"],
+        "synthetic": attestation["synthetic"],
+    }
+    return features, labels, provenance
 
 
 def load_development_train_validation_release(

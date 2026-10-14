@@ -1,0 +1,93 @@
+schema_version: phase14_setc_calibration_config.v1
+protocol:
+  id: phase14a_calibration_final_test_protocol.v1
+  sha256: c7791fe57672541bbcde375b7858fe6b73cbdfc35eb41975730b49937abe6efc
+decision_reference: D-077/D-079
+execution_enabled: false
+calibration:
+  method: sigmoid
+  role: calibration
+  n_jobs: 1
+  rows: 2060
+  positives: 153
+  negatives: 1907
+  weighting: equal_rows
+  sample_weight: null
+  required_labels: [0, 1]
+  feature_schema_version: set_c.v1
+  feature_names:
+    - slope_risk
+    - proximity_risk
+    - building_presence
+    - material_risk
+    - material_class
+    - wind_speed
+    - wind_sin
+    - wind_cos
+    - neighbor_burning_count
+    - composite_flammability
+    - wind_weighted_score
+  feature_dtype: float32
+  target_name: Ignited
+  target_version: ignition_t_plus_1.v1
+  target_dtype: int8
+  positive_label: 1
+  require_nonconstant_base_probabilities: true
+inputs:
+  phase13_run_id: phase13-setc-rf-61e8f740-r2
+  phase13_revision: 61e8f74031d61c9be22a9b6408aec3ad74f4e892
+  phase13_protocol_sha256: 69c39d1d97430ebb903ec2d856e6205a2c1b8ad77641798955d6ad2bdb671637
+  phase13_config_sha256: 3800fe006463392f102a85ca3c491a6386b5340aeb8d2211eb31ae079a63bfc8
+  phase13_manifest_sha256: b0d0d976a51d8559db73f9ee0db8365c0133c4414de5242cd328d0eb7ff96f3c
+  base_model_filename: base_rf.joblib
+  base_model_sha256: 7c3b431dcad6554d9ea80e0e6b0d13826245f8fcf3de9534ccfde78bd06b4ce1
+  release_attestation_sha256: 4fcf286156892c9da0289e56712210e90cccdcd608641c7ee573a8db1dcea23f
+  source_csv_sha256: 7f0f1867445141f365687d127e449117f234348cec571990d70bc2b226ba40f6
+  source_manifest_sha256: b700f1b9f196893f23e7190daf1bc3c68b0f569f99a977ec9e919f0de73e9e3c
+  calibration_csv_sha256: e424865be9143823f5a15fce27a3eb6df74abe802be84f142505f1209e3a77dc
+environment:
+  status: complete_locked
+  versions:
+    python: "3.14.3"
+    scikit_learn: "1.8.0"
+    optuna: "4.8.0"
+    joblib: "1.5.3"
+    numpy: "2.4.4"
+    pandas: "3.0.2"
+    scipy: "1.17.1"
+    pyyaml: "6.0.3"
+    platform: "Windows-11-10.0.26200-SP0"
+  lock_sha256: 9e3c76eaafc18a7e59db39285c86358c49064d3e4f22c42feeea1081c1fab726
+  interpreter:
+    path: C:\Users\gibgib\Thesis-Cellular-Automata\.venv\Scripts\python.exe
+  powershell:
+    version: "5.1.26100.9444"
+    edition: Desktop
+  auxiliary_versions:
+    rasterio: "1.5.0"
+reporting:
+  metrics: [average_precision, roc_auc, brier_score, log_loss]
+  brier_definition: mean_squared_probability_error
+  log_loss_labels: [0, 1]
+  classification_threshold: null
+  diagnostic_scope: in-sample calibration-fit diagnostics
+  reliability_bins: 10
+  probability_range: [0.0, 1.0]
+  probability_endpoint_rule: exact_internal_edge_starts_next_bin; p1_in_last_bin
+  empty_bin_statistics: null
+resources:
+  max_processes: 1
+  supervised_stop_seconds: 1800
+  min_available_physical_memory_bytes: 4294967296
+  min_free_output_volume_bytes: 2147483648
+  sampling_interval_seconds: 1
+paths:
+  output_root: output/phase14/phase14-setc-rf-61e8f740-r1/calibration
+  phase13_root: output/phase13/set_c_rf_v1
+  calibration_release: ../../SetC_Development/set_c_v1
+  calibrated_model: base_rf_calibrated.joblib
+  manifest: calibration_manifest.json
+  report: calibration_report.json
+  child_receipt: execution_receipt.json
+execution:
+  status: unresolved_separate_run_approval_required

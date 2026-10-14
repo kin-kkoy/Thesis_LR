@@ -1,0 +1,25 @@
+schema_version: phase14_setc_final_test_config.v1
+protocol: phase14a_calibration_final_test_protocol.v1
+execution_enabled: false
+allow_synthetic: false
+permitted_modes: [primary, verification]
+environment_status: unresolved
+environment: null
+identities:
+  model_sha256: null
+  final_rows_sha256: null
+  protected_attestation_sha256: null
+  development_attestation_sha256: null
+paths:
+  model: null
+  final_rows: null
+  protected_attestation: null
+  development_attestation: null
+  primary_output_root: null
+  verification_output_root: null
+reporting:
+  metrics: [average_precision, roc_auc, brier_score, log_loss]
+  reliability_bins: 10
+  classification_threshold: null
+  verification_rel_tol: 1.0e-10
+  verification_abs_tol: 1.0e-12
