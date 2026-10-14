@@ -3,7 +3,7 @@ protocol:
   id: phase14a_calibration_final_test_protocol.v1
   sha256: c7791fe57672541bbcde375b7858fe6b73cbdfc35eb41975730b49937abe6efc
 decision_reference: D-077/D-079
-execution_enabled: false
+execution_enabled: true
 calibration:
   method: sigmoid
   role: calibration
