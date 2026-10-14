@@ -26,7 +26,7 @@ def _harness(tmp_path, body, *, load=True):
     path = tmp_path / "synthetic_harness.ps1"
     path.write_text(
         "$ErrorActionPreference='Stop'\n"
-        "if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9444' -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'Required host mismatch' }\n"
+        "if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9711' -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'Required host mismatch' }\n"
         + (". " + _q(RUNNER) + "\n" if load else "") + body, encoding="utf-8")
     return subprocess.run([HOST, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(path)],
                           capture_output=True, text=True, timeout=20, check=False)
@@ -381,7 +381,7 @@ def _metadata_environment(code):
     versions = dict.fromkeys(("python", "scikit_learn", "optuna", "joblib", "numpy", "pandas", "scipy", "pyyaml", "platform"), "synthetic")
     return {"status": "complete_locked", "versions": versions, "lock_sha256": _canonical_digest(versions),
             "interpreter": {"path": str(code.parents[1] / ".venv" / "Scripts" / "python.exe")},
-            "powershell": {"version": "5.1.26100.9444", "edition": "Desktop"}, "auxiliary_versions": {"rasterio": "synthetic"}}
+            "powershell": {"version": "5.1.26100.9711", "edition": "Desktop"}, "auxiliary_versions": {"rasterio": "synthetic"}}
 
 
 def _metadata_lock(environment, sources, configuration_hash):

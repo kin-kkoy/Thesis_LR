@@ -886,7 +886,7 @@ def _validate_environment_envelope(environment: dict) -> None:
             or not isinstance(environment["auxiliary_versions"]["rasterio"], str)
             or not environment["auxiliary_versions"]["rasterio"]
             or not isinstance(environment["interpreter"]["path"], str) or not environment["interpreter"]["path"]
-            or environment["powershell"] != {"version": "5.1.26100.9444", "edition": "Desktop"}):
+            or environment["powershell"] != {"version": "5.1.26100.9711", "edition": "Desktop"}):
         raise PermissionError("Environment envelope is incomplete or mismatched")
     if environment["lock_sha256"] != sha256(_json_bytes(environment["versions"])).hexdigest():
         raise PermissionError("The Phase 14 environment lock digest is invalid")

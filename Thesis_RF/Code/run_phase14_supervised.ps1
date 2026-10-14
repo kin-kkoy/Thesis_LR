@@ -201,7 +201,7 @@ function Get-Phase14JobContext {
     param([string]$Job,[string]$ApprovalReference,[string]$ExpectedRevision,[string]$RunId)
     Assert-Phase14Identifier $ApprovalReference; Assert-Phase14Identifier $RunId
     if ($Job -cnotin @('calibration','final_primary','final_verification') -or $ExpectedRevision -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid fixed job/revision' }
-    if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9444' -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'Required host mismatch' }
+    if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9711' -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'Required host mismatch' }
     $code=$PSScriptRoot; $repo=[IO.Path]::GetFullPath((Join-Path $code '..\..'))
     if ((Get-Location).Path -ne $code) { throw 'Fixed cwd mismatch' }
     $python=Assert-Phase14Path (Join-Path $repo '.venv\Scripts\python.exe') $repo

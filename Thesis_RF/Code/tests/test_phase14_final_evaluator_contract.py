@@ -38,7 +38,7 @@ def _synthetic_environment():
                                             "pandas", "scipy", "pyyaml", "platform")}
     return {"status": "complete_locked", "versions": versions,
             "lock_sha256": hashlib.sha256(phase14._json_bytes(versions)).hexdigest(),
-            "interpreter": {"path": sys.executable}, "powershell": {"version": "5.1.26100.9444", "edition": "Desktop"},
+            "interpreter": {"path": sys.executable}, "powershell": {"version": "5.1.26100.9711", "edition": "Desktop"},
             "auxiliary_versions": {"rasterio": "synthetic"}}
 
 

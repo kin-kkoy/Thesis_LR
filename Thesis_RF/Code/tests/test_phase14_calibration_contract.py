@@ -601,12 +601,12 @@ def test_production_reparse_root_is_rejected_before_deserialization(tmp_path, mo
     assert called == []
 
 
-def test_config_is_disabled_with_complete_environment_lock():
+def test_config_is_activated_with_complete_environment_lock():
     import yaml
 
     config_path = calibration_module._CODE_ROOT / "config" / "phase14_setc_calibration_v1.yaml"
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert config["execution_enabled"] is False
+    assert config["execution_enabled"] is True
     assert config["calibration"]["method"] == "sigmoid"
     assert config["calibration"]["n_jobs"] == 1
     assert config["inputs"]["base_model_sha256"] == calibration_module.BASE_MODEL_SHA256
@@ -623,14 +623,17 @@ def test_config_hash_and_production_environment_lock_fail_closed_before_artifact
     import yaml
 
     source = calibration_module._PHASE14_CONFIG.read_bytes()
+    enabled_flag = b"execution_enabled: true"
+    assert source.count(enabled_flag) == 1
+    disabled_source = source.replace(enabled_flag, b"execution_enabled: false", 1)
     config_path = tmp_path / "phase14.yaml"
-    config_path.write_bytes(source)
+    config_path.write_bytes(disabled_source)
     digest = calibration_module._sha256_file(config_path)
     with pytest.raises(PermissionError, match="execution is disabled"):
         calibration_module._load_phase14_config(config_path, digest, synthetic=False)
     with pytest.raises(ValueError, match="hash mismatch"):
         calibration_module._load_phase14_config(config_path, "0" * 64, synthetic=True)
-    config = yaml.safe_load(source)
+    config = yaml.safe_load(disabled_source)
     assert config["execution_enabled"] is False
     calibration_module._validate_environment_envelope(config["environment"])
 
@@ -639,8 +642,8 @@ def test_config_hash_and_production_environment_lock_fail_closed_before_artifact
     monkeypatch.setattr(calibration_module, "load_development_calibration_release", lambda *a, **k: accessed.append("release"))
     with pytest.raises(PermissionError, match="execution is disabled"):
         calibration_module.run_calibration_job(
-            config_path=calibration_module._PHASE14_CONFIG,
-            expected_config_sha256=calibration_module._sha256_file(calibration_module._PHASE14_CONFIG),
+            config_path=config_path,
+            expected_config_sha256=digest,
             execution_context={},
         )
     assert accessed == []
@@ -681,7 +684,7 @@ def test_environment_lock_digest_baseline_and_observed_runtime_are_bound():
     lock_sha256 = calibration_module.sha256(calibration_module._json_bytes(lock)).hexdigest()
     env = {"status": "complete_locked", "versions": lock, "lock_sha256": lock_sha256,
            "interpreter": {"path": str(Path(__import__("sys").executable))},
-           "powershell": {"version": "5.1.26100.9444", "edition": "Desktop"},
+           "powershell": {"version": "5.1.26100.9711", "edition": "Desktop"},
            "auxiliary_versions": {"rasterio": "synthetic-reviewed-auxiliary"}}
     assert calibration_module._verify_environment_lock(env, observed=observed) == lock_sha256
     changed = {**lock, "platform": "different-platform"}
@@ -691,6 +694,29 @@ def test_environment_lock_digest_baseline_and_observed_runtime_are_bound():
         calibration_module._verify_environment_lock(changed_env, observed=observed)
     with pytest.raises(PermissionError, match="digest is invalid"):
         calibration_module._verify_environment_lock({**env, "lock_sha256": "0" * 64}, observed=observed)
+
+
+@pytest.mark.parametrize(("version", "edition", "accepted"), [
+    ("5.1.26100.9711", "Desktop", True),
+    ("5.1.26100.9444", "Desktop", False),
+    ("5.1.26100.9712", "Desktop", False),
+    ("5.1.26100.9711", "Core", False),
+], ids=["current-host", "old-build", "other-build", "wrong-edition"])
+def test_environment_envelope_accepts_only_rebased_powershell(version, edition, accepted):
+    versions = dict.fromkeys(("python", "scikit_learn", "optuna", "joblib", "numpy", "pandas", "scipy", "pyyaml", "platform"), "synthetic")
+    environment = {
+        "status": "complete_locked",
+        "versions": versions,
+        "lock_sha256": calibration_module.sha256(calibration_module._json_bytes(versions)).hexdigest(),
+        "interpreter": {"path": "synthetic-python"},
+        "powershell": {"version": version, "edition": edition},
+        "auxiliary_versions": {"rasterio": "synthetic"},
+    }
+    if accepted:
+        calibration_module._validate_environment_envelope(environment)
+    else:
+        with pytest.raises(PermissionError, match="mismatched"):
+            calibration_module._validate_environment_envelope(environment)
 
 
 def test_real_cli_denies_before_artifact_access(monkeypatch):
@@ -709,7 +735,7 @@ def _reviewed_authorization(job="calibration", run_id="synthetic-context"):
     import rasterio
     environment = {"status": "complete_locked", "versions": versions,
         "lock_sha256": calibration_module.sha256(calibration_module._json_bytes(versions)).hexdigest(),
-        "interpreter": {"path": sys.executable}, "powershell": {"version": "5.1.26100.9444", "edition": "Desktop"},
+        "interpreter": {"path": sys.executable}, "powershell": {"version": "5.1.26100.9711", "edition": "Desktop"},
         "auxiliary_versions": {"rasterio": rasterio.__version__}}
     return {"schema_version": "phase14a_job_authorization.v1", "job": job, "run_id": run_id,
         "approval_reference": "synthetic-owner-approval", "expected_revision": "a" * 40,

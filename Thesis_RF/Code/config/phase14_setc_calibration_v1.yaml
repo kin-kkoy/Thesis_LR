@@ -61,7 +61,7 @@ environment:
   interpreter:
     path: C:\Users\gibgib\Thesis-Cellular-Automata\.venv\Scripts\python.exe
   powershell:
-    version: "5.1.26100.9444"
+    version: "5.1.26100.9711"
     edition: Desktop
   auxiliary_versions:
     rasterio: "1.5.0"

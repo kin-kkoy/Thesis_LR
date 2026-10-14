@@ -31,8 +31,8 @@ def _run_harness(tmp_path: Path, body: str, *, load_runner: bool = True) -> subp
         pytest.fail("Windows runner contract requires powershell.exe 5.1; PowerShell Core is not a substitute")
     harness = tmp_path / "runner_harness.ps1"
     harness.write_text(
-        "if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9444' -or $PSVersionTable.PSEdition -ne 'Desktop') { "
-        "throw 'This contract requires Windows PowerShell 5.1.26100.9444 Desktop.' }\n"
+        "if ($PSVersionTable.PSVersion.ToString() -ne '5.1.26100.9711' -or $PSVersionTable.PSEdition -ne 'Desktop') { "
+        "throw 'This contract requires Windows PowerShell 5.1.26100.9711 Desktop.' }\n"
         f"$ErrorActionPreference = 'Stop'\ntrap {{ Write-Error $_; exit 1 }}\n"
         + (f". {_ps_quote(RUNNER)}\n" if load_runner else "")
         + f"{body}\n",
@@ -492,19 +492,26 @@ def test_supervisor_stop_is_incomplete_with_valid_zero_exit_receipt(tmp_path: Pa
     destination = tmp_path / "package"
     evidence = tmp_path / "evidence"
     grandchild = _write_child(tmp_path, "Start-Sleep -Seconds 30\n")
+    grandchild_pid = tmp_path / "dummy_grandchild.pid"
     parent = tmp_path / "dummy_parent_with_receipt.ps1"
-    parent.write_text(
+    parent_prefix = (
         f"$child = Start-Process -FilePath ($PSHOME + '\\powershell.exe') "
         f"-ArgumentList ('-NoProfile -File ' + {_ps_quote(grandchild)}) -PassThru -WindowStyle Hidden\n"
         "Write-Output ('grandchild=' + $child.Id)\n"
+    )
+    parent_body = (
+        parent_prefix
+        + (f"Set-Content -LiteralPath {_ps_quote(grandchild_pid)} -Value $child.Id\n" if stop_mode == "time" else "")
+        + (
         f"New-Item -ItemType Directory -Path {_ps_quote(destination)} | Out-Null\n"
         f"$manifestPath = Join-Path {_ps_quote(destination)} 'manifest.json'\n"
         f"@{{schema_version='set_c_rf_phase13_run.v1'; artifact_kind='set_c_rf_uncalibrated_candidate_run'; run_id='stopped-valid'; completion_status='complete'}} | ConvertTo-Json | Set-Content -LiteralPath $manifestPath\n"
         "$hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($manifestPath))).Replace('-', '').ToLowerInvariant()\n"
         f"@{{schema_version='phase13_set_c_rf_completion.v1'; status='complete'; actual_exit_status=0; run_id='stopped-valid'; manifest_sha256=$hash}} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path {_ps_quote(destination)} 'completion.json')\n"
-        "Start-Sleep -Milliseconds 500\n",
-        encoding="utf-8",
+        "Start-Sleep -Milliseconds 500\n"
+        )
     )
+    parent.write_text(parent_body, encoding="utf-8")
     resource_provider = "{ return @{available_physical_memory_bytes=8589934592L; free_c_bytes=4294967296L} }"
     extras = {"OverallLimitSeconds": "1", "SampleIntervalSeconds": "0"}
     if stop_mode == "resource":
@@ -517,11 +524,31 @@ def test_supervisor_stop_is_incomplete_with_valid_zero_exit_receipt(tmp_path: Pa
             "return @{available_physical_memory_bytes=8589934592L; free_c_bytes=4294967296L} }"
         )
         extras["OverallLimitSeconds"] = "10"
+    else:
+        clock = (
+            "$clockState = @{ advanced = $false }\n"
+            "$clock = ({\n"
+            "    $base = [DateTime]::Parse('2026-01-01T00:00:00Z').ToUniversalTime()\n"
+            "    if ($clockState.advanced) { return $base.AddSeconds(2) }\n"
+            f"    if ((Test-Path -LiteralPath {_ps_quote(destination / 'completion.json')}) -and "
+            f"(Test-Path -LiteralPath {_ps_quote(evidence / 'process.json')}) -and "
+            f"(Test-Path -LiteralPath {_ps_quote(grandchild_pid)})) {{\n"
+            f"        $record = Get-Content -LiteralPath {_ps_quote(evidence / 'process.json')} -Raw | ConvertFrom-Json\n"
+            "        $parent = Get-Process -Id ([int]$record.process_id) -ErrorAction SilentlyContinue\n"
+            f"        $grandchildId = [int](Get-Content -LiteralPath {_ps_quote(grandchild_pid)} -Raw)\n"
+            "        $grandchild = Get-Process -Id $grandchildId -ErrorAction SilentlyContinue\n"
+            "        if (($null -eq $parent) -and $grandchild) { $clockState.advanced = $true; return $base.AddSeconds(2) }\n"
+            "    }\n"
+            "    return $base\n"
+            "}).GetNewClosure()\n"
+        )
+        extras["Clock"] = "$clock"
     extras["ResourceProvider"] = resource_provider
 
+    clock_setup = clock if stop_mode == "time" else ""
     result = _run_harness(
         tmp_path,
-        _invoke_arguments(parent, destination, evidence, "stopped-valid", **extras),
+        clock_setup + _invoke_arguments(parent, destination, evidence, "stopped-valid", **extras),
     )
     assert result.returncode != 0
     receipt = _completion(evidence)
@@ -536,6 +563,8 @@ def test_supervisor_stop_is_incomplete_with_valid_zero_exit_receipt(tmp_path: Pa
     assert receipt["process_exited"] is True
     assert len(receipt["process_ids"]) >= 2
     assert receipt["remaining_process_ids"] == []
+    if stop_mode == "time":
+        assert int(grandchild_pid.read_text(encoding="utf-8-sig").strip()) in receipt["process_ids"]
 
 
 def test_controlled_runner_error_kills_descendants_and_preserves_error(tmp_path: Path):
