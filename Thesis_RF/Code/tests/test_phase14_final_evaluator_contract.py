@@ -169,9 +169,9 @@ def _run(fixture, mode="primary", run_id="synthetic-primary"):
                                lock_path=lock_path, approved_lock_sha256=lock_hash, synthetic=True)
 
 
-def test_default_config_and_legacy_memory_api_fail_closed(tmp_path):
+def test_activated_config_preserves_legacy_and_disabled_fixture_rejection(tmp_path):
     config = Path(__file__).parents[1] / "config" / "phase14_setc_final_test_v1.yaml"
-    assert yaml.safe_load(config.read_text(encoding="utf-8"))["execution_enabled"] is False
+    assert yaml.safe_load(config.read_text(encoding="utf-8"))["execution_enabled"] is True
     with pytest.raises(PermissionError, match="Legacy"):
         evaluate_authorized_final_test(_SyntheticEstimator(), pd.DataFrame(), {"enabled": True})
     fixture = _fixture(tmp_path, enabled=False)

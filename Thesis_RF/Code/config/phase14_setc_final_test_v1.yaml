@@ -1,22 +1,41 @@
 schema_version: phase14_setc_final_test_config.v1
 protocol: phase14a_calibration_final_test_protocol.v1
-execution_enabled: false
+execution_enabled: true
 allow_synthetic: false
 permitted_modes: [primary, verification]
-environment_status: unresolved
-environment: null
+environment_status: complete_locked
+environment:
+  status: complete_locked
+  versions:
+    python: "3.14.3"
+    scikit_learn: "1.8.0"
+    optuna: "4.8.0"
+    joblib: "1.5.3"
+    numpy: "2.4.4"
+    pandas: "3.0.2"
+    scipy: "1.17.1"
+    pyyaml: "6.0.3"
+    platform: "Windows-11-10.0.26200-SP0"
+  lock_sha256: 9e3c76eaafc18a7e59db39285c86358c49064d3e4f22c42feeea1081c1fab726
+  interpreter:
+    path: C:\Users\gibgib\Thesis-Cellular-Automata\.venv\Scripts\python.exe
+  powershell:
+    version: "5.1.26100.9711"
+    edition: Desktop
+  auxiliary_versions:
+    rasterio: "1.5.0"
 identities:
-  model_sha256: null
-  final_rows_sha256: null
-  protected_attestation_sha256: null
-  development_attestation_sha256: null
+  model_sha256: 6e2754feb015c73c7cc860a2879a76c72dd213fb5a9d28baead5bbb1c857a666
+  final_rows_sha256: 9cc799625ac9c8b3de61ac8edde6d0647dd62fbaaa1cf7cfc3694ebb0756fa39
+  protected_attestation_sha256: a92d798fbbd2e6cc2d031a5927c4b15530573f50774039c36b29f1452e522c26
+  development_attestation_sha256: 4fcf286156892c9da0289e56712210e90cccdcd608641c7ee573a8db1dcea23f
 paths:
-  model: null
-  final_rows: null
-  protected_attestation: null
-  development_attestation: null
-  primary_output_root: null
-  verification_output_root: null
+  model: C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\phase14\phase14-setc-rf-61e8f740-r1\calibration\phase14-cal-25af5c75-428f1e8076844a2d89e3116ce12d285e\base_rf_calibrated.joblib
+  final_rows: C:\Users\gibgib\Thesis-Cellular-Automata\SetC_Protected\set_c_v1\final_test_rows.csv
+  protected_attestation: C:\Users\gibgib\Thesis-Cellular-Automata\SetC_Protected\set_c_v1\attestation.json
+  development_attestation: C:\Users\gibgib\Thesis-Cellular-Automata\SetC_Development\set_c_v1\attestation.json
+  primary_output_root: C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\phase14\final-test
+  verification_output_root: C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\phase14\final-test
 reporting:
   metrics: [average_precision, roc_auc, brier_score, log_loss]
   reliability_bins: 10

@@ -485,7 +485,8 @@ def _metadata_calibration_manifest(code, authorization, receipt, outputs):
     from modules.feature_pipeline import CANONICAL_FEATURE_NAMES
     provenance = {"attestation_sha256": phase14.DEVELOPMENT_ATTESTATION_SHA256,
         "calibration_csv_sha256": phase14.CALIBRATION_CSV_SHA256, "rows": 2060, "positives": 153, "negatives": 1907,
-        "source_csv_sha256": phase14.SOURCE_CSV_SHA256, "source_revision": phase14.PHASE13_REVISION, "synthetic": False}
+        "source_csv_sha256": phase14.SOURCE_CSV_SHA256,
+        "source_revision": "8b750ae733ab0346d5cb9291780310c87c2cc752", "synthetic": False}
     receipt["inputs"] = {"role": "calibration", "synthetic": False, "provenance": provenance}
     return {"schema_version": "phase14a_calibrated_model_manifest.v1", "protocol_id": phase14.PROTOCOL_ID,
         "protocol_sha256": phase14.PROTOCOL_SHA256, "run_id": authorization["run_id"], "source_revision": "a" * 40,
@@ -1038,6 +1039,52 @@ def test_separate_successful_review_binds_finalized_evidence_without_rewriting_o
                 assert all(not element["type"].endswith("[]") for element in bin_edges["elements"])
     else:
         assert review["identities"]["model_sha256"] == records["synthetic-calibration"]["outputs"]["base_rf_calibrated.joblib"]
+        manifest = json.loads((records["synthetic-calibration"]["destination"] / "calibration_manifest.json").read_text())
+        assert manifest["input"]["source_revision"] == "8b750ae733ab0346d5cb9291780310c87c2cc752"
+        assert manifest["phase13_expected_policy"]["source_revision"] == "61e8f74031d61c9be22a9b6408aec3ad74f4e892"
+
+
+@pytest.mark.parametrize("change", [
+    "export-revision", "training-revision", "swapped-revisions", "receipt-export-revision",
+])
+def test_calibration_review_rejects_altered_or_conflated_lineage(tmp_path, change):
+    code, _, _, records = _finalized_metadata_fixture(tmp_path, "calibration")
+    record = records["synthetic-calibration"]
+    manifest_path = record["destination"] / "calibration_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    receipt = json.loads(record["receipt_path"].read_text())
+    completion = json.loads(record["completion_path"].read_text())
+    export_revision = manifest["input"]["source_revision"]
+    training_revision = manifest["phase13_expected_policy"]["source_revision"]
+    assert export_revision != training_revision
+    if change == "export-revision":
+        manifest["input"]["source_revision"] = "0" * 40
+        receipt["inputs"]["provenance"]["source_revision"] = "0" * 40
+    elif change == "training-revision":
+        manifest["phase13_expected_policy"]["source_revision"] = export_revision
+    elif change == "swapped-revisions":
+        manifest["input"]["source_revision"] = training_revision
+        receipt["inputs"]["provenance"]["source_revision"] = training_revision
+        manifest["phase13_expected_policy"]["source_revision"] = export_revision
+    else:
+        receipt["inputs"]["provenance"]["source_revision"] = "0" * 40
+
+    # Rebind every affected hash so lineage, not a stale digest, must be rejected.
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    receipt["finalized_outputs"][manifest_path.name] = sha256(manifest_path.read_bytes()).hexdigest()
+    record["receipt_path"].write_text(json.dumps(receipt), encoding="utf-8")
+    completion["child_receipt"]["sha256"] = sha256(record["receipt_path"].read_bytes()).hexdigest()
+    completion["verified_outputs"] = receipt["finalized_outputs"]
+    record["completion_path"].write_text(json.dumps(completion), encoding="utf-8")
+    paths = [*record["destination"].iterdir(), *record["evidence"].iterdir()]
+    before = {path: sha256(path.read_bytes()).hexdigest() for path in paths}
+    result = _harness(tmp_path, _review_body(code, "calibration", ["evidence_verified"], "FAIL"), load=False)
+    assert result.returncode == 0, result.stderr
+    assert {path: sha256(path.read_bytes()).hexdigest() for path in paths} == before
+    review_path = code / "output" / "phase14" / "calibration-review" / "synthetic-calibration" / "review_record.json"
+    review = json.loads(review_path.read_text())
+    assert review["disposition"] == "FAIL"
+    assert "evidence_invalid" in review["findings"]
 
 
 @pytest.mark.parametrize("change,status", [
