@@ -1,0 +1,52 @@
+schema_version: additive_exposure_assessment.r2
+enabled: false
+authorization_reference: null
+candidate_teacher_id: exploratory_additive_exposure_teacher.r2
+numerical_contract_id: additive_exposure_quantized_f32_f64.r2
+baseline_teacher_id: model-free-fire-automata
+susceptibility:
+  base_ignition_prob: 0.12
+  slope_weight: 0.20
+  building_weight: 0.10
+  proximity_weight: 0.20
+  material_weight: 0.35
+wind_weight: 0.20
+transition_timers:
+  T_3_to_4: 1
+  T_4_to_5: 1
+fixture_specification: additive_exposure_r2_fixed_fixtures
+deterministic_winds:
+  - [0.0, 0.0]
+  - [10.0, 0.0]
+  - [10.0, 90.0]
+  - [10.0, 180.0]
+  - [10.0, 270.0]
+  - [10.0, 315.0]
+tolerances:
+  interior_q64_max_encoding_distance: 8
+  oracle_q32_max_encoding_distance: 1
+  actual_q64_to_q32_rounding: bit_exact
+  zero_encoding: positive_zero
+assessment:
+  layout_order: [interior, boundary, corridor, separated_clusters]
+  material_order: [1, 5]
+  wind_order:
+    - [0.0, 0.0]
+    - [10.0, 315.0]
+  seed_first: 0
+  seed_last: 31
+  teacher_order: [baseline, candidate]
+  planned_runs: 1024
+  maximum_completed_updates: 162
+  rng_policy: default_rng_per_run
+  required_bit_generator: PCG64
+  concurrent_runs: 1
+  automatic_retry: false
+resources:
+  max_process_rss_bytes: null
+  min_available_physical_memory_bytes: null
+  max_wall_seconds: null
+  observation_interval_seconds: null
+output:
+  console_only: true
+  persistent_output_enabled: false

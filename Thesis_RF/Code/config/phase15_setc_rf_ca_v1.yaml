@@ -1,0 +1,69 @@
+# Preparation only: pending pilot values do not authorize execution.
+# Expected binding SHA-256 is delivered independently, never in this YAML.
+# Only the owner or explicitly owner-designated reviewer can approve a pilot; technical assessment is insufficient.
+phase15:
+  schema_version: phase15_setc_rf_ca.v1
+  mode: pilot
+  enabled: false
+  authorization_reference: P15-SM-PILOT-01
+  run_id: p15-sm-s42-r1
+  scenario_id: p15-sm-w10-from315-t1-1-v1
+  phase14_reconciliation_sha256: 00809c8e89a1c6e3f147bdabf127d5f71e1da827da0a84f12d5c6a8181ef9072
+  timestep_unit: simulation_step
+  resources:
+    enforcement: between_steps
+    max_process_rss_bytes: 7516192768
+    min_system_available_bytes: 2147483648
+    min_free_output_bytes: 5368709120
+    max_wall_seconds: 1800
+    sample_interval_seconds: 1.0
+environment:
+  raster_dir: 'C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/processedData/raster/phase15_inputs_v1_20261021'
+  slope_file: stack_slope_final.tif
+  proximity_file: stack_proximity.tif
+  buildings_file: stack_buildings.tif
+  materials_file: stack_materials.tif
+  input_sha256:
+    slope: dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482
+    proximity: 1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5
+    buildings: da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7
+    materials: 21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a
+  nodata_value: -9999
+simulation:
+  seed: 42
+  ignition_points: [[606750.2784, 1141691.2699]]
+  max_timesteps: 300
+  early_stop: true
+  checkpoint_interval: 0
+  emergency_checkpoint_enabled: false
+  resume_checkpoint: null
+placeholder_transition:
+  T_3_to_4: 1
+  T_4_to_5: 1
+  wind_weight: 0.20
+wind:
+  speed_kmh: 10.0
+  direction_deg: 315.0
+  direction_convention: meteorological_from
+  direction_units: degrees_clockwise
+  north_reference: projected_grid_north
+  schema_version: simulated_wind.v1
+  calm_representation: speed_zero_direction_zero
+flammability_weights: {base_weight: 0.5, slope_weight: 0.3, proximity_weight: 0.2}
+ml_model:
+  enabled: true
+  model_path: 'C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/output/phase14/phase14-setc-rf-61e8f740-r1/calibration/phase14-cal-25af5c75-428f1e8076844a2d89e3116ce12d285e/base_rf_calibrated.joblib'
+  model_sha256: 6e2754feb015c73c7cc860a2879a76c72dd213fb5a9d28baead5bbb1c857a666
+  positive_label: 1
+  inference_mode: stochastic_probability
+  inference_chunk_size: 200000
+  threshold: null
+  inference_threshold: null
+  classification_threshold: null
+rf_contract:
+  feature_schema_version: set_c.v1
+  target_version: ignition_t_plus_1.v1
+output:
+  output_dir: output/phase15
+  save_every_n_steps: 0
+  save_final_state: true

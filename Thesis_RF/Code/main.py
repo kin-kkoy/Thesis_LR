@@ -1,17 +1,12 @@
-from pathlib import Path
-
 try:
-	from orchestrator import apply_pipeline_defaults, load_config, run_simulation
+	from orchestrator import simulation_main
 except ModuleNotFoundError:
-	from Code.orchestrator import apply_pipeline_defaults, load_config, run_simulation
+	from Code.orchestrator import simulation_main
 
 
-def main() -> None:
-	default_config_path = Path(__file__).resolve().parent / "config" / "default_experiment.yaml"
-	config = load_config(str(default_config_path))
-	config = apply_pipeline_defaults(config)
-	run_simulation(config)
+def main(argv: list[str] | None = None) -> int:
+	return simulation_main(argv)
 
 
 if __name__ == "__main__":
-	main()
+	raise SystemExit(main())

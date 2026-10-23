@@ -265,6 +265,8 @@ def predict_positive_probability(model: object, features: object) -> np.ndarray:
 	probabilities = np.asarray(predict_proba(features), dtype=np.float64)
 	if probabilities.ndim != 2:
 		raise ValueError("predict_proba() must return a two-dimensional array")
+	if probabilities.shape[0] != len(features):
+		raise ValueError("predict_proba() row count does not match input features")
 	if probabilities.shape[1] != class_values.size:
 		raise ValueError(
 			"predict_proba() column count does not match model classes_"

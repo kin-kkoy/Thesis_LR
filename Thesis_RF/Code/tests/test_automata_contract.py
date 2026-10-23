@@ -200,3 +200,70 @@ def test_model_free_engine_rejects_all_estimator_boundaries(monkeypatch, tmp_pat
     assert not (tmp_path / "forbidden.npz").exists()
     assert automata.model is None
     assert automata.model_free is True
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_emergency_switch_suppresses_pilot_writes_and_preserves_legacy_default(monkeypatch, enabled):
+    config = _config()
+    if not enabled:
+        config["simulation"]["emergency_checkpoint_enabled"] = False
+    automata = FireAutomata(_environment(), config)
+    attempts = []
+    monkeypatch.setattr(automata, "_save_emergency_checkpoint", lambda: attempts.append("write") or "synthetic.npz")
+
+    def fail(_state):
+        raise ArithmeticError("synthetic step failure")
+
+    monkeypatch.setattr(automata_engine_module, "compute_moore_neighbor_count", fail)
+    with pytest.raises(RuntimeError):
+        automata.step()
+    assert attempts == (["write"] if enabled else [])
+
+
+@pytest.mark.parametrize("value", [0, 1, None, "false"])
+def test_emergency_switch_requires_a_boolean(value):
+    config = _config()
+    config["simulation"]["emergency_checkpoint_enabled"] = value
+    with pytest.raises(TypeError, match="must be boolean"):
+        FireAutomata(_environment(), config)
+
+
+def test_pilot_switch_does_not_change_model_state_timers_or_rng():
+    engines = []
+    for enabled in (True, False):
+        config = _config()
+        config["simulation"]["emergency_checkpoint_enabled"] = enabled
+        engine = FireAutomata(_environment(), config)
+        engine.model = _ReorderedEstimator()
+        engine.set_ignition([(0, 0)])
+        engines.append(engine)
+    for _ in range(3):
+        for engine in engines:
+            engine.step()
+    left, right = engines
+    for name in ("grid", "ignition_timers", "blazing_timers"):
+        assert np.array_equal(getattr(left, name), getattr(right, name))
+    assert left.timestep == right.timestep
+    assert left.rng.bit_generator.state == right.rng.bit_generator.state
+
+
+def test_compensating_malformed_chunks_fail_at_the_first_chunk():
+    environment = _environment()
+    for name in ("slope_risk", "proximity_risk", "building_presence", "material_class", "burnable_mask", "nodata_mask"):
+        environment[name] = np.repeat(environment[name], 3, axis=0)
+    environment["grid_shape"] = (3, 2)
+    config = _config()
+    config["ml_model"]["inference_chunk_size"] = 1
+
+    class Malformed(_ReorderedEstimator):
+        calls = 0
+
+        def predict_proba(self, features):
+            self.calls += 1
+            return np.tile([0.8, 0.2], (0 if self.calls == 1 else 2, 1))
+
+    engine = FireAutomata(environment, config)
+    engine.model = Malformed()
+    with pytest.raises(ValueError, match="row count"):
+        engine._predict_with_model(np.ones((3, 2), dtype=np.int8), np.ones((3, 2), dtype=bool))
+    assert engine.model.calls == 1

@@ -1,6 +1,7 @@
 """Cellular automata fire spread engine with vectorized timestep updates."""
 
 from pathlib import Path
+from typing import BinaryIO
 
 import joblib
 import numpy as np
@@ -91,6 +92,9 @@ class FireAutomata:
 			validate_grid_provenance(self.crs, self.transform)
 
 		self.simulation_cfg = config.get("simulation", {})
+		self.emergency_checkpoint_enabled = self.simulation_cfg.get("emergency_checkpoint_enabled", True)
+		if type(self.emergency_checkpoint_enabled) is not bool:
+			raise TypeError("simulation.emergency_checkpoint_enabled must be boolean")
 		self.wind_cfg = config.get("wind", {})
 		self.wind = WindContract.from_config(self.wind_cfg)
 		self.transition_cfg = config.get("placeholder_transition", {})
@@ -254,11 +258,8 @@ class FireAutomata:
 					# Preserve the historical full-grid RNG draw, and therefore exact
 					# seeded outcomes, while avoiding a full-grid p_effective array.
 					susceptible_indices = np.flatnonzero(susceptible.ravel())
-					p_effective = np.clip(
-						self.p_base.ravel()[susceptible_indices]
-						* wind_weighted_score.ravel()[susceptible_indices],
-						0.0,
-						1.0,
+					p_effective = self._model_free_probability(
+						susceptible_indices, wind_weighted_score
 					)
 					ignition_draw = self.rng.random(self.grid_shape)
 					ignite_indices = susceptible_indices[
@@ -271,7 +272,7 @@ class FireAutomata:
 			self.grid = next_grid
 			self.timestep += 1
 		except Exception as exc:
-			if self._model_free or self._transition_observer is not None:
+			if self._model_free or self._transition_observer is not None or not self.emergency_checkpoint_enabled:
 				raise RuntimeError(
 					"In-memory simulation step failed; no emergency checkpoint was "
 					"written. Explicit caller action is required before continuing."
@@ -301,7 +302,16 @@ class FireAutomata:
 			)
 			self._transition_observer(observation)
 
-	def load_model(self, model_path: str) -> None:
+	def _model_free_probability(self, susceptible_indices, wind_weighted_score) -> np.ndarray:
+		"""Return probabilities aligned with susceptible_indices; preserve legacy arithmetic."""
+		return np.clip(
+			self.p_base.ravel()[susceptible_indices]
+			* wind_weighted_score.ravel()[susceptible_indices],
+			0.0,
+			1.0,
+		)
+
+	def load_model(self, model_path: str | BinaryIO) -> None:
 		if self._model_free:
 			raise RuntimeError("Model-free teacher mode cannot load an estimator")
 		loaded_model = joblib.load(model_path)

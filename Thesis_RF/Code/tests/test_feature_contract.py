@@ -13,6 +13,7 @@ from modules.feature_pipeline import (
     compute_moore_neighbor_count,
     normalize_binary_ca_state,
     positive_class_index,
+    predict_positive_probability,
     validate_feature_columns,
     validate_feature_values,
 )
@@ -124,3 +125,31 @@ def test_invalid_state_nodata_normalizes_without_weakening_valid_cell_checks():
     assert normalized.tolist() == [[1, 0], [0, 1]]
     with pytest.raises(ValueError, match="Raster-valid state_t"):
         normalize_binary_ca_state(state, np.ones_like(raster_valid), "state_t")
+
+
+@pytest.mark.parametrize("rows", [0, 1, 3])
+def test_probability_row_count_rejects_short_broadcastable_and_long_outputs(rows):
+    class Estimator:
+        feature_names_in_ = np.asarray(CANONICAL_FEATURE_NAMES)
+        classes_ = np.array([1, 0])
+
+        def predict_proba(self, features):
+            return np.tile([0.8, 0.2], (rows, 1))
+
+    with pytest.raises(ValueError, match="row count"):
+        predict_positive_probability(Estimator(), np.zeros((2, 11), dtype=np.float32))
+
+
+def test_probability_row_check_preserves_valid_values_and_feature_objects():
+    features = np.zeros((2, 11), dtype=np.float32)
+    probabilities = np.array([[0.2, 0.8], [0.7, 0.3]], dtype=np.float64)
+
+    class Estimator:
+        feature_names_in_ = np.asarray(CANONICAL_FEATURE_NAMES)
+        classes_ = np.array([0, 1])
+
+        def predict_proba(self, received):
+            assert received is features
+            return probabilities
+
+    assert np.array_equal(predict_positive_probability(Estimator(), features), probabilities[:, 1])

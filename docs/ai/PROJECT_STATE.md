@@ -2,24 +2,24 @@
 
 ## Record contract
 
-- **Purpose:** Navigation index; source, identified inputs/artifacts, commands and raw records remain primary evidence.
+- **Purpose:** Navigation index; identified source, inputs, artifacts and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-10-07 (Asia/Manila).
-- **Last reviewed repository revision:** Phase 13 R1 execution pin `8a8977599a1467ff67415338eaacfc72779e5eb9`.
-- **Worktree note:** Evidence/stashes preserved; only memory updates, no new commit.
-- **Current reviewed RF work:** R2A source gate accepted under owner-approved procedural shutdown; no retry authorized.
+- **Last updated:** 2026-10-23 (Asia/Manila), source-sharing navigation only.
+- **Snapshot base:** `8962fbba4c924b183f091edcc3744c256f1e6357`, plus the committed Phase 15 diff.
+- **Current handoff:** `docs/RF_Review_Handoff_2026-10-23.md`; separates source checks from owner-reported results.
+- **Historical index:** The tables below retain the October 12 evidence scope; they are not the latest execution status.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Plan Phase 13 RF tuning and uncalibrated retraining while preserving the accepted Phase 12 pair and evidence.
-- **Methodology:** D-009–D-015 define the Set C estimand, 11 predictors, model-free `all_eligible` labels, 128×128 containment, controlled population, duplicate policy, and adequacy gates. D-029 makes predictor collisions audit-only.
+- **Active objective:** Share Phase 15 source for review; refine the proposed RF/LR shared-dataset contract.
+- **Methodology:** D-009–D-015 define Set C's 11 predictors, model-free `all_eligible` labels, 128×128 containment, population, duplicates and adequacy. D-029: predictor collisions audit-only. D-077: prespecified sigmoid; no RF refit.
 - **Accepted evidence:** Phase 8/9 immutable aggregate reports establish the controlled population and prospective feasibility; D-033/D-034 identify and accept Set C v1 after Tasks 11.1/11.2.
-- **Current authorization:** Phase 12 closed; Phase 13 protocol retained. Owner-authorized 13E R1 was invoked and consumed; no retry authorized.
-- **Hard boundary:** Preserve evidence/artifacts/stashes; no rerun, recovery, cleanup, ACL changes or additional protected/model/ground-truth/manuscript/LR access.
-- **Next gate:** Reviewed clean commit/pin, then separate fresh one-run proposal; no preflight or retry.
+- **Current authorization:** Owner requests a new review branch and push. Dataset work remains preparation only.
+- **Hard boundary:** Preserve artifacts/stashes and LR files; no new execution, training, generation or cleanup.
+- **Next gate:** Review shared-dataset compatibility, then obtain separate adoption/implementation/execution scope.
 - **Agent tooling:** D-030 pins engineer `gpt-6-luna`/medium, validator/researcher `gpt-6-sol`/medium, lead `gpt-6-sol`/high. Parent/repository boundaries govern the lead conflict.
 <!-- END CODEX DIGEST -->
 
@@ -71,15 +71,17 @@
 4. `WARNING` — Same-account D-038 procedural holdout cannot enforce blindness or prevent canonical-CSV recomputation.
 5. `PASS` — D-035/D-040 guards retained; R2/R3/R4 causes/limits remain historical. No mathematical optimum certificate.
 6. `PASS` — 13B.1 selective train/validation loader; validator reports 70 passed/1 skip; calibration contents unopened.
-9. `WARNING` — No development component IDs: fixed grouped holdout, not reconstructed CV. Calibration reserved for Phase 14; numerical protocol accepted.
+9. `WARNING` — No development component IDs or reconstructed CV. D-077 accepts prespecified sigmoid, not empirical superiority.
 10. `VERIFIED` — Owner host: Windows PowerShell 5.1.26100.9444/Desktop; pwsh absent from PATH. Recovery host gate PASS, D-063; exit cause unverified.
-11. `PASS` — Draft 1 accepted; 13B.1 parent source gate accepted after repaired independent tests. Production fitting remains gated.
-12. `ACCEPTED` — R2A source gate under owner-approved procedural shutdown, D-067. Strict shutdown bound unproven; R1 consumed. Suite 116/1 skip/1 deselected.
+11. `CLOSED` — Phase 13 accepted, D-071; no production Phase 14 authority.
+12. `CLOSED` — 14E/14F source-only accepted; 14F both 24/0 suites PASS, D-099.
+13. `FAIL` — 14G 19/1 (32.32s); callback error/record/conversion evidence missing. Prep incomplete; no launch, D-118.
 
 ## Known-good navigation
 
 | Need | Start here |
 |---|---|
+| Parent handoff | `docs/RF_Parent_Handoff_2026-10-10.md` |
 | Durable methodology | `docs/ai/DECISIONS.md` D-009–D-015 |
 | Phase 9 handoff | `docs/HandoffPhase9.md` |
 | Phase 11 handoff | `docs/HandoffPhase11.md` |
@@ -88,6 +90,7 @@
 | Phase 12 failure / supervisor | Unchanged `docs/Phase12Block.md`; D-042–D-045; `run_set_c_supervised.py`; focused tests |
 | Current closure / authorization boundary | D-054 acceptance; D-053 R5 PASS; D-052 repair |
 | Phase 13 numerical proposal for re-review | `docs/Phase13A_RF_Tuning_Protocol_Proposal.md` Draft 1; D-055 |
+| Phase 14 protocol / source gates | `docs/Phase14A_Calibration_Final_Test_Protocol_Proposal.md` Draft 4; D-077–D-118 |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
 | Raster loading/domains | `Thesis_RF/Code/modules/data_loader.py` |
 | Model-free teacher | `Thesis_RF/Code/modules/model_free_teacher.py`; `modules/automata_engine.py` |
@@ -107,7 +110,7 @@
 - D-053: one R5 and independent protected review PASS; no independent mathematical certificate. D-054 records owner acceptance, 2026-10-06.
 - D-057 / 13B.1: repaired validator run reports 70 passed/1 symlink skip in 11.36 s; reparse-attribute test passed. Repository interpreter, three focused files, `-B -p no:cacheprovider`, fresh OS-temp basetemp. Parent checked source/repairs, not a test rerun. No production evidence.
 - D-058–D-061 / 13D: repaired source reviewed; validator reports 96 passed/1 skip/1 deselected. D-060 defect resolved. Parent verifies hashes/source, not a suite rerun or RF operation.
-- D-062–D-067: R1 consumed. R2A accepted with procedural shutdown; validator 116/1 skip/1 deselected. No retry; strict bound unproven.
+- D-080/116: 14D accepted (104/1 skip); 14E accepted (both 198/0); 14F accepted (both 24/0 exit0). 14G patch PASS; fresh suite released.
 
 ## Update procedure
 
