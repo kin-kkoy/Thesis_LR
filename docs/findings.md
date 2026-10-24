@@ -944,3 +944,55 @@ Observations:
 5. C's 0.30 → 0.40 precision jump (0.467 → 0.646) is not monotone with its F1 — single-seed stochastic noise is likely material; multi-seed runs would quantify it.
 6. Buildings-only F1 is 0.04–0.09 higher than whole map in every run.
 7. F1 ≥ 0.80 still not met by any variant.
+
+### Per-cell 8-variant rerun (Table 7) — `Code/retrain_windfix_variants.py` (2026-10-24)
+Reruns the Apr 11 8-variant comparison on `dataFiles/multi_scenario_dataset_windfix.csv` with the original code paths unchanged (Path A/B objective from `train_lr_pathb.py`, seed 42, 100 TPE trials, 5-fold stratified CV, 80/20 stratified split, cutoff = best of 16 on the test split, as in the published Table 7). 9-feature variants = the 10-feature CSV minus `wind_weighted_score` (same 200 simulations, same rows/labels). New models saved as `models/*_windfix.joblib`; old models untouched. Raw: `Code/output/windfix/per_cell_variants.csv`, `logs/per_cell_variants.log`.
+
+Reproduction check on the pre-fix CSV: the four default variants reproduce the published Table 7 exactly (0.133/0.470/0.077/0.630; 0.135/0.489/0.078/0.631; 0.162/0.306/0.110/0.656; 0.165/0.320/0.111/0.658). The Optuna variants land within 0.004 F1 of the published values (0.133, 0.134, 0.162, 0.165 vs 0.129, 0.134, 0.164, 0.165) but pick different hyperparameters, so their recall/precision differ — not exactly reproducible under the current library versions (sklearn 1.9.0).
+
+| # | Variant (wind-fixed data) | Features | F1 | Recall | Precision | AUC-ROC | Cutoff | F1 @0.5 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 9-feature, default | 9 | 0.131 | 0.395 | 0.079 | 0.613 | 0.55 | 0.129 |
+| 2 | 9-feature, Optuna | 9 | 0.131 | 0.445 | 0.077 | 0.613 | 0.40 | 0.094 |
+| 3 | 9 + 7 engineered, default | 16 | 0.131 | 0.404 | 0.079 | 0.612 | 0.55 | 0.130 |
+| 4 | 9 + 7 engineered, Optuna | 16 | 0.130 | 0.670 | 0.072 | 0.613 | 0.25 | 0.008 |
+| 5 | 10-feature, default | 10 | 0.133 | 0.413 | 0.079 | 0.625 | 0.55 | 0.131 |
+| 6 | 10-feature, Optuna | 10 | 0.132 | 0.353 | 0.081 | 0.627 | 0.55 | 0.127 |
+| 7 | 10 + 7 engineered, default | 17 | 0.133 | 0.592 | 0.075 | 0.626 | 0.50 | 0.133 |
+| 8 | 10 + 7 engineered, Optuna | 17 | 0.134 | 0.555 | 0.076 | 0.625 | 0.50 | 0.134 |
+
+Best Optuna CV F1: 0.141 / 0.139 / 0.154 / 0.152 (variants 2/4/6/8).
+
+Observations:
+1. **The per-cell gain from `wind_weighted_score` is gone**: 9 → 10 features F1 0.131 → 0.133 (+0.002), was 0.133 → 0.162 (+0.029). AUC still rises (0.613 → 0.625). With ~218 test positives, differences of a few thousandths are noise. On its own the feature still separates about as well as before the fix (single-feature AUC 0.587 old → 0.574 new; neighbour count 0.510 → 0.508), and generator + engine both use `correlate`, so this is not a remaining mismatch — the old +0.029 appears to have come from the reversed kernel.
+2. All 8 variants sit at F1 0.130–0.134: neither Optuna nor the 7 engineered features help (same conclusion as before).
+3. Optuna variants with a custom positive-class weight collapse at a fixed 0.5 cutoff (variant 4: F1 0.008); best-of-16-on-test hides this. The published Table 7 used best-of-16 on the test split.
+
+### Decision: AUC-ROC dropped from spatial tables (2026-10-24)
+The simulation outputs a binary burn map, so map-level AUC = (recall + specificity)/2, and specificity ≈ 1 with ~37.8M negatives: AUC ≈ (recall + 1)/2 (old t=0.40: (0.867+1)/2 = 0.933, exactly the reported value). It duplicates recall and hides over-prediction. AUC is kept for the per-cell tables (computed from probabilities, ~5% positives).
+
+### CA-only baseline rerun (Table 10) — `Code/run_ca_only_windfix.sh`, `Code/run_ca_only_seeds.sh` (2026-10-24)
+Our wind-fixed engine (`Code/`), ML off, rule-based ignition (`placeholder_transition`: base 0.12, slope 0.2, building 0.1, proximity 0.2, material 0.35; blazing lasts 1 step), NASA wind 17.7 km/h from 49°, 100 timesteps max, early stop, Sta. Maria ignition. `orchestrator.run_simulation` always loads `ml_model.model_path` (it ignores `ml_model.enabled`), so the run scripts stub `orchestrator.load_model` to keep `automata.model = None`. Configs `config/windfix_CA_nasa*.yaml`, outputs `output/windfix/CA_nasa*`, logs in `output/windfix/logs/`.
+
+**The rule-only fire did not spread in any of 10 seeds (42–51).** Every run stopped early with no active fire by step 7:
+
+| Seed | 42 | 43 | 44 | 45 | 46 | 47 | 48 | 49 | 50 | 51 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Stopped at step | 1 | 3 | 1 | 3 | 1 | 7 | 3 | 1 | 1 | 5 |
+| Predicted cells | 1 | 2 | 1 | 2 | 1 | 4 | 2 | 1 | 1 | 3 |
+
+Whole map: precision 1.000 (all burned cells are inside the truth), recall 0.0003–0.0012, F1 0.0006–0.0024 (mean F1 0.0011). Buildings only: recall 0.0005–0.0021, F1 0.0010–0.0042. Survival rate (spread beyond the first few steps): 0/10.
+
+Why: in the rule path each susceptible neighbour gets p = p_base × wind_weighted_score / kernel_sum, i.e. roughly p_base/8 per burning neighbour, and a cell blazes for one step only — a single ignition cell usually fails to light anything before it burns out. The `placeholder_transition` weights are uncalibrated placeholders, not a tuned physical model. The data generator also uses this rule but seeds 10 ignition points per scenario inside an ROI, so its fires survive often enough to produce data.
+
+The old Table 10 CA-only row (F1 0.684 / R 0.544 / P 0.921) was **partner-reported** from Kent's engine and settings, and ran with the reversed-wind CA; it is not comparable to our engine and is not reused.
+
+### Figures 10–11 regenerated (2026-10-24)
+`spatial_validation/visualize_simulation.py` on `output/windfix/B_nasa_t000` and `B_nasa_t040` → `Code/output/windfix/figures/figure10_stage_b_nasa_t000.png`, `figure11_stage_b_nasa_t040.png` (old `output/stage_b*_comparison.png` untouched). Footer counts (precision/recall/F1 match the table above):
+
+| Run | TP | FP (false alarms) | FN (missed) | P | R | F1 |
+|---|---|---|---|---|---|---|
+| B, no threshold | 3,109 | 4,167 | 203 | 0.427 | 0.939 | 0.587 |
+| B, t=0.40 | 3,077 | 3,103 | 235 | 0.498 | 0.929 | 0.648 |
+
+Visual: both cover nearly all of the scar except a small missed area at its western tip; false alarms ring the scar, heaviest to the south and east. t=0.40 shrinks the overshoot mainly on the north/west edges and the south-east lobe.

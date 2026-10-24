@@ -1,0 +1,48 @@
+# CA-only baseline (no ML), wind-fixed engine, NASA wind (generated 2026-10-24).
+# orchestrator.run_simulation always loads ml_model.model_path; run_ca_only_windfix.sh
+# stubs that call out so the rule-based ignition path is used.
+environment:
+  raster_dir: processedData/raster/raster
+  slope_file: stack_slope_final.tif
+  proximity_file: stack_proximity.tif
+  buildings_file: stack_buildings.tif
+  materials_file: stack_materials.tif
+  nodata_value: -9999
+simulation:
+  max_timesteps: 100
+  seed: 43
+  ignition_points:
+  - - 606748.78
+    - 1141695.77
+  early_stop: true
+wind:
+  speed_kmh: 17.7
+  direction_deg: 49.0
+flammability_weights:
+  base_weight: 0.5
+  slope_weight: 0.3
+  proximity_weight: 0.2
+placeholder_transition:
+  base_ignition_prob: 0.12
+  slope_weight: 0.2
+  building_weight: 0.1
+  proximity_weight: 0.2
+  wind_weight: 0.2
+  burnout_prob: 0.04
+  material_weight: 0.35
+ml_model:
+  enabled: false
+  model_path: models/fire_lr_windweighted_windfix.joblib
+output:
+  output_dir: output/windfix/CA_nasa_s43
+  save_every_n_steps: 10
+  save_final_state: true
+dataset_generation:
+  roi:
+    row_start: 1800
+    row_end: 2600
+    col_start: 2400
+    col_end: 3200
+  n_ignition_points: 5
+  timesteps_to_record: 40
+  output_csv: dataFiles/synthetic_fire_dataset.csv
