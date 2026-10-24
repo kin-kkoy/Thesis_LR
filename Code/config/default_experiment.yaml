@@ -14,8 +14,8 @@ simulation:
   early_stop: true              # stop when no IGNITED or BLAZING cells remain
 
 wind:
-  speed_kmh: 10.0              # placeholder static global
-  direction_deg: 315.0         # compass degrees (315 = NW)
+  speed_kmh: 17.7              # NASA POWER WS10M, Dec 12 2023 11:00 LST, Sta. Maria ignition point (placeholder was 10.0)
+  direction_deg: 49.0          # NASA POWER WD10M, degrees wind blows FROM (NE); placeholder was 315 (NW)
 
 flammability_weights:
   base_weight: 0.5
@@ -33,8 +33,8 @@ placeholder_transition:
 
 ml_model:
   enabled: true
-  model_path: "models/fire_lr_windweighted.joblib"        # Stage B: LR with wind_weighted_score
-  proba_threshold: 0.45                                   # 0.0 = off; >0 zeros out probs below cutoff (more selective, fewer FPs)
+  model_path: "models/fire_lr_windweighted_windfix.joblib" # Stage B, retrained on wind-fixed data (2026-10-24); old: fire_lr_windweighted.joblib
+  proba_threshold: 0.40                                   # published operational pick (Stage B + t=0.40); 0.0 = off; >0 zeros out probs below cutoff
 
 output:
   output_dir: "output"

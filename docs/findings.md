@@ -833,6 +833,12 @@ Stage C combines both `material_class` (from Kent's schema) and `wind_weighted_s
 
 Stage C alone produced F1=0.622, slightly better than Stage A (0.602) and Stage B (0.607). However, Stage C with threshold tuning could not match Stage B + threshold=0.40 — the unified model's more confident predictions made it more sensitive to the threshold cutoff, requiring a lower threshold (0.30) which traded back some F1.
 
+**Stage C (no threshold) full breakdown — re-scored 2026-09-27** from the saved `sandbox_kent/output/final_state_stage_c.tif` (rebuilt venv, Python 3.14.7). F1/recall/precision/AUC match the table above exactly.
+
+| TP | FP | FN | Jaccard | Cells predicted |
+|:--:|:--:|:--:|:-------:|:---------------:|
+| 3,014 | 3,361 | 298 | 0.452 (0.451671) | 6,375 |
+
 ### Final Variant Comparison (master table)
 
 | # | Variant | Features | Threshold | F1 | Recall | Precision | AUC-ROC |
@@ -864,3 +870,77 @@ Stage C alone produced F1=0.622, slightly better than Stage A (0.602) and Stage 
 - `Code/output/stage_b_comparison.png` — Stage B (no threshold)
 - `Code/output/stage_b_t040_comparison.png` — Stage B + threshold=0.40 (best F1 with recall ≥ 0.80)
 - `Code/sandbox_kent/output/stage_c_comparison.png` — Stage C (unified, no threshold)
+
+---
+
+## 2026-10-23/24: Wind Direction Bug (convolve → correlate) — Data Regenerated, Stages A/B/C Retrained
+
+### The bug
+`_compute_wind_kernel()` stores the weight of the neighbour at offset (dr, dc) in `kernel[dr+1, dc+1]` (upwind neighbours weighted > 1). That is `scipy.ndimage.correlate`'s convention, but the engine applied it with `convolve`, which flips the kernel. **Fire spread INTO the wind** since the Apr 10 wind fix. Single-cell test, wind FROM north, 25 km/h: `convolve` put the high weights (1.35–1.5) on the north row; `correlate` puts them on the south row (correct).
+
+Affected: CA spread rule (`automata_engine.py` rule path), the `wind_weighted_score` fed to the model at inference, and `dataset_generator.py` — in both `Code/` and `Code/sandbox_kent/`. So every dataset generated since Apr 10 (labels included, not just the wind column) and every model trained on them. Neighbour counts (symmetric kernel) unaffected.
+
+How it was found: real Dec 12, 2023 wind (NASA POWER 17.7 km/h from 49°; Mactan RPVM METAR afternoon mean 10.2 km/h from 50°) scored worse than the 10 km/h NW placeholder with the old Stage B + t=0.40 model (F1 0.616 / 0.633 vs 0.691). Burned-area centroids shifted *toward* the wind source (placeholder NW → 282°, NE winds → 97°/118°). Ground-truth centroid is 287° (WNW) of ignition — the reversed NW placeholder happened to push spread toward the real scar. These pre-fix runs are superseded.
+
+| Pre-fix run (old Stage B, t=0.40) | Precision | Recall | F1 | Jaccard | Predicted |
+|---|---|---|---|---|---|
+| Placeholder 10 km/h from 315° (published) | 0.574 | 0.867 | 0.691 | 0.528 | 4,998 |
+| NASA 17.7 km/h from 49° | 0.483 | 0.848 | 0.616 | 0.445 | 5,817 |
+| RPVM 10.2 km/h from 50° | 0.493 | 0.886 | 0.633 | 0.464 | 5,955 |
+
+Fix: commit `bdb619a` (pushed to kin-kkoy/Thesis_LR `lr-information-gap-fix` and `master`). Kent's own RF code switched to `correlate` on Sep 20 (`9e3a8d8`); his May Set C numbers predate that.
+
+### Regenerated data (old files kept)
+Same generator settings (200 scenarios: 5 speeds × 8 directions × 5 runs, CA rule path only), written to new files:
+
+| Dataset | Rows (old → new) | Positives (old → new) |
+|---|---|---|
+| `dataFiles/multi_scenario_dataset_windfix.csv` (Stage B) | 21,079 → 21,106 | 1,095 (5.19%) → 1,089 (5.16%) |
+| `sandbox_kent/dataFiles/multi_scenario_dataset_windfix.csv` (Stages A/C) | 24,922 → 25,077 | 1,797 → 1,824 |
+
+### Retrained models — `Code/retrain_windfix.py`
+Recipe identical to the original models (StandardScaler + LR C=1.0, l2, lbfgs, class_weight=balanced, max_iter=2000, seed 42, random stratified 80/20 split). Verified: refitting on the old CSVs reproduces all three saved old models' coefficients exactly (max diff 0.0). Stage B was **not** Optuna-tuned. Stage A = sandbox CSV minus `wind_weighted_score`.
+
+New models: `models/fire_lr_windweighted_windfix.joblib` (B), `sandbox_kent/models/fire_lr_stage_a_windfix.joblib`, `sandbox_kent/models/fire_lr_stage_c_windfix.joblib`.
+
+**Per-cell test metrics at a fixed 0.5 cutoff** (not tuned on test labels):
+
+| Stage | Test rows / fires | AUC old → new | F1 old → new | Recall old → new | Precision old → new |
+|---|---|---|---|---|---|
+| A | 5,016 / 365 | 0.6038 → 0.6181 | 0.1602 → 0.1742 | 0.5933 → 0.6466 | 0.0926 → 0.1006 |
+| B | 4,222 / 218 | 0.6561 → 0.6251 | 0.1335 → 0.1311 | 0.6164 → 0.5826 | 0.0748 → 0.0739 |
+| C | 5,016 / 365 | 0.6277 → 0.6466 | 0.1705 → 0.1858 | 0.6072 → 0.6548 | 0.0992 → 0.1083 |
+
+Cutoff 0.6 (new models) is worse on every stage — recall collapses: A F1 0.149 / R 0.197; B F1 0.125 / R 0.261; C F1 0.175 / R 0.299.
+
+The old scripts' "best of 16 cutoffs on the test set" gains almost nothing here (new C: 0.186 → 0.188 at 0.55; new B: 0.131 → 0.133 at 0.55), so the per-cell leakage is small. The bigger concern is the spatial inference threshold (0.40) having been chosen on Sta. Maria itself.
+
+`wind_weighted_score` stays the strongest or second-strongest positive coefficient (B +0.301 → +0.286; C +0.343 → +0.295). `material_class` shrank (A −0.145 → −0.020; C −0.163 → −0.021); `building_presence` roughly halved in A/C.
+
+### Spatial validation (2026-10-24 overnight, `Code/run_overnight_validation.sh`)
+Raw output: `Code/output/windfix/summary.txt` and `logs/`. All runs seed 42, 100 timesteps, Sta. Maria ignition, wind-fixed models. "Buildings only" = prediction and ground truth both restricted to `stack_buildings.tif` > 0 (`spatial_validation/score_both_areas.py`; 1,919 of the 3,312 truth cells). Thresholds 0.30/0.40/0.50 are a **sensitivity sweep, reported in full** — B=0.40 and C=0.30 were fixed in May, before this data existed.
+
+| Run | Wind | Thr | Whole map P | R | F1 | Jaccard | Pred | Bldg-only P | R | F1 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A | NASA 17.7/49° | — | 0.4409 | 0.9161 | 0.5953 | 0.4238 | 6,881 | 0.4994 | 0.9448 | 0.6535 |
+| B | NASA | — | 0.4273 | 0.9387 | 0.5873 | 0.4157 | 7,276 | 0.4932 | 0.9510 | 0.6496 |
+| B | NASA | 0.30 | 0.4343 | 0.9357 | 0.5933 | 0.4217 | 7,135 | 0.4981 | 0.9495 | 0.6534 |
+| **B** | **NASA** | **0.40** | **0.4979** | **0.9290** | **0.6483** | **0.4797** | 6,180 | 0.5488 | 0.9463 | **0.6947** |
+| B | NASA | 0.50 | 0.5487 | 0.4607 | 0.5009 | 0.3341 | 2,781 | 0.6288 | 0.5482 | 0.5857 |
+| C | NASA | — | 0.4543 | 0.9191 | 0.6081 | 0.4369 | 6,700 | 0.5134 | 0.9474 | 0.6659 |
+| C | NASA | 0.30 | 0.4667 | 0.6226 | 0.5335 | 0.3638 | 4,418 | 0.5112 | 0.6993 | 0.5907 |
+| C | NASA | 0.40 | 0.6459 | 0.5272 | 0.5805 | 0.4090 | 2,703 | 0.6736 | 0.6399 | 0.6563 |
+| C | NASA | 0.50 | 0.6530 | 0.3989 | 0.4952 | 0.3291 | 2,023 | 0.6536 | 0.5211 | 0.5799 |
+| B | Placeholder 10/315° | 0.40 | 0.4819 | 0.8675 | 0.6196 | 0.4488 | 5,962 | 0.5053 | 0.9135 | 0.6507 |
+| B | RPVM 10.2/50° | 0.40 | 0.4948 | 0.9055 | 0.6399 | 0.4705 | 6,061 | 0.5310 | 0.9463 | 0.6803 |
+
+Stage A spatial run uses `sandbox_kent/models/fire_lr_stage_a_windfix_sim.joblib` — the Stage A model wrapped to drop the 11th column (`wind_weighted_score`), since the sandbox assembler now always emits 11 features (identical predictions, max diff 0.0 over 25,077 rows). The first attempt with the bare 10-feature model failed on the feature count.
+
+Observations:
+1. **Real wind now beats the placeholder** (B t=0.40: NASA 0.648 > RPVM 0.640 > placeholder 0.620). Before the fix it was the reverse (0.616 / 0.633 / 0.691) — consistent with the bug having pushed spread the wrong way.
+2. **Best result passing recall: Stage B + t=0.40, NASA wind — F1 0.648, Recall 0.929** (whole map); 0.695 buildings-only. It is the threshold pre-committed in May. Down from the published 0.691, which was helped by the reversed wind pointing toward the scar.
+3. Unthresholded A/B/C sit together at F1 0.587–0.608 (same plateau as before the fix); Stage C (0.608) edges A and B.
+4. Thresholding helps B only at 0.40 (+0.061 F1); at 0.50 recall collapses (0.461). Stage C fails recall at every threshold ≥ 0.30, so C has no thresholded variant that meets the target.
+5. C's 0.30 → 0.40 precision jump (0.467 → 0.646) is not monotone with its F1 — single-seed stochastic noise is likely material; multi-seed runs would quantify it.
+6. Buildings-only F1 is 0.04–0.09 higher than whole map in every run.
+7. F1 ≥ 0.80 still not met by any variant.
