@@ -996,3 +996,26 @@ The old Table 10 CA-only row (F1 0.684 / R 0.544 / P 0.921) was **partner-report
 | B, t=0.40 | 3,077 | 3,103 | 235 | 0.498 | 0.929 | 0.648 |
 
 Visual: both cover nearly all of the scar except a small missed area at its western tip; false alarms ring the scar, heaviest to the south and east. t=0.40 shrinks the overshoot mainly on the north/west edges and the south-east lobe.
+
+### Multi-seed check (2026-10-25, `Code/run_multiseed.sh` + `spatial_validation/aggregate_seeds.py`)
+Seeds 42 (from the overnight run) and 43–46 for the four key configurations; NASA wind, wind-fixed models, everything else unchanged. Raw: `Code/output/windfix/multiseed_summary.txt`. Mean ± sample SD over n=5 (min–max). Peak RAM per run 6.35–6.46 GB.
+
+| Config | Whole-map F1 | Recall | Precision | Jaccard | Recall ≥ 0.80 | Bldg-only F1 | Bldg-only Recall |
+|---|---|---|---|---|---|---|---|
+| **B, t=0.40** | **0.634 ± 0.010** (0.625–0.648) | 0.913 ± 0.018 (0.882–0.929) | 0.486 ± 0.012 | 0.464 ± 0.010 | 5/5 | 0.679 ± 0.012 (0.667–0.695) | 0.941 ± 0.008 |
+| B, none | 0.588 ± 0.004 (0.584–0.595) | 0.936 ± 0.004 | 0.429 ± 0.004 | 0.417 ± 0.005 | 5/5 | 0.657 ± 0.007 | 0.950 ± 0.003 |
+| C, none | 0.617 ± 0.014 (0.608–0.642) | 0.918 ± 0.004 | 0.465 ± 0.017 | 0.446 ± 0.015 | 5/5 | 0.672 ± 0.017 | 0.947 ± 0.004 |
+| C, t=0.30 | 0.616 ± 0.050 (0.534–0.668) | 0.785 ± 0.094 (0.623–0.845) | 0.509 ± 0.042 | 0.446 ± 0.051 | 3/5 | 0.657 ± 0.048 | 0.855 ± 0.089 |
+
+Per-seed whole-map F1 (seeds 42/43/44/45/46): B t=0.40 0.648/0.625/0.632/0.638/0.627; B none 0.587/0.590/0.585/0.595/0.584; C none 0.608/0.608/0.610/0.642/0.614; C t=0.30 0.534/0.619/0.630/0.668/0.628.
+
+Observations:
+1. **Headline becomes Stage B + t=0.40: F1 0.634 ± 0.010, Recall 0.913 ± 0.018 (whole map); 0.679 ± 0.012 buildings-only.** Seed 42 (0.648) was the highest of the five — the single-seed number overstated it slightly.
+2. The 0.40 threshold gain on Stage B is robust: +0.046 mean F1 (0.634 vs 0.588), and every t=0.40 seed (min 0.625) beats every unthresholded seed (max 0.595). Recall passes in 5/5 seeds.
+3. Stage B t=0.40 stays ahead of Stage C unthresholded on average (0.634 vs 0.617), with overlapping ranges (C max 0.642 > B min 0.625).
+4. Stage C t=0.30 is unstable: F1 SD 0.050, recall 0.623–0.845, passes recall in only 3/5 seeds. Seed 42 was its worst run (0.534), so the single-seed statement "C fails recall at every threshold" overstated it at 0.30 — the accurate statement is that C at 0.30 is unreliable.
+5. Unthresholded runs vary little (SD 0.004–0.014); thresholds add run-to-run variance.
+
+**Stage A added (2026-10-25, seeds 43–46, same runner):** Stage A unthresholded, n=5: whole-map F1 **0.604 ± 0.011** (0.595–0.623), Recall 0.914 ± 0.004, Precision 0.451 ± 0.012, Jaccard 0.432 ± 0.012, recall ≥ 0.80 in 5/5; buildings-only F1 0.663 ± 0.010, Recall 0.943 ± 0.001. Per-seed F1 (42–46): 0.595/0.602/0.601/0.623/0.597. Peak RAM 6.14–6.18 GB.
+
+Effect of wind_weighted_score on the map (Stage A → Stage C, same sandbox dataset, unthresholded): mean whole-map F1 0.604 → 0.617 (**+0.013**); Stage C is higher than Stage A at every one of the 5 seeds (per-seed differences +0.013, +0.006, +0.009, +0.019, +0.017), though the two ranges overlap (A max 0.623 > C min 0.608). Buildings-only 0.663 → 0.672 (+0.009; C higher in 4 of 5 seeds). A small but consistent gain.
