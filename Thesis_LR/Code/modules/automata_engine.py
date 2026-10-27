@@ -2,7 +2,7 @@
 
 import joblib
 import numpy as np
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve, correlate
 
 from .feature_pipeline import FeatureAssembler
 
@@ -169,7 +169,9 @@ class FireAutomata:
 			else:
 				# Directional wind kernel: neighbors upwind contribute more,
 				# downwind contribute less. Replaces the old flat wind_multiplier.
-				wind_weighted_score = convolve(
+				# correlate, not convolve: kernel[dr+1, dc+1] weights the neighbor at (dr, dc);
+				# convolve flips the kernel, which made fire spread INTO the wind (fixed 2026-10-23).
+				wind_weighted_score = correlate(
 					blazing_now.astype(np.float32),
 					self.wind_kernel,
 					mode="constant",
@@ -271,7 +273,8 @@ class FireAutomata:
 		# Provide the same directional wind-weighted score the CA uses,
 		# so the ML model sees the same information as the rule-based path.
 		max_kernel_sum = float(self.wind_kernel.sum())
-		wind_weighted_score = convolve(
+		# correlate, not convolve: convolve flips the kernel (upwind/downwind swapped). Fixed 2026-10-23.
+		wind_weighted_score = correlate(
 			blazing_now,
 			self.wind_kernel,
 			mode="constant",

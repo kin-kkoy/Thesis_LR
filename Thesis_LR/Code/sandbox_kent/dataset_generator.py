@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve, correlate
 
 from modules.automata_engine import (
     FireAutomata,
@@ -110,7 +110,8 @@ class SyntheticDatasetGenerator:
 
             # Stage C: also record the directional wind-weighted score so the
             # ML model has access to the same information the CA uses.
-            wind_weighted_score = convolve(
+            # correlate, not convolve: convolve flips the kernel (upwind/downwind swapped). Fixed 2026-10-23.
+            wind_weighted_score = correlate(
                 blazing_now,
                 wind_kernel,
                 mode="constant",
