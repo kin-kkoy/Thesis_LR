@@ -1,0 +1,132 @@
+# Phase 16 source preparation only, D-122. No test or execution authority.
+# Conditional geometry/provenance below does not resolve activation readiness.
+# F01 remains calibration/development evidence and final-test excluded.
+# The phase15 envelope reuses the existing guarded runner and output-root policy.
+phase15:
+  schema_version: phase16_candidate_r2_f01_nasa_hr11.v1
+  mode: pilot
+  enabled: false
+  authorization_reference: null
+  run_id: null
+  scenario_id: phase16-candidate-r2-f01-nasa-hr11-w17p7-from48p825208-s42-t1-1
+  timestep_unit: simulation_step
+  resources:
+    enforcement: between_steps
+    max_process_rss_bytes: null
+    min_system_available_bytes: null
+    min_free_output_bytes: null
+    max_wall_seconds: null
+    sample_interval_seconds: null
+environment:
+  raster_dir: processedData/raster/raster
+  slope_file: stack_slope_final.tif
+  proximity_file: stack_proximity.tif
+  buildings_file: stack_buildings.tif
+  materials_file: stack_materials.tif
+  input_sha256:
+    slope: dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482
+    proximity: 1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5
+    buildings: da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7
+    materials: 21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a
+  nodata_value: -9999
+candidate_inputs:
+  interpretation_policy: embedded_tiff_only.v1
+  mask_seed_policy: candidate_common_environment_receiving_atomic_seeds.v1
+  expected_grid:
+    shape: [5489, 6896]
+    crs: EPSG:32651
+    transform: null
+  window:
+    family_ordinal: 1
+    scenario_family_id: p8f01_cluster_322_m1
+    global_origin: [256, 2176]
+    shape: [1024, 1024]
+  # Exact evidence/runtime record remains required; provenance is not capability evidence.
+  reader_capability: null
+simulation:
+  seed: 42
+  # Candidate coordinates are LOCAL [row,col], never projected [x,y].
+  ignition_points: [[638, 554]]
+  max_timesteps: 300
+  early_stop: true
+  checkpoint_interval: 0
+  emergency_checkpoint_enabled: false
+  resume_checkpoint: null
+placeholder_transition:
+  T_3_to_4: 1
+  T_4_to_5: 1
+  wind_weight: 0.20
+wind:
+  speed_kmh: 17.7
+  direction_deg: 48.825208
+  direction_convention: meteorological_from
+  direction_units: degrees_clockwise
+  north_reference: projected_grid_north
+  schema_version: simulated_wind.v1
+  calm_representation: speed_zero_direction_zero
+wind_input_basis:
+  schema_version: phase16_f01_nasa_hr11_ignition_center.v1
+  source_row: "2023,12,12,11,4.91,49.0"
+  source_export_sha256: d29f891aacf0aa7932a886d4cebfe37df1a7bcd96823b77e5d37b7fdfa064a90
+  source_point_lat_lon: [10.327, 123.9749]
+  source_time_basis:
+    timezone: LST
+    hour: 11
+    adopted_bfp_time: "11:31 AM"
+    selection_authority: owner/partner
+  source_direction:
+    degrees: 49.0
+    direction_convention: meteorological_from
+    direction_units: degrees_clockwise
+    north_reference: geographic_true_north
+    north_reference_status: INFERRED
+  speed_basis: {source_mps: 4.91, converted_kmh: 17.676, prescribed_kmh: 17.7}
+  anchor:
+    kind: ignition_pixel_centre
+    crs: EPSG:32651
+    easting: 606750.2784
+    northing: 1141691.2699
+  anchor_lat_lon: [10.326650173394397, 123.9749840198514]
+  gamma:
+    approximate_degrees: 0.174792123614
+    definition: clockwise from true north to grid north
+  conversion:
+    formula: (true-from - gamma) mod 360
+    additional_180_degree_reversal: false
+  numerical_specification:
+    unrounded_grid_from_deg: 48.825207876386
+    decimal_places: 6
+    grid_from_deg: 48.825208
+  spatial_approximation:
+    method: one constant anchor-derived bearing over the crop
+    incident: owner-identified Santa Maria F01 development case
+    query_point: nearby NASA point adopted by owner
+    qualification: no independent historical geolocation or physical-wind validity claim
+  source_discrepancies:
+    researcher_reported_screenshot_text: "12/12/2024-1131H"
+    owner_identified_incident_year: 2023
+    dswd_approximate_time: "13:25"
+  evidence_references:
+    source_contract_handback: C:/Users/gibgib/.codex/attachments/49766430-ab36-4395-8c74-7bc3a5db22c4/Pasted text.txt
+    geometry_handback: C:/Users/gibgib/.codex/attachments/d53164bd-be77-4e97-bdc9-07245b8eb129/Pasted text.txt
+    authority: docs/ai/DECISIONS.md D-122
+flammability_weights: {base_weight: 0.5, slope_weight: 0.3, proximity_weight: 0.2}
+ml_model:
+  enabled: true
+  model_path: output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/rf_sigmoid.joblib
+  model_sha256: 78828dd4b2fcc66e9cdfd8ecb4a3ccd18c268478f3b5e6a4374c3286e3903e54
+  calibration_manifest_path: output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/calibration_manifest.json
+  calibration_manifest_sha256: 3141b8554662d703691c06a327f9a6c96c79f20840ce3738c358d4bdb6632afb
+  positive_label: 1
+  inference_mode: stochastic_probability
+  inference_chunk_size: 200000
+  threshold: null
+  inference_threshold: null
+  classification_threshold: null
+rf_contract:
+  feature_schema_version: set_c.v1
+  target_version: ignition_t_plus_1.v1
+output:
+  output_dir: null
+  save_every_n_steps: 0
+  save_final_state: true

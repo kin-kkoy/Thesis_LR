@@ -19,6 +19,7 @@ import yaml
 
 import main
 import orchestrator as o
+from modules import automata_engine
 from modules.automata_engine import FireAutomata
 from modules.feature_pipeline import CANONICAL_FEATURE_NAMES
 
@@ -247,13 +248,17 @@ def test_required_null_pending_and_type_rules(ready, section, key, value):
         o._phase15_normalize(config)
 
 
-def test_disabled_template_retains_pending_values_without_activation():
-    config = o.load_config(str(Path(o.__file__).parent / "config/phase15_setc_rf_ca_v1.yaml"))
+def test_constructed_pending_config_retains_values_without_activation():
+    source_config = o.load_config(str(Path(o.__file__).parent / "config/phase15_setc_rf_ca_v1.yaml"))
+    config = deepcopy(source_config)
+    config["simulation"]["seed"] = None
     assert config["phase15"]["enabled"] is False
     assert config["simulation"]["seed"] is None
     assert config["simulation"]["resume_checkpoint"] is None
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid numeric configuration value"):
         o._phase15_normalize(config)
+    assert config["phase15"]["enabled"] is False
+    assert config["simulation"]["seed"] is None
 
 
 def test_verified_buffer_survives_model_path_substitution(ready, monkeypatch):
@@ -698,11 +703,12 @@ def test_partial_and_corrupt_record_writes_never_commit_or_retry(ready, monkeypa
 
 
 
-@pytest.fixture
-def candidate_ready(ready, monkeypatch):
+@pytest.fixture(params=[
+    "phase15_candidate_r2_rf_ca_v1.yaml", "phase16_candidate_r2_f01_nasa_hr11_v1.yaml",
+], ids=["phase15", "phase16-nasa-hr11"])
+def candidate_ready(ready, monkeypatch, request):
     """Tiny array substitute for the bound reader; no native capability claim."""
-    config = o._phase15_yaml((Path(o.__file__).parent /
-                              "config/phase15_candidate_r2_rf_ca_v1.yaml").read_bytes())
+    config = o._phase15_yaml((Path(o.__file__).parent / "config" / request.param).read_bytes())
     for section in ("environment", "phase15", "output"):
         if section == "phase15":
             for key in ("authorization_reference", "run_id", "resources"):
@@ -755,9 +761,14 @@ def candidate_ready(ready, monkeypatch):
     return ready
 
 
-def test_candidate_profile_is_disabled_distinct_and_pending():
-    config = o.load_config(str(Path(o.__file__).parent / "config/phase15_candidate_r2_rf_ca_v1.yaml"))
-    assert config["phase15"]["schema_version"] == o.PHASE15_CANDIDATE_SCHEMA
+@pytest.mark.parametrize("filename,schema,bearing", [
+    ("phase15_candidate_r2_rf_ca_v1.yaml", "phase15_candidate_r2_rf_ca.v1", 315.0),
+    ("phase16_candidate_r2_f01_nasa_hr11_v1.yaml", "phase16_candidate_r2_f01_nasa_hr11.v1", 48.825208),
+])
+def test_candidate_profile_is_disabled_distinct_and_pending(filename, schema, bearing):
+    config = o.load_config(str(Path(o.__file__).parent / "config" / filename))
+    assert config["phase15"]["schema_version"] == schema
+    assert config["wind"]["direction_deg"] == bearing
     assert config["phase15"]["enabled"] is False
     assert config["phase15"]["authorization_reference"] is None
     assert config["phase15"]["run_id"] is None and config["output"]["output_dir"] is None
@@ -766,6 +777,23 @@ def test_candidate_profile_is_disabled_distinct_and_pending():
     assert config["simulation"]["ignition_points"] == [[638, 554]]
     assert config["ml_model"]["model_sha256"] == o.PHASE15_CANDIDATE_MODEL_SHA256
     assert config["ml_model"]["calibration_manifest_sha256"] == o.PHASE15_CANDIDATE_MANIFEST_SHA256
+    assert config["candidate_inputs"]["expected_grid"]["transform"] is None
+    assert config["candidate_inputs"]["reader_capability"] is None
+    if schema == "phase16_candidate_r2_f01_nasa_hr11.v1":
+        basis = config["wind_input_basis"]
+        assert basis["source_row"] == "2023,12,12,11,4.91,49.0"
+        assert basis["source_direction"]["north_reference_status"] == "INFERRED"
+        assert basis["anchor"] == {"kind": "ignition_pixel_centre", "crs": "EPSG:32651",
+                                    "easting": 606750.2784, "northing": 1141691.2699}
+        assert basis["source_time_basis"] == {"timezone": "LST", "hour": 11,
+            "adopted_bfp_time": "11:31 AM", "selection_authority": "owner/partner"}
+        assert basis["source_discrepancies"] == {
+            "researcher_reported_screenshot_text": "12/12/2024-1131H",
+            "owner_identified_incident_year": 2023, "dswd_approximate_time": "13:25"}
+        assert basis["numerical_specification"] == {"unrounded_grid_from_deg": 48.825207876386,
+                                                    "decimal_places": 6, "grid_from_deg": 48.825208}
+    else:
+        assert "wind_input_basis" not in config
     assert "phase14_reconciliation_sha256" not in config["phase15"]
     with pytest.raises(ValueError):
         o._phase15_normalize(config)
@@ -778,9 +806,21 @@ def test_candidate_profile_is_disabled_distinct_and_pending():
     ("simulation", "seed", 43),
     ("simulation", "ignition_points", [[0, 1]]),
     ("simulation", "max_timesteps", 301),
+    ("simulation", "early_stop", False),
+    ("wind", "speed_kmh", 17.676),
+    ("wind", "north_reference", "geographic_true_north"),
+    ("placeholder_transition", "T_3_to_4", 2),
+    ("placeholder_transition", "T_4_to_5", 2),
+    ("placeholder_transition", "wind_weight", 0.21),
+    ("flammability_weights", "base_weight", 0.6),
     ("ml_model", "threshold", 0.5),
+    ("ml_model", "inference_threshold", 0.5),
+    ("ml_model", "classification_threshold", 0.5),
+    ("ml_model", "inference_mode", "threshold"),
     ("ml_model", "model_sha256", o.PHASE15_MODEL_SHA256),
     ("ml_model", "calibration_manifest_sha256", "0" * 64),
+    ("rf_contract", "feature_schema_version", "set_c.v2"),
+    ("candidate_inputs", "mask_seed_policy", "substituted-policy"),
     ("candidate_inputs", "reader_capability", None),
     ("candidate_inputs", "window", None),
 ])
@@ -826,6 +866,24 @@ def test_candidate_verified_bytes_and_manifest_binding_survive_path_replacement(
 
 def test_candidate_masks_valid_zeros_and_atomic_seeds_reach_engine(candidate_ready, monkeypatch):
     engines, original = [], o.FireAutomata
+    bearing = (48.825208 if candidate_ready.config["phase15"]["schema_version"] ==
+               "phase16_candidate_r2_f01_nasa_hr11.v1" else 315.0)
+    scoring, features_seen = [], []
+    original_score = automata_engine.compute_wind_weighted_score
+    original_predict = SyntheticEstimator.predict_proba
+    def score(mask, wind, weight):
+        scoring.append((wind.direction_deg, wind.speed_kmh, weight))
+        return original_score(mask, wind, weight)
+    def predict(estimator, features):
+        assert list(features.columns) == list(CANONICAL_FEATURE_NAMES)
+        features_seen.append(len(features))
+        assert all(dtype == np.dtype("float32") for dtype in features.dtypes)
+        np.testing.assert_array_equal(features["wind_speed"], np.float32(17.7))
+        np.testing.assert_array_equal(features["wind_sin"], np.float32(np.sin(np.deg2rad(bearing))))
+        np.testing.assert_array_equal(features["wind_cos"], np.float32(np.cos(np.deg2rad(bearing))))
+        return original_predict(estimator, features)
+    monkeypatch.setattr(automata_engine, "compute_wind_weighted_score", score)
+    monkeypatch.setattr(SyntheticEstimator, "predict_proba", predict)
     def construct(environment, config):
         assert config["simulation"]["checkpoint_interval"] == 0
         assert config["simulation"]["emergency_checkpoint_enabled"] is False
@@ -837,10 +895,20 @@ def test_candidate_masks_valid_zeros_and_atomic_seeds_reach_engine(candidate_rea
     run(candidate_ready)
     assert len(candidate_ready.reader_calls) == len(engines) == 1
     engine = engines[0]
+    assert engine.wind.direction_deg == engine.feature_assembler.wind.direction_deg == bearing
+    assert scoring and all(item == (bearing, 17.7, 0.20) for item in scoring)
+    assert features_seen
     assert engine.simulation_valid_mask.tolist() == [[True, True, False], [True, False, True]]
     assert engine.burnable_mask.tolist() == [[True, False, False], [True, False, True]]
     assert record(candidate_ready)["observed_bindings"]["converted_ignitions"] == [[0, 0]]
     assert record(candidate_ready)["termination_reason"] == "inactive"
+    start = json.loads((candidate_ready.destination / "start.json").read_text())
+    assert start["configuration"]["effective"] == candidate_ready.active
+    assert start["scenario"]["wind"]["direction_deg"] == bearing
+    assert start["binding"]["payload"]["model"]["manifest"] == candidate_ready.binding["model"]["manifest"]
+    assert start["binding"]["payload"]["evidence_scope"]["final_test_eligible"] is False
+    assert record(candidate_ready)["start_record_sha256"] == sha256(
+        (candidate_ready.destination / "start.json").read_bytes()).hexdigest()
 
 
 @pytest.mark.parametrize("bad_seed", [[0, 1], [1, 1], [2, 0]])
@@ -857,7 +925,7 @@ def test_candidate_invalid_complete_seed_list_never_sets_any_ignition(candidate_
     assert record(candidate_ready)["output_valid"] is False
 
 
-@pytest.mark.parametrize("failure", ["step", "resource", "report"])
+@pytest.mark.parametrize("failure", ["step", "resource", "report", "cancel"])
 def test_candidate_failure_suppression_and_post_commit_incident(candidate_ready, monkeypatch, failure):
     monkeypatch.setattr(FireAutomata, "save_checkpoint", lambda *_: pytest.fail("periodic checkpoint"))
     monkeypatch.setattr(FireAutomata, "_save_emergency_checkpoint", lambda *_: pytest.fail("emergency checkpoint"))
@@ -874,6 +942,12 @@ def test_candidate_failure_suppression_and_post_commit_incident(candidate_ready,
             return original(monitor, boundary, force)
         monkeypatch.setattr(o._Phase15Resources, "check", check)
         expected = o._Phase15Stop
+    elif failure == "cancel":
+        def cancel(engine):
+            engine.grid[:] = 5
+            raise KeyboardInterrupt()
+        monkeypatch.setattr(FireAutomata, "step", cancel)
+        expected = KeyboardInterrupt
     else:
         def report(message, **_):
             if message.startswith("Phase 15 committed:"):
@@ -884,6 +958,8 @@ def test_candidate_failure_suppression_and_post_commit_incident(candidate_ready,
         run(candidate_ready)
     result = record(candidate_ready)
     assert result["output_valid"] is (failure == "report")
+    if failure == "cancel":
+        assert result["termination_reason"] == "cancelled" and result["failed_step"] == 1
     if failure != "report":
         assert not (candidate_ready.destination / "final_state.tif").exists()
     else:
@@ -893,7 +969,7 @@ def test_candidate_failure_suppression_and_post_commit_incident(candidate_ready,
 
 
 
-@pytest.mark.parametrize("schema", [None, "phase15_setc_rf_ca.v1"])
+@pytest.mark.parametrize("schema", [None, "phase15_setc_rf_ca.v1", "phase16_candidate_r2_f01_nasa_hr11.v2"])
 def test_candidate_malformed_profile_never_falls_back_to_legacy(candidate_ready, monkeypatch, schema):
     candidate_ready.config["phase15"]["schema_version"] = schema
     candidate_ready.path.write_text(yaml.safe_dump(candidate_ready.config), encoding="utf-8")
@@ -923,9 +999,10 @@ def _guard_candidate_dispatch_side_effects(monkeypatch, config_path=None):
     monkeypatch.setattr(Path, "open", only_configuration)
 
 
+@pytest.mark.parametrize("field", ["candidate_inputs", "wind_input_basis"])
 @pytest.mark.parametrize("marker", [None, {}])
-def test_candidate_marker_without_profile_rejects_direct_without_approval_controls(monkeypatch, marker):
-    config = {"candidate_inputs": marker}
+def test_candidate_marker_without_profile_rejects_direct_without_approval_controls(monkeypatch, field, marker):
+    config = {field: marker}
     assert "phase15" not in config
     with monkeypatch.context() as guarded:
         _guard_candidate_dispatch_side_effects(guarded)
@@ -933,9 +1010,10 @@ def test_candidate_marker_without_profile_rejects_direct_without_approval_contro
             o.run_simulation(config)
 
 
+@pytest.mark.parametrize("field", ["candidate_inputs", "wind_input_basis"])
 @pytest.mark.parametrize("marker", [None, {}])
-def test_candidate_marker_without_profile_rejects_cli_without_approval_flags(tmp_path, monkeypatch, capsys, marker):
-    config = {"candidate_inputs": marker,
+def test_candidate_marker_without_profile_rejects_cli_without_approval_flags(tmp_path, monkeypatch, capsys, field, marker):
+    config = {field: marker,
               "environment": {"raster_dir": "synthetic-raster-access-forbidden"}}
     path = tmp_path / "candidate-without-profile.yaml"
     path.write_text(yaml.safe_dump(config), encoding="utf-8")
@@ -945,3 +1023,223 @@ def test_candidate_marker_without_profile_rejects_cli_without_approval_flags(tmp
         status = o.simulation_main(["--config", str(path)])
     assert status == 1
     assert "Candidate-marked configuration requires the candidate Phase 15 profile" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("bearing", [
+    315.0, 675.0, -45.0, 48.825208, 408.825208, -311.174792,
+    49.0, 49.174792123614, 228.825208, 48.825207, 48.825209,
+    True, False, "48.825208", float("nan"), float("inf"), float("-inf"),
+])
+def test_candidate_exact_bearings_preserve_only_old_modulo_semantics(candidate_ready, bearing):
+    config = deepcopy(candidate_ready.config)
+    config["wind"]["direction_deg"] = bearing
+    successor = config["phase15"]["schema_version"] == "phase16_candidate_r2_f01_nasa_hr11.v1"
+    accepted = type(bearing) in (int, float) and (
+        bearing == 48.825208 if successor else bearing in (315.0, 675.0, -45.0))
+    if accepted:
+        active = o._phase15_normalize(config)
+        assert active["wind"]["direction_deg"] == (48.825208 if successor else 315.0)
+        assert config["phase15"]["enabled"] is False
+    else:
+        with pytest.raises((ValueError, TypeError)):
+            o._phase15_normalize(config)
+
+
+def test_candidate_normalized_bearing_cannot_substitute_another_case(candidate_ready, monkeypatch):
+    wind = deepcopy(candidate_ready.config["wind"])
+    wind["direction_deg"] = 315.0 if wind["direction_deg"] == 48.825208 else 48.825208
+    monkeypatch.setattr(o, "WindContract", SimpleNamespace(
+        from_config=lambda _config: SimpleNamespace(to_config=lambda: wind)))
+    with pytest.raises(ValueError, match="engineering case"):
+        o._phase15_normalize(candidate_ready.config)
+
+
+@pytest.mark.parametrize("path,value", [
+    (("source_row",), "2023,12,12,13,4.91,49.0"),
+    (("source_export_sha256",), "0" * 64),
+    (("source_point_lat_lon",), [10.327, 123.0]),
+    (("source_direction", "degrees"), 49),
+    (("source_direction", "north_reference_status"), "VERIFIED"),
+    (("source_time_basis", "hour"), 11.0),
+    (("source_time_basis", "adopted_bfp_time"), "13:25"),
+    (("anchor", "easting"), 606750.2785),
+    (("anchor", "kind"), "pixel_corner"),
+    (("gamma", "approximate_degrees"), -0.174792123614),
+    (("gamma", "definition"), "clockwise from grid north to true north"),
+    (("conversion", "additional_180_degree_reversal"), 0),
+    (("conversion", "additional_180_degree_reversal"), True),
+    (("conversion", "extra"), False),
+    (("numerical_specification", "decimal_places"), 6.0),
+    (("numerical_specification", "grid_from_deg"), 49.0),
+    (("source_discrepancies", "owner_identified_incident_year"), 2023.0),
+    (("source_discrepancies", "researcher_reported_screenshot_text"), "12/12/2023-1131H"),
+    (("source_discrepancies", "dswd_approximate_time"), "11:31"),
+    (("source_discrepancies", "dswd_approximate_time"), "__delete__"),
+    (("extra",), 0),
+])
+def test_candidate_rejects_changed_nested_basis_and_extra_fields(candidate_ready, monkeypatch, path, value):
+    # For the old profile even an otherwise exact successor basis is forbidden.
+    basis = candidate_ready.config.setdefault("wind_input_basis", deepcopy(o.PHASE16_WIND_INPUT_BASIS))
+    parent = basis
+    for key in path[:-1]:
+        parent = parent[key]
+    if value == "__delete__":
+        del parent[path[-1]]
+    else:
+        parent[path[-1]] = value
+    candidate_ready.path.write_text(yaml.safe_dump(candidate_ready.config), encoding="utf-8")
+    monkeypatch.setattr(o, "_phase15_binding", lambda *_: pytest.fail("invalid basis reached binding"))
+    with pytest.raises((ValueError, TypeError)):
+        run(candidate_ready)
+    assert candidate_ready.attempts == []
+
+
+@pytest.mark.parametrize("value", [None, {}, [], {"extra": True}])
+def test_candidate_rejects_missing_or_malformed_basis(candidate_ready, value):
+    config = deepcopy(candidate_ready.config)
+    config["wind_input_basis"] = value
+    with pytest.raises((ValueError, TypeError)):
+        o._phase15_normalize(config)
+    del config["wind_input_basis"]
+    if config["phase15"]["schema_version"] == "phase16_candidate_r2_f01_nasa_hr11.v1":
+        with pytest.raises(ValueError):
+            o._phase15_normalize(config)
+    else:
+        assert o._phase15_normalize(config)["wind"]["direction_deg"] == 315.0
+
+
+def test_successor_scenario_is_fixed_while_old_identity_contract_is_preserved(candidate_ready):
+    config = deepcopy(candidate_ready.config)
+    config["phase15"]["scenario_id"] = "substituted-scenario"
+    if config["phase15"]["schema_version"] == "phase16_candidate_r2_f01_nasa_hr11.v1":
+        with pytest.raises(ValueError, match="scenario identity"):
+            o._phase15_normalize(config)
+    else:
+        assert o._phase15_normalize(config)["phase15"]["scenario_id"] == "substituted-scenario"
+
+
+@pytest.mark.parametrize("override", [
+    {"explicitly_authorized": False}, {"approval_reference": "technical-assessment-only"},
+    {"expected_binding_sha256": None}, {"expected_binding_sha256": "0" * 64},
+    {"config_path": None},
+])
+def test_candidate_authorization_rejects_before_input_access_or_writes(candidate_ready, monkeypatch, override):
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("unapproved candidate reached input/model/allocation work")
+    for name in ("_phase15_candidate_environment", "_phase15_environment", "_phase15_load_model", "FireAutomata"):
+        monkeypatch.setattr(o, name, forbidden)
+    with pytest.raises((ValueError, PermissionError)):
+        run(candidate_ready, **override)
+    assert candidate_ready.attempts == []
+
+
+@pytest.mark.parametrize("section,key", [
+    ("configuration", "disk_sha256"), ("configuration", "activated_effective_sha256"),
+    ("source", "head"), ("source", "files"), ("runtime", "packages"),
+    ("model", "sha256"), ("model", "manifest"), ("inputs", "slope"),
+    ("candidate_inputs", "window"), ("evidence_scope", "final_test_eligible"),
+    ("run", "run_id"), ("run", "scenario_id"), ("run", "destination"),
+])
+def test_candidate_binding_changes_reject_before_allocation(candidate_ready, monkeypatch, section, key):
+    altered = deepcopy(candidate_ready.binding)
+    altered[section][key] = "substituted"
+    monkeypatch.setattr(o, "_phase15_binding", lambda *_: altered)
+    with pytest.raises(PermissionError, match="binding"):
+        run(candidate_ready)
+    assert candidate_ready.attempts == []
+
+
+def test_candidate_disk_bytes_and_effective_basis_are_bound(candidate_ready):
+    assert candidate_ready.binding["configuration"]["activated_effective_sha256"] == independent_digest(candidate_ready.active)
+    altered = deepcopy(candidate_ready.active)
+    if "wind_input_basis" in altered:
+        altered["wind_input_basis"]["source_direction"]["north_reference_status"] = "VERIFIED"
+    else:
+        altered["wind"]["direction_deg"] = 48.825208
+    assert independent_digest(altered) != candidate_ready.binding["configuration"]["activated_effective_sha256"]
+    candidate_ready.path.write_bytes(candidate_ready.path.read_bytes() + b"\n# changed bytes\n")
+    with pytest.raises(PermissionError, match="binding"):
+        run(candidate_ready)
+    assert candidate_ready.attempts == []
+
+
+def test_candidate_direct_and_disk_configuration_must_agree(candidate_ready):
+    candidate_ready.config["ml_model"]["inference_chunk_size"] += 1
+    with pytest.raises(ValueError, match="disagree"):
+        run(candidate_ready)
+    assert candidate_ready.attempts == []
+
+
+@pytest.mark.parametrize("entrypoint", [o.simulation_main, main.main])
+def test_candidate_cli_uses_guarded_candidate_route(candidate_ready, entrypoint):
+    assert entrypoint(["--config", str(candidate_ready.path), "--execute-approved-phase15-pilot",
+        "--approval-reference", "synthetic-owner-approval", "--expected-binding-sha256", candidate_ready.expected]) == 0
+    assert len(candidate_ready.reader_calls) == 1
+    assert record(candidate_ready)["observed_bindings"]["converted_ignitions"] == [[0, 0]]
+
+
+@pytest.mark.parametrize("value", [None, True, -1, 1001])
+def test_candidate_resource_guard_precedes_allocation(candidate_ready, value):
+    candidate_ready.snapshot.process_rss_bytes = value
+    with pytest.raises(o._Phase15Stop):
+        run(candidate_ready)
+    assert candidate_ready.attempts == []
+
+
+@pytest.mark.parametrize("breach", ["wall", "rss", "telemetry"])
+def test_candidate_last_step_resource_failure_precedes_inactivity(candidate_ready, monkeypatch, breach):
+    original = FireAutomata.step
+    def step(engine):
+        original(engine)
+        if breach == "wall":
+            candidate_ready.now[0] = 100
+        else:
+            candidate_ready.snapshot.process_rss_bytes = 1001 if breach == "rss" else None
+    monkeypatch.setattr(FireAutomata, "step", step)
+    with pytest.raises(o._Phase15Stop):
+        run(candidate_ready)
+    result = record(candidate_ready)
+    assert result["last_completed_timestep"] == 1 and result["active_cell_count"] == 0
+    assert result["output_valid"] is False and result["outputs"] == []
+    assert not (candidate_ready.destination / "final_state.tif").exists()
+
+
+def test_candidate_collision_preserves_existing_destination(candidate_ready):
+    candidate_ready.destination.mkdir()
+    marker = candidate_ready.destination / "retained-evidence"
+    marker.write_bytes(b"preserve")
+    with pytest.raises(FileExistsError):
+        run(candidate_ready)
+    assert marker.read_bytes() == b"preserve"
+    assert candidate_ready.attempts == []
+
+
+@pytest.mark.parametrize("target", ["start.json", "final_state.tif", "termination.json"])
+def test_candidate_publication_failure_retains_evidence_without_retry(candidate_ready, monkeypatch, target):
+    write, raster, finalize = o._phase15_write_json, o._phase15_raster, o._phase15_finalize
+    attempts = []
+    def write_record(path, value):
+        attempts.append(path.name)
+        if path.name == target:
+            raise OSError("synthetic record failure")
+        return write(path, value)
+    def write_raster(destination, name, *args):
+        if name == target:
+            raise OSError("synthetic raster failure")
+        return raster(destination, name, *args)
+    def publish(partial, final):
+        if final.name == target:
+            raise OSError("synthetic finalization failure")
+        return finalize(partial, final)
+    monkeypatch.setattr(o, "_phase15_write_json", write_record)
+    monkeypatch.setattr(o, "_phase15_raster", write_raster)
+    monkeypatch.setattr(o, "_phase15_finalize", publish)
+    with pytest.raises(OSError):
+        run(candidate_ready)
+    assert attempts.count("termination.json.partial") == 1
+    assert {path.name for path in candidate_ready.destination.iterdir()} <= o.PHASE15_OUTPUTS
+    if target == "termination.json":
+        assert (candidate_ready.destination / "termination.json.partial").exists()
+        assert not (candidate_ready.destination / "termination.json").exists()
+    else:
+        assert record(candidate_ready)["output_valid"] is False

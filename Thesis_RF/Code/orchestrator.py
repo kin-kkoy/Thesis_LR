@@ -523,6 +523,57 @@ PHASE15_SOURCES = tuple("Thesis_RF/Code/" + name for name in (
     "modules/candidate_dataset_inputs.py", "modules/candidate_dataset_crops.py",
 ))
 PHASE15_CANDIDATE_SCHEMA = "phase15_candidate_r2_rf_ca.v1"
+PHASE16_CANDIDATE_SCHEMA = "phase16_candidate_r2_f01_nasa_hr11.v1"
+PHASE16_GRID_FROM_DEG = 48.825208
+PHASE16_SCENARIO_ID = "phase16-candidate-r2-f01-nasa-hr11-w17p7-from48p825208-s42-t1-1"
+# D-122 adopts this conditional input basis; these are supplied values, not a runtime conversion.
+PHASE16_WIND_INPUT_BASIS = {
+    "schema_version": "phase16_f01_nasa_hr11_ignition_center.v1",
+    "source_row": "2023,12,12,11,4.91,49.0",
+    "source_export_sha256": "d29f891aacf0aa7932a886d4cebfe37df1a7bcd96823b77e5d37b7fdfa064a90",
+    "source_point_lat_lon": [10.327, 123.9749],
+    "source_time_basis": {
+        "timezone": "LST", "hour": 11, "adopted_bfp_time": "11:31 AM",
+        "selection_authority": "owner/partner",
+    },
+    "source_direction": {
+        "degrees": 49.0, "direction_convention": "meteorological_from",
+        "direction_units": "degrees_clockwise", "north_reference": "geographic_true_north",
+        "north_reference_status": "INFERRED",
+    },
+    "speed_basis": {"source_mps": 4.91, "converted_kmh": 17.676, "prescribed_kmh": 17.7},
+    "anchor": {
+        "kind": "ignition_pixel_centre", "crs": "EPSG:32651",
+        "easting": 606750.2784, "northing": 1141691.2699,
+    },
+    "anchor_lat_lon": [10.326650173394397, 123.9749840198514],
+    "gamma": {
+        "approximate_degrees": 0.174792123614,
+        "definition": "clockwise from true north to grid north",
+    },
+    "conversion": {
+        "formula": "(true-from - gamma) mod 360", "additional_180_degree_reversal": False,
+    },
+    "numerical_specification": {
+        "unrounded_grid_from_deg": 48.825207876386, "decimal_places": 6,
+        "grid_from_deg": 48.825208,
+    },
+    "spatial_approximation": {
+        "method": "one constant anchor-derived bearing over the crop",
+        "incident": "owner-identified Santa Maria F01 development case",
+        "query_point": "nearby NASA point adopted by owner",
+        "qualification": "no independent historical geolocation or physical-wind validity claim",
+    },
+    "source_discrepancies": {
+        "researcher_reported_screenshot_text": "12/12/2024-1131H",
+        "owner_identified_incident_year": 2023, "dswd_approximate_time": "13:25",
+    },
+    "evidence_references": {
+        "source_contract_handback": "C:/Users/gibgib/.codex/attachments/49766430-ab36-4395-8c74-7bc3a5db22c4/Pasted text.txt",
+        "geometry_handback": "C:/Users/gibgib/.codex/attachments/d53164bd-be77-4e97-bdc9-07245b8eb129/Pasted text.txt",
+        "authority": "docs/ai/DECISIONS.md D-122",
+    },
+}
 PHASE15_CANDIDATE_MODEL = (
     PHASE15_CODE_DIR / "output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/rf_sigmoid.joblib"
 ).as_posix()
@@ -609,11 +660,21 @@ def _phase15_number(value, minimum=0, integer=False):
 
 
 def _phase15_is_candidate(config):
-    return config.get("phase15", {}).get("schema_version") == PHASE15_CANDIDATE_SCHEMA
+    profile = config.get("phase15")
+    return isinstance(profile, dict) and profile.get("schema_version") in (
+        PHASE15_CANDIDATE_SCHEMA, PHASE16_CANDIDATE_SCHEMA,
+    )
 
 
 def _phase15_candidate_contract(active):
     c, sim, ml = active["candidate_inputs"], active["simulation"], active["ml_model"]
+    successor = active["phase15"]["schema_version"] == PHASE16_CANDIDATE_SCHEMA
+    bearing = PHASE16_GRID_FROM_DEG if successor else 315.0
+    if successor:
+        # Canonical JSON retains scalar types, unlike dict equality (False == 0, 49 == 49.0).
+        if (_phase15_json_bytes(active["wind_input_basis"]) != _phase15_json_bytes(PHASE16_WIND_INPUT_BASIS)
+                or active["phase15"]["scenario_id"] != PHASE16_SCENARIO_ID):
+            raise ValueError("Phase 16 requires the adopted wind input basis and scenario identity")
     _phase15_exact(c, "interpretation_policy mask_seed_policy expected_grid window reader_capability")
     if (c["interpretation_policy"] != candidate_inputs.POLICY_ID
             or c["mask_seed_policy"] != candidate_inputs.MASK_POLICY_ID
@@ -623,7 +684,7 @@ def _phase15_candidate_contract(active):
             or any(type(v) is not int for point in sim["ignition_points"] for v in point)
             or sim["seed"] != 42 or sim["max_timesteps"] != 300
             or active["placeholder_transition"] != {"T_3_to_4": 1, "T_4_to_5": 1, "wind_weight": 0.20}
-            or active["wind"]["speed_kmh"] != 17.7 or active["wind"]["direction_deg"] != 315.0
+            or active["wind"]["speed_kmh"] != 17.7 or active["wind"]["direction_deg"] != bearing
             or active["flammability_weights"] != DEFAULT_FLAMMABILITY_WEIGHTS
             or active["environment"]["nodata_value"] != -9999):
         raise ValueError("Candidate engineering case may not substitute seeds, wind, timers or weights")
@@ -660,17 +721,20 @@ def _phase15_candidate_contract(active):
 def _phase15_normalize(config):
     _phase15_metadata(config)
     candidate = _phase15_is_candidate(config)
+    successor = candidate and config["phase15"]["schema_version"] == PHASE16_CANDIDATE_SCHEMA
     keys_by_section = dict(PHASE15_KEYS)
     if candidate:
         keys_by_section["phase15"] = keys_by_section["phase15"].replace(" phase14_reconciliation_sha256", "")
         keys_by_section["ml_model"] += " calibration_manifest_path calibration_manifest_sha256"
         keys_by_section["candidate_inputs"] = "interpretation_policy mask_seed_policy expected_grid window reader_capability"
+    if successor:
+        keys_by_section["wind_input_basis"] = " ".join(PHASE16_WIND_INPUT_BASIS)
     _phase15_exact(config, " ".join(keys_by_section))
     active = deepcopy(config)
     for section, keys in keys_by_section.items():
         _phase15_exact(active[section], keys)
     p, sim, ml = active["phase15"], active["simulation"], active["ml_model"]
-    schema = PHASE15_CANDIDATE_SCHEMA if candidate else "phase15_setc_rf_ca.v1"
+    schema = p["schema_version"] if candidate else "phase15_setc_rf_ca.v1"
     if (p["schema_version"], p["mode"], p["timestep_unit"]) != (schema, "pilot", "simulation_step") or p["enabled"] is not False:
         raise ValueError("Phase 15 disk configuration must remain disabled")
     for key in ("authorization_reference", "scenario_id", "run_id"):
@@ -706,6 +770,8 @@ def _phase15_normalize(config):
     direction = active["wind"]["direction_deg"]
     if type(direction) not in (int, float) or not math.isfinite(direction):
         raise ValueError("Finite wind bearing required")
+    if successor and direction != PHASE16_GRID_FROM_DEG:
+        raise ValueError("Phase 16 requires the exact raw grid-from bearing 48.825208")
     active["wind"] = WindContract.from_config(active["wind"]).to_config()
     points = sim["ignition_points"]
     if not isinstance(points, list) or not points:
@@ -1199,9 +1265,7 @@ def run_simulation(config: dict, *, transition_observer=None, transition_provena
                    explicitly_authorized=False, approval_reference=None, expected_binding_sha256=None,
                    config_path=None) -> None:
     clock = (time.monotonic(), datetime.now(timezone.utc).isoformat())
-    if "candidate_inputs" in config and (
-            not isinstance(config.get("phase15"), dict)
-            or config["phase15"].get("schema_version") != PHASE15_CANDIDATE_SCHEMA):
+    if ("candidate_inputs" in config or "wind_input_basis" in config) and not _phase15_is_candidate(config):
         raise ValueError("Candidate-marked configuration requires the candidate Phase 15 profile")
     if "phase15" in config:
         if transition_observer is not None or transition_provenance is not None:

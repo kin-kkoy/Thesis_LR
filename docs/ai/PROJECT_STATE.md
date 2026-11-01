@@ -4,23 +4,24 @@
 
 - **Purpose:** Navigation index; identified source, inputs, artifacts and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-11-01 (Asia/Manila), owner Phase 15 closeout D-121.
-- **Snapshot base:** `102c9ac` on `codex/rf-phase15-review`, plus pending writer/viewer work.
-- **Current handoff:** D-121 for Phase 16 planning; D-120 for the accepted-chain/source checkpoint.
-- **Historical index:** The tables below retain the October 12 evidence scope; they are not the latest execution status.
-- **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
+- **Last updated:** 2026-11-02 (Asia/Manila), closeout/AUC planning D-157.
+- **Snapshot:** `66d08e0`, `codex/rf-phase16`; nine-path uncommitted diff.
+- **Current handoff:** D-157 independent closeout PASS; checkpoint/AUC plan next.
+- **Historical index:** Tables retain October 12 evidence, not current execution status.
+- **Staleness rule:** Recheck changed source, input/artifact hashes, configuration, dependencies or approvals.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
 
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Status:** Phase 14 closed; Phase 15 CLOSED by owner, D-121. Phase 16 is planning only.
-- **Accepted:** Cropped Set C, train-only RF, frozen sigmoid and F01 integration; owner acceptances and supplied closeouts, D-120/D-121.
-- **Limits:** F01 was calibration, not forest training. F1 0.785902 on 135,992 cells; 42.33% of reference-burn cells excluded. No held-out/physical-validity claim.
-- **Next:** Phase 16A: verify proposed NASA 49-degree basis, then prepare a separately authorized F01 run. Preserve the accepted 315-degree result.
-- **Then:** Phase 16B: second-fire prior-use/overlap assessment and frozen RF/LR evaluation protocol before accessing results. Synthetic final test remains separate/restricted.
-- **Pending:** Current manuscript and final_results.py/tests need their own review; historical A/B, matched CA baseline and partner handoff remain qualified/incomplete.
-- **Boundaries:** No execution, artifact/model/row access, transfer, source edits or Git mutations from closeout. Preserve all evidence and consumed approvals; no automatic dispatch.
+- **Status:** Phases 14/15 closed; CA 356/viewer 58 PASS; F01 closeout-ready D-157; 16B parked.
+- **Accepted:** Cropped Set C, train-only RF, frozen sigmoid/F01; D-120/D-121 owner acceptances.
+- **Limits:** F01 calibration. F1 315°:0.785902, 49°:0.852327 on 135,992 cells; 42.33% reference-burn exclusion. No held-out/physical-validity claim.
+- **Adopted:** INFERRED NASA true-49 converts to constant grid-from 48.825208, ignition pixel centre/six decimals. F01 is owner-identified Santa Maria.
+- **Timing:** HR=11/BFP 11:31 owner/partner-adopted. Preserve reported screenshot year 2024, owner year 2023, DSWD 13:25 discrepancy.
+- **Next:** Owner checkpoints/preserves evidence; Validator plans probability ROC-AUC, no run.
+- **Pending:** Manuscript/viewer review; A/B, matched CA and partner handoff qualified. 16B prior-use/overlap/protocol and synthetic final test gated.
+- **Boundaries:** D-155 consumed; retained evidence review/parent memory only. No edits/tests/input access/reruns/cleanup/Git or dispatch.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state
@@ -88,7 +89,7 @@
 | Phase 11 validation report | `docs/Phase11_Tasks_11_1_11_2_Report.md` |
 | Phase 12 Task 12.1 policy review | `docs/Phase12_Task12_1_Grouped_Allocation_Policy_Review.md` |
 | Phase 12 failure / supervisor | Unchanged `docs/Phase12Block.md`; D-042–D-045; `run_set_c_supervised.py`; focused tests |
-| Current closure / authorization boundary | D-054 acceptance; D-053 R5 PASS; D-052 repair |
+| Current review / authority | D-157 closeout PASS; retention/checkpoint/AUC planning |
 | Phase 13 numerical proposal for re-review | `docs/Phase13A_RF_Tuning_Protocol_Proposal.md` Draft 1; D-055 |
 | Phase 14 protocol / source gates | `docs/Phase14A_Calibration_Final_Test_Protocol_Proposal.md` Draft 4; D-077–D-118 |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |

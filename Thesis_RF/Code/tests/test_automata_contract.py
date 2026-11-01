@@ -270,6 +270,7 @@ def test_compensating_malformed_chunks_fail_at_the_first_chunk():
 
 
 
+@pytest.mark.parametrize("bearing", [315.0, 48.825208])
 @pytest.mark.parametrize("probability,draw,ignites", [
     (0.0, 0.0, False),
     (1.0, 0.99, True),
@@ -278,9 +279,9 @@ def test_compensating_malformed_chunks_fail_at_the_first_chunk():
     (0.49999999, 0.499999995, True),
 ])
 def test_candidate_calibrated_probability_is_compared_as_float32_without_extra_factors(
-        monkeypatch, probability, draw, ignites):
+        monkeypatch, probability, draw, ignites, bearing):
     config = _config()
-    config["wind"].update(speed_kmh=17.7, direction_deg=315.0)
+    config["wind"].update(speed_kmh=17.7, direction_deg=bearing)
     config["placeholder_transition"].update(wind_weight=0.20, T_3_to_4=1, T_4_to_5=1)
     config["simulation"].update(seed=42, emergency_checkpoint_enabled=False, checkpoint_interval=0)
     engine = FireAutomata(_environment(), config)
@@ -307,7 +308,8 @@ def test_candidate_calibrated_probability_is_compared_as_float32_without_extra_f
     assert ignites == (draw < float(np.float32(probability)))
 
 
-def test_candidate_multistep_matches_independent_scalar_state_features_timers_and_rng():
+@pytest.mark.parametrize("bearing", [315.0, 48.825208])
+def test_candidate_multistep_matches_independent_scalar_state_features_timers_and_rng(bearing):
     # Independent scalar neighbourhood/feature/transition expectation; no engine,
     # feature assembler, wind helper, teacher or observer is used for the reference.
     shape = (3, 4)
@@ -322,7 +324,7 @@ def test_candidate_multistep_matches_independent_scalar_state_features_timers_an
         grid_shape=shape, transform=None, crs=None)
     config = _config()
     config["simulation"].update(seed=42, emergency_checkpoint_enabled=False, checkpoint_interval=0)
-    config["wind"].update(speed_kmh=17.7, direction_deg=315.0)
+    config["wind"].update(speed_kmh=17.7, direction_deg=bearing)
     config["placeholder_transition"].update(wind_weight=0.20, T_3_to_4=1, T_4_to_5=1)
     engine = FireAutomata(environment, config)
     engine.set_ignition([(1, 1)])
@@ -331,7 +333,7 @@ def test_candidate_multistep_matches_independent_scalar_state_features_timers_an
     state[1, 1] = 4
     ignition = np.zeros(shape, dtype=np.int16)
     blazing = np.zeros(shape, dtype=np.int16)
-    sine, cosine = np.sin(np.deg2rad(315.0)), np.cos(np.deg2rad(315.0))
+    sine, cosine = np.sin(np.deg2rad(bearing)), np.cos(np.deg2rad(bearing))
     offsets = [(r, c) for r in (-1, 0, 1) for c in (-1, 0, 1) if (r, c) != (0, 0)]
     kernel = np.zeros((3, 3), dtype=np.float32)
     for dr, dc in offsets:
