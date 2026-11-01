@@ -4,9 +4,9 @@
 
 - **Purpose:** Navigation index; identified source, inputs, artifacts and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-11-01 (Asia/Manila), D-120 source/manuscript checkpoint.
-- **Snapshot base:** D-120 on `codex/rf-phase15-review`; inspect Git for the checkpoint commit.
-- **Current handoff:** D-120; `docs/Thesis_Paper/Chapt4&6.md` Section 5.5. October 23 handoff remains historical.
+- **Last updated:** 2026-11-01 (Asia/Manila), owner Phase 15 closeout D-121.
+- **Snapshot base:** `102c9ac` on `codex/rf-phase15-review`, plus pending writer/viewer work.
+- **Current handoff:** D-121 for Phase 16 planning; D-120 for the accepted-chain/source checkpoint.
 - **Historical index:** The tables below retain the October 12 evidence scope; they are not the latest execution status.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
@@ -14,13 +14,13 @@
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Checkpoint cropped Set C RF source, agent profiles and Chapter 5 Section 5.5; owner requests commit and push.
-- **Reported acceptances:** Cropped dataset, one-fit RF, frozen sigmoid calibration and single-F01 engineering run; independent closeouts supplied in owner chat. See D-120 for identities and limits.
-- **Direct checks:** Reviewed RF source pins match current files. Section 5.5 matches the Writer handback apart from formatting; metrics reconcile arithmetically.
-- **Status:** Phase 14 closed; Phase 15 open. F01 is development/calibration evidence; final-test data remain restricted.
-- **Boundaries:** No new experiments, model/data access, artifact publication, LR edits or cleanup. Commit only intended source, profiles and manuscript; exclude generated artifacts.
-- **Next action:** Independent manuscript review and remaining cross-chapter reconciliation; a later owner decision governs Phase 15 closure.
-- **Agent tooling:** Owner updated model choices; inspect current `.codex/agents/*.toml`. Thesis Writer is available; no automatic dispatch.
+- **Status:** Phase 14 closed; Phase 15 CLOSED by owner, D-121. Phase 16 is planning only.
+- **Accepted:** Cropped Set C, train-only RF, frozen sigmoid and F01 integration; owner acceptances and supplied closeouts, D-120/D-121.
+- **Limits:** F01 was calibration, not forest training. F1 0.785902 on 135,992 cells; 42.33% of reference-burn cells excluded. No held-out/physical-validity claim.
+- **Next:** Phase 16A: verify proposed NASA 49-degree basis, then prepare a separately authorized F01 run. Preserve the accepted 315-degree result.
+- **Then:** Phase 16B: second-fire prior-use/overlap assessment and frozen RF/LR evaluation protocol before accessing results. Synthetic final test remains separate/restricted.
+- **Pending:** Current manuscript and final_results.py/tests need their own review; historical A/B, matched CA baseline and partner handoff remain qualified/incomplete.
+- **Boundaries:** No execution, artifact/model/row access, transfer, source edits or Git mutations from closeout. Preserve all evidence and consumed approvals; no automatic dispatch.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state
