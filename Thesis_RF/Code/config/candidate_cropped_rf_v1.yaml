@@ -1,0 +1,95 @@
+# Source preparation only. Operational limits/destinations require later adoption.
+schema_version: candidate_cropped_rf_initial.v1
+enabled: false
+authorization_reference: null
+dataset:
+  id: candidate-r2-cropped-1024-v1-g364-r1
+  package_root: 'C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\candidate-r2-cropped-1024-v1-g364-r1-package'
+  master_sha256: c7a92327eb7916e1e1f8ed99b7e178537875c8fe8aecd045ec97055b6738a729
+  custodian_manifest_sha256: 44875949f38d06090c902bb129205ea61c5e7f77e0baa47fe1d0084bfe0a22ca
+  public_marker:
+    bytes: 150
+    sha256: 76acce9bb029f699766dfc5a2d5ba737806076fafd90a7ff90e5599fdf7f9b10
+  roles:
+    train:
+      rows: 227576
+      manifest:
+        bytes: 626
+        sha256: 778ded55e5f2b6a7eaa02e8012c9c1422f17315dcb34fd0cdf8c8046e9d94ab4
+      csv:
+        bytes: 16413270
+        sha256: 591ab4b3f7e228654f6359a736df9876265c88ae7cb2b07e1647df93535160cd
+    validation:
+      rows: 136341
+      manifest:
+        bytes: 630
+        sha256: a85c29a919c892f5a3f2740e94ce887829aab2bba18164f419f28fdaa673966f
+      csv:
+        bytes: 9620367
+        sha256: 6bdd0f1855360c5bb4ff6af50cce774bb46e3a2a5583d4717742d4ee336e2079
+teacher_id: exploratory_additive_exposure_teacher.r2
+numerical_contract_id: additive_exposure_quantized_f32_f64.r2
+feature_schema_version: set_c.v1
+feature_names:
+  - slope_risk
+  - proximity_risk
+  - building_presence
+  - material_risk
+  - material_class
+  - wind_speed
+  - wind_sin
+  - wind_cos
+  - neighbor_burning_count
+  - composite_flammability
+  - wind_weighted_score
+feature_dtype: float32
+target_name: Ignited
+target_version: ignition_t_plus_1.v1
+target_dtype: int8
+positive_label: 1
+estimator:
+  n_estimators: 200
+  max_depth: 5
+  min_samples_split: 20
+  min_samples_leaf: 1
+  max_features: sqrt
+  class_weight: null
+  criterion: gini
+  bootstrap: true
+  random_state: 42
+  n_jobs: 2
+  oob_score: false
+  warm_start: false
+  max_samples: null
+  max_leaf_nodes: null
+  min_weight_fraction_leaf: 0.0
+  min_impurity_decrease: 0.0
+  ccp_alpha: 0.0
+  monotonic_cst: null
+  verbose: 0
+environment:
+  python: "3.14.3"
+  sklearn: "1.8.0"
+  numpy: "2.4.4"
+  pandas: "3.0.2"
+  scipy: "1.17.1"
+  joblib: "1.5.3"
+  pyyaml: "6.0.3"
+protocol:
+  fits: 1
+  fit_role: train
+  prediction_role: validation
+  search_trials: 0
+  refit: false
+  preprocessing: none
+  calibration: false
+  threshold: null
+  metrics: [average_precision, roc_auc, brier_mean_squared_error, log_loss]
+resources:
+  max_process_rss_bytes: null
+  min_available_physical_memory_bytes: null
+  min_free_disk_bytes: null
+  max_wall_seconds: null
+  observation_interval_seconds: null
+destination: null
+evidence_dir: null

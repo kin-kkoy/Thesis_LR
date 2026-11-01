@@ -695,3 +695,253 @@ def test_partial_and_corrupt_record_writes_never_commit_or_retry(ready, monkeypa
         assert record(ready)["start_record_sha256"] is None
     else:
         assert not (ready.destination / "termination.json").exists()
+
+
+
+@pytest.fixture
+def candidate_ready(ready, monkeypatch):
+    """Tiny array substitute for the bound reader; no native capability claim."""
+    config = o._phase15_yaml((Path(o.__file__).parent /
+                              "config/phase15_candidate_r2_rf_ca_v1.yaml").read_bytes())
+    for section in ("environment", "phase15", "output"):
+        if section == "phase15":
+            for key in ("authorization_reference", "run_id", "resources"):
+                config[section][key] = deepcopy(ready.config[section][key])
+        else:
+            config[section] = deepcopy(ready.config[section])
+    window = deepcopy(o.PHASE15_CANDIDATE_WINDOW)
+    window["shape"] = [2, 3]
+    monkeypatch.setattr(o, "PHASE15_CANDIDATE_WINDOW", window)
+    monkeypatch.setattr(o, "PHASE15_CANDIDATE_IGNITIONS", [[0, 0]])
+    monkeypatch.setattr(o, "PHASE15_CANDIDATE_MODEL", str(ready.model))
+    monkeypatch.setattr(o, "PHASE15_CANDIDATE_MODEL_SHA256", sha256(ready.payload).hexdigest())
+    manifest = ready.model.parent / "calibration_manifest.json"
+    manifest.write_bytes(b'{"synthetic_calibration":true}\n')
+    monkeypatch.setattr(o, "PHASE15_CANDIDATE_MANIFEST_SHA256", sha256(manifest.read_bytes()).hexdigest())
+    config["ml_model"].update(model_path=str(ready.model), model_sha256=sha256(ready.payload).hexdigest(),
+        calibration_manifest_path=str(manifest), calibration_manifest_sha256=sha256(manifest.read_bytes()).hexdigest())
+    config["simulation"]["ignition_points"] = [[0, 0]]
+    capability = dict(policy_id=o.candidate_inputs.POLICY_ID,
+        runtime={"rasterio": rasterio.__version__, "gdal": rasterio.__gdal_version__},
+        controls_verified=True, windowed_reads_verified=True,
+        environment_options=dict(o.candidate_inputs.ENV_OPTIONS),
+        open_options=dict(o.candidate_inputs.OPEN_OPTIONS),
+        verification_reference="unverified-synthetic-substitute-only",
+        window_verification_reference="unverified-synthetic-window-substitute-only")
+    grid = dict(shape=list(o.candidate_crops.PARENT_SHAPE), crs="EPSG:32651",
+                transform=list(from_origin(100, 200, 3, 3)))
+    config["candidate_inputs"].update(window=window, expected_grid=grid, reader_capability=capability)
+    raw = dict(slope=np.array([[0, 0, -9999], [1, -9999, 1]], dtype=np.float32),
+        proximity=np.zeros((2, 3), dtype=np.float32),
+        buildings=np.array([[10, 0, -9999], [10, 10, 10]], dtype=np.float32),
+        materials=np.array([[1, 0, -9999], [1, 1, 1]], dtype=np.int16))
+    masks = {name: np.full((2, 3), 255, dtype=np.uint8) for name in raw}
+    calls = []
+    def read(paths, pins, **kwargs):
+        calls.append((deepcopy(paths), deepcopy(pins), deepcopy(kwargs)))
+        assert kwargs == dict(expected_grid=grid, configured_nodata=-9999, capability=capability,
+                              window=window["global_origin"] + [2, 3])
+        transform = from_origin(100, 200, 3, 3) * rasterio.Affine.translation(
+            window["global_origin"][1], window["global_origin"][0])
+        return o.candidate_inputs.prepare_arrays(raw, masks, {name: -9999 for name in raw},
+            configured_nodata=-9999, crs=grid["crs"], transform=transform, input_hashes=pins,
+            interpretation={"policy_id": o.candidate_inputs.POLICY_ID, "synthetic_reader": True},
+            global_origin=tuple(window["global_origin"]), full_grid_shape=tuple(grid["shape"]))
+    monkeypatch.setattr(o.candidate_inputs, "read_inputs", read)
+    monkeypatch.setattr(o, "_phase15_environment", lambda *_: pytest.fail("legacy reader fallback"))
+    ready.config, ready.manifest, ready.reader_calls = config, manifest, calls
+    ready.raw, ready.native_masks = raw, masks
+    rebind(ready)
+    return ready
+
+
+def test_candidate_profile_is_disabled_distinct_and_pending():
+    config = o.load_config(str(Path(o.__file__).parent / "config/phase15_candidate_r2_rf_ca_v1.yaml"))
+    assert config["phase15"]["schema_version"] == o.PHASE15_CANDIDATE_SCHEMA
+    assert config["phase15"]["enabled"] is False
+    assert config["phase15"]["authorization_reference"] is None
+    assert config["phase15"]["run_id"] is None and config["output"]["output_dir"] is None
+    assert all(v is None for k, v in config["phase15"]["resources"].items() if k != "enforcement")
+    assert config["candidate_inputs"]["window"] == o.PHASE15_CANDIDATE_WINDOW
+    assert config["simulation"]["ignition_points"] == [[638, 554]]
+    assert config["ml_model"]["model_sha256"] == o.PHASE15_CANDIDATE_MODEL_SHA256
+    assert config["ml_model"]["calibration_manifest_sha256"] == o.PHASE15_CANDIDATE_MANIFEST_SHA256
+    assert "phase14_reconciliation_sha256" not in config["phase15"]
+    with pytest.raises(ValueError):
+        o._phase15_normalize(config)
+
+
+@pytest.mark.parametrize("section,key,value", [
+    ("simulation", "checkpoint_interval", 1),
+    ("simulation", "emergency_checkpoint_enabled", True),
+    ("simulation", "resume_checkpoint", "synthetic.npz"),
+    ("simulation", "seed", 43),
+    ("simulation", "ignition_points", [[0, 1]]),
+    ("simulation", "max_timesteps", 301),
+    ("ml_model", "threshold", 0.5),
+    ("ml_model", "model_sha256", o.PHASE15_MODEL_SHA256),
+    ("ml_model", "calibration_manifest_sha256", "0" * 64),
+    ("candidate_inputs", "reader_capability", None),
+    ("candidate_inputs", "window", None),
+])
+def test_candidate_rejects_unadopted_routes_before_construction(candidate_ready, monkeypatch, section, key, value):
+    candidate_ready.config[section][key] = value
+    candidate_ready.path.write_text(yaml.safe_dump(candidate_ready.config), encoding="utf-8")
+    monkeypatch.setattr(o, "FireAutomata", lambda *_: pytest.fail("constructed before rejection"))
+    with pytest.raises((ValueError, TypeError)):
+        run(candidate_ready)
+    assert not candidate_ready.destination.exists()
+
+
+@pytest.mark.parametrize("which", ["model", "manifest"])
+def test_candidate_both_hashes_precede_deserialization(candidate_ready, monkeypatch, which):
+    path = candidate_ready.model if which == "model" else candidate_ready.manifest
+    path.write_bytes(b"mismatched synthetic bytes")
+    monkeypatch.setattr(FireAutomata, "load_model", lambda *_: pytest.fail("unverified deserialization"))
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        run(candidate_ready)
+    assert record(candidate_ready)["output_valid"] is False
+    assert not (candidate_ready.destination / "final_state.tif").exists()
+
+
+def test_candidate_verified_bytes_and_manifest_binding_survive_path_replacement(candidate_ready, monkeypatch):
+    original, received = FireAutomata.load_model, []
+    def load(engine, buffer):
+        candidate_ready.audit["active"] = False
+        try:
+            candidate_ready.model.write_bytes(b"path replacement after verification")
+        finally:
+            candidate_ready.audit["active"] = True
+        received.append(buffer.getvalue())
+        return original(engine, buffer)
+    monkeypatch.setattr(FireAutomata, "load_model", load)
+    run(candidate_ready)
+    assert received == [candidate_ready.payload]
+    result = record(candidate_ready)
+    assert result["observed_bindings"]["model"]["manifest"]["observed_sha256"] == o.PHASE15_CANDIDATE_MANIFEST_SHA256
+    assert result["output_valid"] is True
+    assert set(candidate_ready.binding["source"]["files"]) == set(o.PHASE15_SOURCES)
+    assert candidate_ready.binding["evidence_scope"]["final_test_eligible"] is False
+
+
+def test_candidate_masks_valid_zeros_and_atomic_seeds_reach_engine(candidate_ready, monkeypatch):
+    engines, original = [], o.FireAutomata
+    def construct(environment, config):
+        assert config["simulation"]["checkpoint_interval"] == 0
+        assert config["simulation"]["emergency_checkpoint_enabled"] is False
+        assert config["simulation"]["resume_checkpoint"] is None
+        engine = original(environment, config)
+        engines.append(engine)
+        return engine
+    monkeypatch.setattr(o, "FireAutomata", construct)
+    run(candidate_ready)
+    assert len(candidate_ready.reader_calls) == len(engines) == 1
+    engine = engines[0]
+    assert engine.simulation_valid_mask.tolist() == [[True, True, False], [True, False, True]]
+    assert engine.burnable_mask.tolist() == [[True, False, False], [True, False, True]]
+    assert record(candidate_ready)["observed_bindings"]["converted_ignitions"] == [[0, 0]]
+    assert record(candidate_ready)["termination_reason"] == "inactive"
+
+
+@pytest.mark.parametrize("bad_seed", [[0, 1], [1, 1], [2, 0]])
+def test_candidate_invalid_complete_seed_list_never_sets_any_ignition(candidate_ready, monkeypatch, bad_seed):
+    # First seed is valid: failure must still precede all engine/ignition mutation.
+    points = [[0, 0], bad_seed]
+    monkeypatch.setattr(o, "PHASE15_CANDIDATE_IGNITIONS", points)
+    candidate_ready.config["simulation"]["ignition_points"] = points
+    rebind(candidate_ready)
+    monkeypatch.setattr(o, "FireAutomata", lambda *_: pytest.fail("constructed before atomic seed validation"))
+    monkeypatch.setattr(FireAutomata, "set_ignition", lambda *_: pytest.fail("partial ignition"))
+    with pytest.raises(ValueError, match="receiving population"):
+        run(candidate_ready)
+    assert record(candidate_ready)["output_valid"] is False
+
+
+@pytest.mark.parametrize("failure", ["step", "resource", "report"])
+def test_candidate_failure_suppression_and_post_commit_incident(candidate_ready, monkeypatch, failure):
+    monkeypatch.setattr(FireAutomata, "save_checkpoint", lambda *_: pytest.fail("periodic checkpoint"))
+    monkeypatch.setattr(FireAutomata, "_save_emergency_checkpoint", lambda *_: pytest.fail("emergency checkpoint"))
+    if failure == "step":
+        def fail(*_):
+            raise ArithmeticError("synthetic prediction failure")
+        monkeypatch.setattr(SyntheticEstimator, "predict_proba", fail)
+        expected = RuntimeError
+    elif failure == "resource":
+        original = o._Phase15Resources.check
+        def check(monitor, boundary, force=True):
+            if boundary == "after_step":
+                raise o._Phase15Stop("resource_limit")
+            return original(monitor, boundary, force)
+        monkeypatch.setattr(o._Phase15Resources, "check", check)
+        expected = o._Phase15Stop
+    else:
+        def report(message, **_):
+            if message.startswith("Phase 15 committed:"):
+                raise OSError("synthetic post-commit reporting")
+        monkeypatch.setattr(o, "print", report, raising=False)
+        expected = RuntimeError
+    with pytest.raises(expected):
+        run(candidate_ready)
+    result = record(candidate_ready)
+    assert result["output_valid"] is (failure == "report")
+    if failure != "report":
+        assert not (candidate_ready.destination / "final_state.tif").exists()
+    else:
+        assert result["termination_reason"] == "inactive"
+        assert all((candidate_ready.destination / name).exists()
+                   for name in ("final_state.tif", "simulation_environment_valid.tif"))
+
+
+
+@pytest.mark.parametrize("schema", [None, "phase15_setc_rf_ca.v1"])
+def test_candidate_malformed_profile_never_falls_back_to_legacy(candidate_ready, monkeypatch, schema):
+    candidate_ready.config["phase15"]["schema_version"] = schema
+    candidate_ready.path.write_text(yaml.safe_dump(candidate_ready.config), encoding="utf-8")
+    monkeypatch.setattr(o, "_run_legacy_simulation", lambda *_args, **_kwargs: pytest.fail("legacy fallback"))
+    monkeypatch.setattr(o, "load_model", lambda *_: pytest.fail("legacy model fallback"))
+    with pytest.raises(ValueError):
+        run(candidate_ready)
+    assert not candidate_ready.destination.exists()
+
+
+
+def _guard_candidate_dispatch_side_effects(monkeypatch, config_path=None):
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("candidate rejection reached a forbidden side effect")
+    for name in ("_run_legacy_simulation", "_run_phase15", "load_model", "_phase15_load_model",
+                 "_phase15_environment", "_phase15_candidate_environment", "EnvironmentManager",
+                 "FireAutomata", "_phase15_raster", "_phase15_write_json"):
+        monkeypatch.setattr(o, name, forbidden)
+    monkeypatch.setattr(o.np.random, "default_rng", forbidden)
+    monkeypatch.setattr(o.rasterio, "open", forbidden)
+    monkeypatch.setattr(Path, "mkdir", forbidden)
+    original_open = Path.open
+    def only_configuration(path, mode="r", *args, **kwargs):
+        if config_path is None or Path(path) != config_path or mode != "rb":
+            forbidden()
+        return original_open(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", only_configuration)
+
+
+@pytest.mark.parametrize("marker", [None, {}])
+def test_candidate_marker_without_profile_rejects_direct_without_approval_controls(monkeypatch, marker):
+    config = {"candidate_inputs": marker}
+    assert "phase15" not in config
+    with monkeypatch.context() as guarded:
+        _guard_candidate_dispatch_side_effects(guarded)
+        with pytest.raises(ValueError, match="Candidate-marked configuration requires the candidate Phase 15 profile"):
+            o.run_simulation(config)
+
+
+@pytest.mark.parametrize("marker", [None, {}])
+def test_candidate_marker_without_profile_rejects_cli_without_approval_flags(tmp_path, monkeypatch, capsys, marker):
+    config = {"candidate_inputs": marker,
+              "environment": {"raster_dir": "synthetic-raster-access-forbidden"}}
+    path = tmp_path / "candidate-without-profile.yaml"
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    assert "phase15" not in config
+    with monkeypatch.context() as guarded:
+        _guard_candidate_dispatch_side_effects(guarded, config_path=path)
+        status = o.simulation_main(["--config", str(path)])
+    assert status == 1
+    assert "Candidate-marked configuration requires the candidate Phase 15 profile" in capsys.readouterr().err

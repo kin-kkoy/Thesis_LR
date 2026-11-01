@@ -41,6 +41,8 @@ try:
 	from modules.ca_state import validate_full_state_grid
 	from modules.wind_convention import WindContract
 	from modules.set_c_pilot import capture_resource_snapshot
+	from modules import candidate_dataset_inputs as candidate_inputs
+	from modules import candidate_dataset_crops as candidate_crops
 except ModuleNotFoundError:
 	from Code.modules.automata_engine import FireAutomata
 	from Code.modules.data_loader import EnvironmentManager
@@ -61,6 +63,8 @@ except ModuleNotFoundError:
 	from Code.modules.ca_state import validate_full_state_grid
 	from Code.modules.wind_convention import WindContract
 	from Code.modules.set_c_pilot import capture_resource_snapshot
+	from Code.modules import candidate_dataset_inputs as candidate_inputs
+	from Code.modules import candidate_dataset_crops as candidate_crops
 
 
 DEFAULT_FLAMMABILITY_WEIGHTS = {
@@ -516,7 +520,16 @@ PHASE15_SOURCES = tuple("Thesis_RF/Code/" + name for name in (
     "modules/ca_state.py", "modules/data_loader.py", "modules/feature_pipeline.py",
     "modules/model_free_teacher.py", "modules/set_c_collector.py", "modules/set_c_pilot.py",
     "modules/transition_observer.py", "modules/wind_convention.py",
+    "modules/candidate_dataset_inputs.py", "modules/candidate_dataset_crops.py",
 ))
+PHASE15_CANDIDATE_SCHEMA = "phase15_candidate_r2_rf_ca.v1"
+PHASE15_CANDIDATE_MODEL = (
+    PHASE15_CODE_DIR / "output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/rf_sigmoid.joblib"
+).as_posix()
+PHASE15_CANDIDATE_MODEL_SHA256 = "78828dd4b2fcc66e9cdfd8ecb4a3ccd18c268478f3b5e6a4374c3286e3903e54"
+PHASE15_CANDIDATE_MANIFEST_SHA256 = "3141b8554662d703691c06a327f9a6c96c79f20840ce3738c358d4bdb6632afb"
+PHASE15_CANDIDATE_WINDOW = candidate_crops.frozen_design()["family_windows"][0]
+PHASE15_CANDIDATE_IGNITIONS = [[638, 554]]
 PHASE15_ABSENT = ("Thesis_RF/__init__.py", "Thesis_RF/Code/__init__.py")
 PHASE15_OUTPUTS = frozenset((
     "start.json", "termination.json", "final_state.tif", "simulation_environment_valid.tif",
@@ -595,21 +608,77 @@ def _phase15_number(value, minimum=0, integer=False):
         raise ValueError("Invalid numeric configuration value")
 
 
+def _phase15_is_candidate(config):
+    return config.get("phase15", {}).get("schema_version") == PHASE15_CANDIDATE_SCHEMA
+
+
+def _phase15_candidate_contract(active):
+    c, sim, ml = active["candidate_inputs"], active["simulation"], active["ml_model"]
+    _phase15_exact(c, "interpretation_policy mask_seed_policy expected_grid window reader_capability")
+    if (c["interpretation_policy"] != candidate_inputs.POLICY_ID
+            or c["mask_seed_policy"] != candidate_inputs.MASK_POLICY_ID
+            or canonical_metadata_hash(c["window"]) != canonical_metadata_hash(PHASE15_CANDIDATE_WINDOW)):
+        raise ValueError("Candidate requires the frozen F01 window and input policies")
+    if (sim["ignition_points"] != PHASE15_CANDIDATE_IGNITIONS
+            or any(type(v) is not int for point in sim["ignition_points"] for v in point)
+            or sim["seed"] != 42 or sim["max_timesteps"] != 300
+            or active["placeholder_transition"] != {"T_3_to_4": 1, "T_4_to_5": 1, "wind_weight": 0.20}
+            or active["wind"]["speed_kmh"] != 17.7 or active["wind"]["direction_deg"] != 315.0
+            or active["flammability_weights"] != DEFAULT_FLAMMABILITY_WEIGHTS
+            or active["environment"]["nodata_value"] != -9999):
+        raise ValueError("Candidate engineering case may not substitute seeds, wind, timers or weights")
+    grid = c["expected_grid"]
+    _phase15_exact(grid, "shape crs transform")
+    if (grid["shape"] != list(candidate_crops.PARENT_SHAPE)
+            or any(type(v) is not int for v in grid["shape"])
+            or grid["crs"] != "EPSG:32651"
+            or not isinstance(grid["transform"], list) or len(grid["transform"]) != 9
+            or any(type(v) not in (int, float) or not math.isfinite(v) for v in grid["transform"])
+            or grid["transform"][0:2] != [3.0, 0.0]
+            or grid["transform"][3:5] != [0.0, -3.0]
+            or grid["transform"][6:] != [0.0, 0.0, 1.0]):
+        raise ValueError("Candidate parent geometry is unresolved or unsupported")
+    capability = c["reader_capability"]
+    if (not isinstance(capability, dict) or capability.get("policy_id") != candidate_inputs.POLICY_ID
+            or capability.get("runtime") != {"rasterio": rasterio.__version__, "gdal": rasterio.__gdal_version__}
+            or capability.get("controls_verified") is not True
+            or capability.get("windowed_reads_verified") is not True
+            or capability.get("environment_options") != candidate_inputs.ENV_OPTIONS
+            or capability.get("open_options") != candidate_inputs.OPEN_OPTIONS):
+        raise ValueError("Scoped candidate window-reader evidence is unresolved")
+    candidate_inputs.require_text(capability.get("verification_reference"))
+    candidate_inputs.require_text(capability.get("window_verification_reference"))
+    if (ml["model_path"] != _phase15_path(PHASE15_CANDIDATE_MODEL)
+            or ml["model_sha256"] != PHASE15_CANDIDATE_MODEL_SHA256
+            or ml["calibration_manifest_sha256"] != PHASE15_CANDIDATE_MANIFEST_SHA256):
+        raise ValueError("Accepted candidate calibrated release changed")
+    ml["calibration_manifest_path"] = _phase15_path(ml["calibration_manifest_path"])
+    if ml["calibration_manifest_path"] != (Path(ml["model_path"]).parent / "calibration_manifest.json").as_posix():
+        raise ValueError("Candidate calibration manifest must be the accepted sibling")
+
+
 def _phase15_normalize(config):
     _phase15_metadata(config)
-    _phase15_exact(config, " ".join(PHASE15_KEYS))
+    candidate = _phase15_is_candidate(config)
+    keys_by_section = dict(PHASE15_KEYS)
+    if candidate:
+        keys_by_section["phase15"] = keys_by_section["phase15"].replace(" phase14_reconciliation_sha256", "")
+        keys_by_section["ml_model"] += " calibration_manifest_path calibration_manifest_sha256"
+        keys_by_section["candidate_inputs"] = "interpretation_policy mask_seed_policy expected_grid window reader_capability"
+    _phase15_exact(config, " ".join(keys_by_section))
     active = deepcopy(config)
-    for section, keys in PHASE15_KEYS.items():
+    for section, keys in keys_by_section.items():
         _phase15_exact(active[section], keys)
     p, sim, ml = active["phase15"], active["simulation"], active["ml_model"]
-    if (p["schema_version"], p["mode"], p["timestep_unit"]) != ("phase15_setc_rf_ca.v1", "pilot", "simulation_step") or p["enabled"] is not False:
+    schema = PHASE15_CANDIDATE_SCHEMA if candidate else "phase15_setc_rf_ca.v1"
+    if (p["schema_version"], p["mode"], p["timestep_unit"]) != (schema, "pilot", "simulation_step") or p["enabled"] is not False:
         raise ValueError("Phase 15 disk configuration must remain disabled")
     for key in ("authorization_reference", "scenario_id", "run_id"):
         if not isinstance(p[key], str) or not p[key].strip():
             raise ValueError(f"phase15.{key} is required before activation")
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", p["run_id"]) is None or p["run_id"].upper() in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
         raise ValueError("Unsafe run_id")
-    if p["phase14_reconciliation_sha256"] != PHASE15_RECONCILIATION:
+    if not candidate and p["phase14_reconciliation_sha256"] != PHASE15_RECONCILIATION:
         raise ValueError("Accepted reconciliation provenance changed")
     for key in ("threshold", "inference_threshold", "classification_threshold"):
         if ml[key] is not None:
@@ -667,13 +736,15 @@ def _phase15_normalize(config):
     if len({env[name + "_file"] for name in env["input_sha256"]}) != 4:
         raise ValueError("Environmental input paths must be distinct")
     ml["model_path"] = _phase15_path(ml["model_path"])
-    if ml["model_path"] != _phase15_path(PHASE15_MODEL) or ml["model_sha256"] != PHASE15_MODEL_SHA256:
+    if not candidate and (ml["model_path"] != _phase15_path(PHASE15_MODEL) or ml["model_sha256"] != PHASE15_MODEL_SHA256):
         raise ValueError("Accepted model binding changed")
     _phase15_digest(ml["model_sha256"])
     root = _phase15_path(active["output"]["output_dir"])
     if root != _phase15_path("output/phase15"):
         raise ValueError("Only the Phase 15 output root is permitted")
     active["output"]["output_dir"] = root
+    if candidate:
+        _phase15_candidate_contract(active)
     active = apply_pipeline_defaults(active)
     active["phase15"]["enabled"] = True
     return active
@@ -715,16 +786,26 @@ def _phase15_runtime():
 
 def _phase15_binding(active, config_path, disk_sha256):
     p, env = active["phase15"], active["environment"]
-    return {"schema_version": "phase15_execution_binding.v1", "approval_reference": p["authorization_reference"],
+    candidate = _phase15_is_candidate(active)
+    result = {"schema_version": "phase15_execution_binding.v1", "approval_reference": p["authorization_reference"],
             "configuration": {"path": _phase15_path(str(config_path)), "disk_sha256": disk_sha256,
                               "activated_effective_sha256": canonical_metadata_hash(active)},
             "source": _phase15_source(), "runtime": _phase15_runtime(),
             "model": {"path": active["ml_model"]["model_path"], "sha256": active["ml_model"]["model_sha256"]},
             "inputs": {name: {"path": (Path(env["raster_dir"]) / env[name + "_file"]).as_posix(), "sha256": digest}
                        for name, digest in env["input_sha256"].items()},
-            "phase14_reconciliation_sha256": p["phase14_reconciliation_sha256"],
             "run": {"run_id": p["run_id"], "scenario_id": p["scenario_id"],
                     "destination": (Path(active["output"]["output_dir"]) / p["run_id"]).as_posix()}}
+    if candidate:
+        ml = active["ml_model"]
+        result["model"]["manifest"] = {"path": ml["calibration_manifest_path"],
+                                       "sha256": ml["calibration_manifest_sha256"]}
+        result["candidate_inputs"] = deepcopy(active["candidate_inputs"])
+        result["evidence_scope"] = {"family": "F01", "use": "calibration_development",
+                                   "final_test_eligible": False, "threshold": None}
+    else:
+        result["phase14_reconciliation_sha256"] = p["phase14_reconciliation_sha256"]
+    return result
 
 
 class _Phase15Stop(RuntimeError):
@@ -822,6 +903,17 @@ def _phase15_publish(destination, record):
 
 def _phase15_load_model(automata, identity, monitor):
     path = Path(identity["path"])
+    manifest_observed = None
+    if "manifest" in identity:
+        manifest = identity["manifest"]
+        manifest_path = Path(manifest["path"])
+        _phase15_no_reparse(manifest_path)
+        monitor.check("before_calibration_manifest_hash")
+        digest = _sha256_file(manifest_path, lambda: monitor.check("manifest_hash_chunk", force=False))
+        if digest != manifest["sha256"]:
+            raise ValueError("Calibration manifest SHA-256 mismatch before deserialization")
+        manifest_observed = {**manifest, "observed_sha256": digest}
+        monitor.check("after_calibration_manifest_hash")
     monitor.check("before_model_hash")
     _phase15_no_reparse(path)
     with path.open("rb") as stream, BytesIO() as buffer:
@@ -837,7 +929,43 @@ def _phase15_load_model(automata, identity, monitor):
     # Never reopen the path: substitution cannot change the bytes passed to the generic loader.
     automata.load_model(BytesIO(payload))
     monitor.check("after_model_load")
-    return {**identity, "observed_sha256": digest, "interface_validated": True}
+    observed = {**identity, "observed_sha256": digest, "interface_validated": True}
+    if manifest_observed is not None:
+        observed["manifest"] = manifest_observed
+    return observed
+
+
+def _phase15_candidate_environment(active, identities, monitor):
+    c = active["candidate_inputs"]
+    for identity in identities.values():
+        _phase15_no_reparse(Path(identity["path"]))
+    monitor.check("before_candidate_input_preparation")
+    window = c["window"]
+    prepared = candidate_inputs.read_inputs(
+        {name: item["path"] for name, item in identities.items()},
+        {name: item["sha256"] for name, item in identities.items()},
+        expected_grid=c["expected_grid"], configured_nodata=active["environment"]["nodata_value"],
+        capability=c["reader_capability"], window=window["global_origin"] + window["shape"])
+    if (prepared.global_origin != tuple(window["global_origin"])
+            or prepared.environment["grid_shape"] != tuple(window["shape"])
+            or prepared.full_grid_shape != tuple(c["expected_grid"]["shape"])):
+        raise ValueError("Candidate preparation does not match the bound crop")
+    points = [[r + prepared.global_origin[0], col + prepared.global_origin[1]]
+              for r, col in active["simulation"]["ignition_points"]]
+    resolved = candidate_inputs.validate_seeds(points, prepared, "grid_row_col")
+    # Atomic seed validation precedes construction and every set_ignition call.
+    monitor.check("after_candidate_input_preparation")
+    environment = prepared.environment
+    return environment, {
+        "inputs": {name: {**item, "observed_sha256": prepared.input_hashes[name]}
+                   for name, item in identities.items()},
+        "grid": {"shape": list(environment["grid_shape"]), "crs": environment["crs"].to_wkt(),
+                 "transform": list(environment["transform"])[:6]},
+        "parent_grid": deepcopy(c["expected_grid"]), "window": deepcopy(window),
+        "interpretation": deepcopy(prepared.interpretation), "mask_identities": prepared.mask_identities(),
+        "converted_ignitions": [list(point) for point in resolved],
+        "rng_policy": "prescribed_seed_crop_shaped_draw.v1",
+    }
 
 
 def _phase15_environment(active, identities, monitor):
@@ -1003,10 +1131,15 @@ def _run_phase15(config, *, explicitly_authorized, approval_reference, expected_
         reason = "preflight_failure"
         # Disable auxiliary discovery/writes; this contract permits self-contained GeoTIFFs only.
         with rasterio.Env(GDAL_PAM_ENABLED="NO", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
-            environment, observed = _phase15_environment(active, binding["inputs"], monitor)
+            candidate = _phase15_is_candidate(active)
+            if candidate:
+                environment, observed = _phase15_candidate_environment(active, binding["inputs"], monitor)
+            else:
+                environment, observed = _phase15_environment(active, binding["inputs"], monitor)
             automata = FireAutomata(environment, active)
             observed["model"] = _phase15_load_model(automata, binding["model"], monitor)
-            points = _convert_geographic_ignition_points(automata, active["simulation"]["ignition_points"])
+            points = ([tuple(point) for point in observed["converted_ignitions"]] if candidate else
+                      _convert_geographic_ignition_points(automata, active["simulation"]["ignition_points"]))
             if len(set(points)) != len(points) or any(not automata.burnable_mask[row, col] for row, col in points):
                 raise ValueError("Every ignition must be a distinct valid mapped-building cell")
             automata.set_ignition(points)
@@ -1066,6 +1199,10 @@ def run_simulation(config: dict, *, transition_observer=None, transition_provena
                    explicitly_authorized=False, approval_reference=None, expected_binding_sha256=None,
                    config_path=None) -> None:
     clock = (time.monotonic(), datetime.now(timezone.utc).isoformat())
+    if "candidate_inputs" in config and (
+            not isinstance(config.get("phase15"), dict)
+            or config["phase15"].get("schema_version") != PHASE15_CANDIDATE_SCHEMA):
+        raise ValueError("Candidate-marked configuration requires the candidate Phase 15 profile")
     if "phase15" in config:
         if transition_observer is not None or transition_provenance is not None:
             raise ValueError("Phase 15 does not collect transition observations")

@@ -1065,3 +1065,575 @@ def test_runner_post_retirement_failure_keeps_frozen_diagnostics(retirement_runn
     else:
         assert len(fixture.refs) == 2 and report["committed"] == fixture.committed
         assert ("publish",) in fixture.events and ("emit", "package_committed", 2) in fixture.events
+
+
+# Authenticated before editing: runner SHA-256 9a96e437dc7709a0653981916b869d670b34d8bf4cf3dbf523710c9136b4e17b.
+# Original 4,979-byte loader text SHA-256: 445ce5fca03d241af49ac564fa603d0db648add067a868b2b3a708c98b86e759.
+# Only the function name below differs; strict_json is the unchanged reader helper.
+strict_json = runner.strict_json
+_chunk_loader_under_test = runner.load_completed_evidence
+
+
+def _whole_transition_loader_reference(root: Path, config: dict, authority: dict, check) -> tuple:
+    rows, transitions, runs, row_counts, positive_counts, prior_states = [], {}, [], {}, {}, {}
+    with (root / "transitions.jsonl").open("rb") as stream:
+        for line in stream:
+            check("transition_reconciliation")
+            item = strict_json(line)
+            if release.json_bytes(item) + b"\n" != line:
+                raise ValueError("Noncanonical or partial transition record")
+            binding, envelope, retained = item["binding"], item["envelope"], item["rows"]
+            spec = binding["spec"]
+            if release.digest_bytes(release.json_bytes(binding)) != authority["run_bindings"][spec["run_id"]]:
+                raise ValueError("Retained run binding mismatch")
+            columns = [release.decode_row(r["csv"]) for r in retained]
+            arrays = [np.array([v[0] for v in columns], dtype=np.float32).reshape(-1, 11),
+                np.array([v[1] for v in columns], dtype=np.int8),
+                np.array([r["payload"]["cell_row"] for r in retained], dtype=np.int64),
+                np.array([r["payload"]["cell_col"] for r in retained], dtype=np.int64),
+                np.array([r["observation_id"].encode("ascii") for r in retained], dtype="S64"),
+                np.array([r["q32_bits"] for r in retained], dtype=np.uint32)]
+            for array in arrays:
+                array.setflags(write=False)
+            batch = collection.CandidateBatch(*arrays, envelope_bytes=release.json_bytes(envelope))
+            _, rebuilt = release.reconcile_batch(batch, binding)
+            run_id = spec["run_id"]
+            if rebuilt != retained or envelope["timestep_t"] != transitions.get(run_id, 0):
+                raise ValueError("Retained transition/row reconciliation failed")
+            if run_id in prior_states and envelope["state_t_sha256"] != prior_states[run_id]:
+                raise ValueError("Completed transition state-hash chain is discontinuous")
+            prior_states[run_id] = envelope["state_t1_sha256"]
+            transitions[run_id] = transitions.get(run_id, 0) + 1
+            rows.extend(retained)
+            row_counts[run_id] = row_counts.get(run_id, 0) + len(retained)
+            positive_counts[run_id] = positive_counts.get(run_id, 0) + sum(v[1] for v in columns)
+            if len(rows) > collection.MAX_PACKAGE_ROWS:
+                raise ValueError("Retained package exceeds cap")
+    with (root / "runs.jsonl").open("rb") as stream:
+        for line in stream:
+            check("run_reconciliation")
+            item = strict_json(line)
+            if release.json_bytes(item) + b"\n" != line:
+                raise ValueError("Noncanonical or partial run record")
+            runs.append(item)
+    plan = collection.planned_runs(config["inventory"])
+    if len(runs) != 2 * len(plan):
+        raise ValueError("Every initialization and inactive termination is required")
+    for i, spec in enumerate(plan):
+        initial, final = runs[2 * i:2 * i + 2]
+        total = row_counts.get(spec["run_id"], 0)
+        before, after = initial["completed"]["state_counts"], final["completed"]["state_counts"]
+        names = {"non_burnable", "not_yet_burning", "ignited", "blazing", "extinguished"}
+        cells = config["grid"]["shape"][0] * config["grid"]["shape"][1]
+        seeds = len(config["inventory"][spec["family_ordinal"] - 1]["ignition_points"])
+        positives = positive_counts.get(spec["run_id"], 0)
+        if (set(before) != names or set(after) != names
+                or any(type(v) is not int or v < 0 for counts in (before, after) for v in counts.values())
+                or sum(before.values()) != cells or sum(after.values()) != cells
+                or before["blazing"] != seeds or before["ignited"] != 0 or before["extinguished"] != 0
+                or after["non_burnable"] != before["non_burnable"]
+                or after["extinguished"] != seeds + positives
+                or after["not_yet_burning"] != before["not_yet_burning"] - positives):
+            raise ValueError("Inactive state/label conservation mismatch")
+        if (initial["kind"] != "initialization" or initial["spec"] != spec
+                or initial["completed"]["state_timestep"] != 0
+                or initial["completed"]["committed_rows"] != 0
+                or final["kind"] != "inactive" or final["spec"] != spec
+                or final["completed"]["state_counts"]["ignited"] != 0
+                or final["completed"]["state_counts"]["blazing"] != 0
+                or final["completed"]["state_timestep"] != transitions.get(spec["run_id"], 0)
+                or not 1 <= final["completed"]["state_timestep"] <= collection.MAX_UPDATES
+                or final["completed"]["committed_rows"] != total
+                or total > collection.MAX_RUN_ROWS):
+            raise ValueError("Run completeness/cap/count mismatch")
+    release.validate_rows(rows, check)
+    return rows, runs
+
+
+def _constructed_validation_batch(binding, family, count, timestep=0, first_row=0, *, positive_count=None):
+    """Fabricated comparisons/state hashes, not an executed stochastic history."""
+    ordinal = np.arange(count, dtype=np.int64)
+    features = np.tile(np.array([-0.0, .25, 1, .5, 1, 17.7, -.70710677,
+                                .70710677, 1, .5, .125], dtype=np.float32), (count, 1))
+    features[1::2, 0] = np.float32(1e-5)
+    features[:, 4] = ordinal % 5 + 1
+    labels = ((ordinal % 5 == 0) if positive_count is None else
+              (ordinal < positive_count)).astype(np.int8)
+    rows, cols = first_row + ordinal // 100, ordinal % 100
+    bits = np.array([0, 0x3E000000, 0x3F800000], dtype=np.uint32)[ordinal % 3]
+    identity = release.digest_bytes(release.json_bytes(binding))
+    spec = binding["spec"]
+    generic = dict(event_id=family["event_id"], run_id=spec["run_id"], seed=spec["seed"],
+        grid_id=binding["source"]["grid_id"], candidate_run_identity_sha256=identity,
+        **{name: binding[name] for name in ("teacher_id", "numerical_contract_id",
+                                          "interpretation_policy", "mask_seed_policy")})
+    envelope = dict(schema_version="candidate_comparison_capture.v1",
+        run_identity_sha256=identity, provenance_sha256=collection.canonical_metadata_hash(generic),
+        generic_provenance=generic, timestep_t=timestep, timestep_t1=timestep + 1,
+        state_t_sha256=f"{timestep + 1:064x}", state_t1_sha256=f"{timestep + 2:064x}",
+        eligible_mask_sha256="3" * 64,
+        row_hash_encoding="eleven_little_endian_float32_then_int8_label.v1",
+        **{name: binding[name] for name in ("teacher_id", "numerical_contract_id",
+                                          "interpretation_policy", "mask_seed_policy")})
+    ids = np.array([release.digest_bytes(release.json_bytes(release.observation_payload(
+        binding, envelope, int(row), int(col)))).encode("ascii")
+        for row, col in zip(rows, cols, strict=True)], dtype="S64")
+    envelope["bindings"] = [dict(observation_id=identifier.decode("ascii"), q32_bits=int(q),
+        row_sha256=release.digest_bytes(np.asarray(feature, dtype="<f4").tobytes()
+                                       + bytes([int(label)])))
+        for identifier, q, feature, label in zip(ids, bits, features, labels, strict=True)]
+    arrays = (features, labels, rows, cols, ids, bits)
+    for array in arrays:
+        array.setflags(write=False)
+    return collection.CandidateBatch(*arrays, envelope_bytes=release.json_bytes(envelope))
+
+
+def _chunk_evidence(tmp_path, sizes):
+    from dataclasses import replace
+    prepared, config, spec, source, _ = context()
+    config["grid"]["shape"] = [128, 128]
+    prepared = replace(prepared, full_grid_shape=(128, 128))
+    binding = collection.execution_binding(config, prepared, spec, source)
+    authority = {"run_bindings": {spec["run_id"]: release.digest_bytes(release.json_bytes(binding))}}
+    tmp_path.mkdir(exist_ok=True)
+    store = runner.EvidenceStore(tmp_path / "chunk-evidence")
+    before = dict(non_burnable=0, not_yet_burning=16383, ignited=0, blazing=1, extinguished=0)
+    positives, total = 0, 0
+    try:
+        store.append("runs", dict(kind="initialization", spec=spec,
+            completed=dict(state_timestep=0, committed_rows=0, state_counts=before)))
+        for timestep, size in enumerate(sizes):
+            batch = _constructed_validation_batch(binding, config["inventory"][0], size, timestep)
+            positives += int(batch.labels.sum())
+            total += size
+            store.persist(binding, (batch,))
+        after = dict(before, not_yet_burning=16383-positives, blazing=0, extinguished=1+positives)
+        store.append("runs", dict(kind="inactive", spec=spec, completed=dict(
+            state_timestep=len(sizes), committed_rows=total, state_counts=after)))
+    finally:
+        store.close()
+    return store.root, config, authority, spec
+
+
+def _read_constructed_records(root, name="transitions"):
+    return [runner.strict_json(line) for line in (root / (name + ".jsonl")).read_bytes().splitlines(keepends=True)]
+
+
+def _replace_constructed_records(root, records, name="transitions"):
+    # Corrupt only future synthetic fixtures; production evidence is never rewritten.
+    (root / (name + ".jsonl")).write_bytes(b"".join(release.json_bytes(r) + b"\n" for r in records))
+
+
+@pytest.mark.parametrize("size", [0, 1, 4095, 4096, 4097, 8192, 8193])
+def test_chunk_loader_matches_authenticated_whole_transition_reference(tmp_path, monkeypatch, size):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [size])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    retained = _read_constructed_records(root)[0]
+    original_bytes = {name: (root / name).read_bytes() for name in ("transitions.jsonl", "runs.jsonl")}
+    expected = _whole_transition_loader_reference(root, config, authority, lambda _: None)
+    real, lengths = release.reconcile_batch, []
+    def inspect_chunk(batch, binding):
+        start = sum(lengths)
+        stop = start + len(batch.labels)
+        view = json.loads(batch.envelope_bytes)
+        assert {k: v for k, v in view.items() if k != "bindings"} == {
+            k: v for k, v in retained["envelope"].items() if k != "bindings"}
+        assert view["bindings"] == retained["envelope"]["bindings"][start:stop]
+        decoded = [release.decode_row(r["csv"]) for r in retained["rows"][start:stop]]
+        features = np.array([v[0] for v in decoded], dtype=np.float32).reshape(-1, 11)
+        assert np.array_equal(batch.features.view(np.uint32), features.view(np.uint32))
+        assert np.array_equal(batch.labels, np.array([v[1] for v in decoded], dtype=np.int8))
+        assert batch.global_rows.tolist() == [r["payload"]["cell_row"] for r in retained["rows"][start:stop]]
+        assert batch.global_cols.tolist() == [r["payload"]["cell_col"] for r in retained["rows"][start:stop]]
+        assert batch.observation_ids.tolist() == [r["observation_id"].encode("ascii") for r in retained["rows"][start:stop]]
+        assert batch.q32_bits.tolist() == [r["q32_bits"] for r in retained["rows"][start:stop]]
+        assert [a.dtype for a in (batch.features, batch.labels, batch.global_rows,
+            batch.global_cols, batch.observation_ids, batch.q32_bits)] == [
+                np.dtype("float32"), np.dtype("int8"), np.dtype("int64"), np.dtype("int64"),
+                np.dtype("S64"), np.dtype("uint32")]
+        lengths.append(len(batch.labels))
+        return real(batch, binding)
+    monkeypatch.setattr(release, "reconcile_batch", inspect_chunk)
+    assert runner.load_completed_evidence(root, config, authority, lambda _: None) == expected
+    assert lengths == ([min(4096, size-i) for i in range(0, size, 4096)] if size else [0])
+    assert {name: (root / name).read_bytes() for name in original_bytes} == original_bytes
+    monkeypatch.setattr(runner, "_reconcile_retained_chunk", lambda *a: pytest.fail("Reference used chunk helper"))
+    monkeypatch.setattr(release, "reconcile_batch", real)
+    assert _whole_transition_loader_reference(root, config, authority, lambda _: None) == expected
+
+
+@pytest.mark.parametrize("kind", ["missing", "extra"])
+@pytest.mark.parametrize("position", [0, 4096, 8193])
+def test_chunk_loader_rejects_complete_record_binding_count_before_slicing(tmp_path, monkeypatch, kind, position):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [8193])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    records = _read_constructed_records(root)
+    bindings = records[0]["envelope"]["bindings"]
+    if kind == "missing":
+        bindings.pop(min(position, len(bindings)-1))
+    else:
+        bindings.insert(position, dict(bindings[0]))
+    _replace_constructed_records(root, records)
+    monkeypatch.setattr(runner, "_reconcile_retained_chunk", lambda *a: pytest.fail("Count check was too late"))
+    with pytest.raises(ValueError, match="count mismatch"):
+        runner.load_completed_evidence(root, config, authority, lambda _: None)
+
+
+@pytest.mark.parametrize("position", [0, 4096, 8192])
+@pytest.mark.parametrize("fault", ["csv", "identity", "row_hash", "q32"])
+def test_chunk_loader_rejects_first_middle_and_late_corruption(tmp_path, monkeypatch, position, fault):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [8193])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    records = _read_constructed_records(root)
+    row, captured = records[0]["rows"][position], records[0]["envelope"]["bindings"][position]
+    if fault == "csv":
+        row["csv"] = row["csv"].replace(",0.25,", ",0.5,", 1)
+    elif fault == "identity":
+        row["observation_id"] = captured["observation_id"] = "f" * 64
+    elif fault == "row_hash":
+        row["row_sha256"] = captured["row_sha256"] = "f" * 64
+    else:
+        captured["q32_bits"] ^= 1
+    _replace_constructed_records(root, records)
+    for loader in (_whole_transition_loader_reference, runner.load_completed_evidence):
+        with pytest.raises(ValueError):
+            loader(root, config, authority, lambda _: None)
+
+
+@pytest.mark.parametrize("bits", [0x80000000, 0x7FC00000, 0x3F800001])
+def test_chunk_loader_rejects_invalid_q32_in_late_chunk(tmp_path, monkeypatch, bits):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [4097])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    records = _read_constructed_records(root)
+    records[0]["rows"][-1]["q32_bits"] = records[0]["envelope"]["bindings"][-1]["q32_bits"] = bits
+    _replace_constructed_records(root, records)
+    for loader in (_whole_transition_loader_reference, runner.load_completed_evidence):
+        with pytest.raises(ValueError, match="q32"):
+            loader(root, config, authority, lambda _: None)
+
+
+@pytest.mark.parametrize("size", [0, 4097])
+@pytest.mark.parametrize("fault", ["schema", "run", "provenance", "state", "timestep", "teacher", "seed", "binding"])
+def test_chunk_loader_checks_headers_even_for_empty_records(tmp_path, monkeypatch, size, fault):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [size])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    records = _read_constructed_records(root)
+    envelope = records[0]["envelope"]
+    if fault == "schema":
+        envelope["schema_version"] = "unexpected"
+    elif fault == "run":
+        envelope["run_identity_sha256"] = "f" * 64
+    elif fault == "provenance":
+        envelope["provenance_sha256"] = "f" * 64
+    elif fault == "state":
+        envelope["state_t_sha256"] = "invalid"
+    elif fault == "timestep":
+        envelope["timestep_t1"] += 1
+    elif fault == "teacher":
+        envelope["teacher_id"] = "unexpected"
+    elif fault == "binding":
+        records[0]["binding"]["spec"]["seed"] += 1
+    else:
+        envelope["generic_provenance"]["seed"] += 1
+        envelope["provenance_sha256"] = collection.canonical_metadata_hash(envelope["generic_provenance"])
+    _replace_constructed_records(root, records)
+    for loader in (_whole_transition_loader_reference, runner.load_completed_evidence):
+        with pytest.raises(ValueError):
+            loader(root, config, authority, lambda _: None)
+
+
+@pytest.mark.parametrize("fault", ["duplicate_key", "noncanonical", "missing_lf", "partial"])
+def test_chunk_loader_preserves_original_record_parsing_checks(tmp_path, monkeypatch, fault):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [0])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    path = root / "transitions.jsonl"
+    raw = path.read_bytes()
+    if fault == "duplicate_key":
+        raw = b'{"binding":null,' + raw[1:]
+    elif fault == "noncanonical":
+        raw = b" " + raw
+    elif fault == "missing_lf":
+        raw = raw[:-1]
+    else:
+        raw = raw[:-10]
+    path.write_bytes(raw)
+    for loader in (_whole_transition_loader_reference, runner.load_completed_evidence):
+        with pytest.raises(ValueError):
+            loader(root, config, authority, lambda _: None)
+
+
+@pytest.mark.parametrize("fault", ["repeat", "gap", "state_chain", "missing_initial", "active_final",
+                                  "committed", "conservation", "run_cap", "package_cap"])
+def test_chunk_loader_preserves_continuity_totals_caps_and_incomplete_rejection(tmp_path, monkeypatch, fault):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [3] if fault.endswith("cap") else [0, 0])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    if fault in ("repeat", "gap", "state_chain"):
+        records = _read_constructed_records(root)
+        envelope = records[1]["envelope"]
+        if fault == "state_chain":
+            envelope["state_t_sha256"] = "f" * 64
+        else:
+            envelope["timestep_t"] = 0 if fault == "repeat" else 2
+            envelope["timestep_t1"] = envelope["timestep_t"] + 1
+        _replace_constructed_records(root, records)
+    elif fault.endswith("cap"):
+        monkeypatch.setattr(collection, "MAX_RUN_ROWS" if fault == "run_cap" else "MAX_PACKAGE_ROWS", 2)
+    else:
+        records = _read_constructed_records(root, "runs")
+        if fault == "missing_initial":
+            records.pop(0)
+        elif fault == "active_final":
+            records[-1]["completed"]["state_counts"]["blazing"] = 1
+        elif fault == "committed":
+            records[-1]["completed"]["committed_rows"] += 1
+        else:
+            records[-1]["completed"]["state_counts"]["not_yet_burning"] -= 1
+        _replace_constructed_records(root, records, "runs")
+    for loader in (_whole_transition_loader_reference, runner.load_completed_evidence):
+        with pytest.raises(ValueError):
+            loader(root, config, authority, lambda _: None)
+
+
+@pytest.mark.parametrize("fault", ["order", "duplicate"])
+def test_chunk_loader_keeps_cross_chunk_checks_in_global_validation(tmp_path, monkeypatch, fault):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [4097])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    records = _read_constructed_records(root)
+    for values in (records[0]["rows"], records[0]["envelope"]["bindings"]):
+        if fault == "order":
+            values[4095], values[4096] = values[4096], values[4095]
+        else:
+            values[4096] = deepcopy(values[4094])  # Equal labels preserve conservation.
+    _replace_constructed_records(root, records)
+    real_validate, visited = release.validate_rows, []
+    def validate(rows, check):
+        visited.append(len(rows))
+        return real_validate(rows, check)
+    monkeypatch.setattr(release, "validate_rows", validate)
+    with pytest.raises(ValueError, match="order|Repeated"):
+        runner.load_completed_evidence(root, config, authority, lambda _: None)
+    assert visited == [4097]
+
+
+@pytest.mark.parametrize("size", [0, 8193])
+def test_chunk_loader_retires_secondary_and_record_only_owners(tmp_path, monkeypatch, size):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [size])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    class WeakDict(dict):
+        pass
+    class WeakList(list):
+        pass
+    real_json, real_decode = runner.strict_json, release.decode_row
+    real_reconcile, real_validate = release.reconcile_batch, release.validate_rows
+    records, previous, columns, lengths = [], [], [], []
+    def read(data):
+        item = real_json(data)
+        if "envelope" in item:
+            item = WeakDict(item)
+            item["envelope"] = WeakDict(item["envelope"])
+            item["rows"] = WeakList(item["rows"])
+            item["envelope"]["bindings"] = WeakList(item["envelope"]["bindings"])
+            records.extend(weakref.ref(v) for v in (item, item["envelope"], item["rows"],
+                                                  item["envelope"]["bindings"]))
+        return item
+    def decode(csv):
+        values, label = real_decode(csv)
+        columns.append(weakref.ref(values))
+        return values, label
+    def reconcile(batch, binding):
+        prior_columns = columns[:-len(batch.labels)] if len(batch.labels) else columns
+        assert all(ref() is None for ref in previous + prior_columns)
+        assert records and all(ref() is not None for ref in records)
+        envelope, rebuilt = real_reconcile(batch, binding)
+        envelope, rebuilt = WeakDict(envelope), WeakList(rebuilt)
+        envelope["bindings"] = WeakList(envelope["bindings"])
+        owners = (batch, batch.features, batch.labels, batch.global_rows, batch.global_cols,
+                  batch.observation_ids, batch.q32_bits, envelope, envelope["bindings"], rebuilt)
+        if isinstance(batch.features.base, np.ndarray):
+            owners += (batch.features.base,)
+        previous[:] = [weakref.ref(v) for v in owners]
+        lengths.append(len(batch.labels))
+        return envelope, rebuilt
+    def validate(rows, check):
+        assert all(ref() is None for ref in records + previous + columns)
+        return real_validate(rows, check)
+    monkeypatch.setattr(runner, "strict_json", read)
+    monkeypatch.setattr(release, "decode_row", decode)
+    monkeypatch.setattr(release, "reconcile_batch", reconcile)
+    monkeypatch.setattr(release, "validate_rows", validate)
+    runner.load_completed_evidence(root, config, authority, lambda _: None)
+    assert lengths == ([4096, 4096, 1] if size else [0])
+    assert all(ref() is None for ref in records + previous + columns)
+
+
+def test_late_chunk_failure_is_atomic_and_blocks_runner_publication(tmp_path, monkeypatch, request):
+    root, config, authority, spec = _chunk_evidence(tmp_path / "late-source", [1, 8193])
+    records = _read_constructed_records(root)
+    records[-1]["envelope"]["bindings"][-1]["q32_bits"] ^= 1
+    _replace_constructed_records(root, records)
+    retained = {name: (root / name).read_bytes() for name in ("transitions.jsonl", "runs.jsonl")}
+    retirement_runner = request.getfixturevalue("retirement_runner")
+    with monkeypatch.context() as runner_patch:
+        def load(*args):
+            with monkeypatch.context() as patch:
+                patch.setattr(collection, "planned_runs", lambda _: [spec])
+                return _chunk_loader_under_test(root, config, authority, lambda _: None)
+        runner_patch.setattr(runner, "load_completed_evidence", load)
+        runner_patch.setattr(release, "components", lambda *a: pytest.fail("Grouped after failed reconstruction"))
+        runner_patch.setattr(release, "publish", lambda *a, **kw: pytest.fail("Published after failed reconstruction"))
+        with pytest.raises(runner.CandidateFailure) as caught:
+            runner.run(retirement_runner.config, retirement_runner.authority,
+                       emit=retirement_runner.emit, **retirement_runner.kwargs)
+        report = caught.value.report
+        assert report["complete"] is False and report["committed"] is None
+        assert report["original_failure"]["type"] == "ValueError"
+        cause = caught.value.__cause__
+        assert isinstance(cause, ValueError)
+        trace = cause.__traceback__
+        while trace is not None and trace.tb_frame.f_code is not _chunk_loader_under_test.__code__:
+            trace = trace.tb_next
+        assert trace is not None
+        local = trace.tb_frame.f_locals
+        run_id = spec["run_id"]
+        assert len(local["rows"]) == local["row_counts"][run_id] == 1
+        assert local["transitions"][run_id] == local["positive_counts"][run_id] == 1
+        assert local["prior_states"][run_id] == f"{2:064x}"
+        assert {name: (root / name).read_bytes() for name in retained} == retained
+        assert not Path(retirement_runner.authority["destinations"]["package"]).exists()
+
+
+def test_empty_chunk_record_rejects_extra_binding_before_helper(tmp_path, monkeypatch):
+    root, config, authority, spec = _chunk_evidence(tmp_path, [0])
+    monkeypatch.setattr(collection, "planned_runs", lambda _: [spec])
+    records = _read_constructed_records(root)
+    records[0]["envelope"]["bindings"].append(dict(
+        observation_id="a"*64, q32_bits=0, row_sha256="b"*64))
+    _replace_constructed_records(root, records)
+    monkeypatch.setattr(runner, "_reconcile_retained_chunk", lambda *a: pytest.fail("Count check was too late"))
+    with pytest.raises(ValueError, match="count mismatch"):
+        runner.load_completed_evidence(root, config, authority, lambda _: None)
+
+
+def test_whole_transition_reference_text_matches_authenticated_before_image():
+    import inspect
+    original = inspect.getsource(_whole_transition_loader_reference).replace(
+        "def _whole_transition_loader_reference(", "def load_completed_evidence(", 1)
+    assert len(original.encode("utf-8")) == 4979
+    assert release.digest_bytes(original.encode("utf-8")) == (
+        "445ce5fca03d241af49ac564fa603d0db648add067a868b2b3a708c98b86e759")
+
+
+def _reference_package_bytes(rows, items, authority):
+    """Bounded test expectations from whole-transition results, not a second publication."""
+    files, identities = {}, {}
+    def put(name, data):
+        files[name] = data
+        identities[name] = dict(bytes=len(data), sha256=release.digest_bytes(data))
+    master = release.HEADER + b"".join(row["csv"].encode("ascii") for row in rows)
+    put("custodian/master.csv", master)
+    master_id = identities["custodian/master.csv"]
+    assignments = release.allocate(items, master_id["sha256"],
+        node_budget=authority["binding"]["allocation_node_budget"], check=lambda _: None)
+    roles = {i: assignments[item["component_id"]] for item in items for i in item["indices"]}
+    put("custodian/observations.jsonl", b"".join(release.json_bytes(row) + b"\n" for row in rows))
+    put("custodian/probabilities.jsonl", b"".join(release.json_bytes(dict(master_row_ordinal=i,
+        csv_sha256=master_id["sha256"], observation_id=row["observation_id"],
+        row_sha256=row["row_sha256"], q32_bits=row["q32_bits"])) + b"\n"
+        for i, row in enumerate(rows)))
+    put("custodian/components.json", release.json_bytes(dict(
+        schema_version="candidate_component_sorted_observation_ids.v1",
+        components=items, assignments=assignments)) + b"\n")
+    for role in ("train", "validation", "calibration", "final_test"):
+        relative = ("custodian/final_test" if role == "final_test" else
+                    "calibration" if role == "calibration" else "development/" + role)
+        selected = [row for i, row in enumerate(rows) if roles[i] == role]
+        put(relative + "/data.csv", release.HEADER + b"".join(row["csv"].encode("ascii") for row in selected))
+        csv_hash = identities[relative + "/data.csv"]["sha256"]
+        put(relative + "/membership.jsonl", b"".join(release.json_bytes(dict(row_ordinal=i,
+            csv_sha256=csv_hash, observation_id=row["observation_id"], row_sha256=row["row_sha256"],
+            payload=row["payload"])) + b"\n" for i, row in enumerate(selected)))
+        put(relative + "/probabilities.jsonl", b"".join(release.json_bytes(dict(row_ordinal=i,
+            csv_sha256=csv_hash, observation_id=row["observation_id"], row_sha256=row["row_sha256"],
+            q32_bits=row["q32_bits"])) + b"\n" for i, row in enumerate(selected)))
+        scoped = {name[len(relative)+1:]: value for name, value in identities.items()
+                  if name.startswith(relative + "/")}
+        put(relative + "/manifest.json", release.json_bytes(dict(
+            schema_version="candidate_teacher_shared_dataset_release.v1", role=role,
+            files=scoped, rows=len(selected), teacher_id=authority["teacher_id"],
+            numerical_contract_id=authority["numerical_contract_id"],
+            custody="role-scoped; same-account protection is procedural")) + b"\n")
+    put("custodian/manifest.json", release.json_bytes(dict(
+        schema_version="candidate_teacher_shared_dataset_release.v1", authority=authority,
+        master_path="custodian/master.csv", master=master_id,
+        rows=len(rows), files=identities.copy(), complete=True)) + b"\n")
+    put("COMMITTED.json", release.json_bytes(dict(schema_version="candidate_teacher_shared_dataset_release.v1",
+        manifest_sha256=identities["custodian/manifest.json"]["sha256"])) + b"\n")
+    return files
+
+
+def test_chunked_constructed_evidence_matches_reference_through_real_publication(tmp_path):
+    from dataclasses import replace
+    from test_candidate_dataset_release_contract import publication_fixture
+    options = publication_fixture(tmp_path)[2]
+    provenance = options["authority"]
+    config, authority = provenance["configuration"], provenance["execution_authority"]
+    prepared = replace(context()[0], full_grid_shape=tuple(config["grid"]["shape"]))
+    plan = collection.planned_runs(config["inventory"])
+    authority["run_bindings"] = {}
+    store = runner.EvidenceStore(tmp_path / "chunk-constructed-evidence")
+    authority["destinations"]["evidence"] = str(store.root)
+    options["payload"] = store.root / "payload"
+    # All 364 specifications below are declarations, not executed CA runs.
+    try:
+        for spec in plan:
+            binding = collection.execution_binding(config, prepared, spec, authority["source"])
+            authority["run_bindings"][spec["run_id"]] = release.digest_bytes(release.json_bytes(binding))
+            family = config["inventory"][spec["family_ordinal"]-1]
+            count = (8193 if spec["family_ordinal"] == 1 else 100) if (
+                spec["wind_ordinal"] == 1 and spec["replicate_ordinal"] == 1) else 0
+            batch = _constructed_validation_batch(binding, family, count,
+                first_row=128*spec["family_ordinal"], positive_count=min(20, count))
+            cells = config["grid"]["shape"][0] * config["grid"]["shape"][1]
+            seeds, positives = len(family["ignition_points"]), int(batch.labels.sum())
+            initial = dict(non_burnable=0, not_yet_burning=cells-seeds,
+                           ignited=0, blazing=seeds, extinguished=0)
+            final = dict(initial, not_yet_burning=cells-seeds-positives,
+                         blazing=0, extinguished=seeds+positives)
+            store.append("runs", dict(kind="initialization", spec=spec, completed=dict(
+                state_timestep=0, committed_rows=0, state_counts=initial)))
+            store.persist(binding, (batch,))
+            store.append("runs", dict(kind="inactive", spec=spec, completed=dict(
+                state_timestep=1, committed_rows=count, state_counts=final)))
+    finally:
+        store.close()
+    retained = {name: (store.root / name).read_bytes() for name in ("transitions.jsonl", "runs.jsonl")}
+    expected_rows, expected_runs = _whole_transition_loader_reference(store.root, config, authority, lambda _: None)
+    rows, runs = runner.load_completed_evidence(store.root, config, authority, lambda _: None)
+    assert rows == expected_rows and runs == expected_runs
+    assert len(rows) == store.rows == 10693 and len(runs) == 728
+    assert sum(store.transitions.values()) == len(plan) == 364
+    families = authority["custody"]["families"]
+    items = release.components(rows, config["complete_event_ids"], families, lambda _: None)
+    expected_items = release.components(expected_rows, config["complete_event_ids"], families, lambda _: None)
+    assert items == expected_items and len(items) == 26
+    assert all(item["positives"] == 20 and item["materials"] == [1, 2, 3, 4, 5] for item in items)
+    assert sorted(item["negatives"] for item in items) == [80]*25 + [8173]
+    provenance.update(binding=runner.publication_payload(release.digest_bytes(release.json_bytes(
+        runner.execution_payload(config, authority))), authority), run_records=expected_runs,
+        evidence_files={name: runner.file_identity(store.root / name, lambda _: None) for name in retained},
+        dataset_sha256=release.digest_bytes(release.HEADER + b"".join(row["csv"].encode("ascii") for row in expected_rows)))
+    options["expected_binding_sha256"] = release.digest_bytes(release.json_bytes(provenance["binding"]))
+    expected_files = _reference_package_bytes(expected_rows, expected_items, provenance)
+    checks = []
+    options["check"] = checks.append
+    result = release.publish(rows, items, **options)
+    package = Path(result["package"])
+    assert result["committed"] is True and not options["payload"].exists()
+    assert len(expected_files) == 22
+    assert {path.relative_to(package).as_posix() for path in package.rglob("*") if path.is_file()} == set(expected_files)
+    for name, expected in expected_files.items():
+        actual = (package / name).read_bytes()
+        assert actual == expected
+        assert release.digest_bytes(actual) == release.digest_bytes(expected)
+    assert {name: (store.root / name).read_bytes() for name in retained} == retained
+    assert {"allocation_search", "allocation_completed", "publication_completion_decision"}.issubset(checks)

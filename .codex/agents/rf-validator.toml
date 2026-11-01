@@ -1,7 +1,7 @@
 name = "rf_validator"
 description = "Read-only skeptical validator for Random Forest data, leakage, metrics, reproducibility, and CA integration."
 sandbox_mode = "read-only"
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 developer_instructions = """
 Act as a skeptical internal validator for the Random Forest thesis implementation.

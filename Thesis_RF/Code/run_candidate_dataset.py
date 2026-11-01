@@ -15,6 +15,7 @@ import numpy as np
 import yaml
 
 from modules import candidate_dataset_collection as collection
+from modules import candidate_dataset_crops as crops
 from modules.candidate_dataset_inputs import read_inputs, require_digest, require_text, validate_seeds
 from modules import candidate_dataset_release as release
 from modules.set_c_pilot import capture_resource_snapshot
@@ -26,7 +27,7 @@ SOURCE_FILES = (
     "modules/additive_exposure_teacher.py", "modules/automata_engine.py",
     "modules/feature_pipeline.py", "modules/ca_state.py", "modules/data_loader.py",
     "modules/wind_convention.py", "modules/transition_observer.py", "modules/set_c_collector.py",
-    "modules/model_free_teacher.py", "modules/set_c_pilot.py",
+    "modules/model_free_teacher.py", "modules/set_c_pilot.py", "modules/candidate_dataset_crops.py",
 )
 
 
@@ -94,6 +95,10 @@ def validate_authority(config: dict, authority: dict, *, execution_authorized: b
                 or assessment["prior_use"] != f["prior_use"]):
             raise PermissionError("Prior-use/final-test assessment mismatch")
         require_text(assessment["assessment_reference"])
+    if "spatial_design" in config:
+        if (not source["execution_id"].startswith(crops.CAMPAIGN_ID + "-")
+                or custody["families"][families[0]["scenario_family_id"]]["eligible"]):
+            raise PermissionError("Cropped identity or F01 exclusion changed")
     plan = collection.planned_runs(families)
     if set(authority["run_bindings"]) != {r["run_id"] for r in plan}:
         raise PermissionError("All 364 independently delivered run bindings required")
@@ -198,6 +203,38 @@ def verify_sources_runtime(authority: dict, check) -> dict:
     return runtime
 
 
+def _validate_crop_extent(binding: dict, batch) -> None:
+    """Validate bound crop metadata even when the batch contains no observations."""
+    source, interpretation = binding.get("source"), binding.get("interpretation")
+    execution_id = source.get("execution_id") if isinstance(source, dict) else None
+    identified = isinstance(execution_id, str) and execution_id.startswith(crops.CAMPAIGN_ID)
+    if not identified and not (isinstance(interpretation, dict) and "window" in interpretation):
+        return  # Legacy full-map bindings retain the unchanged reconciler's checks.
+    spec = binding.get("spec")
+    ordinal = spec.get("family_ordinal") if isinstance(spec, dict) else None
+    window = interpretation.get("window") if isinstance(interpretation, dict) else None
+    origin, parent = binding.get("global_origin"), binding.get("full_grid_shape")
+    if (not isinstance(execution_id, str) or not execution_id.startswith(crops.CAMPAIGN_ID + "-")
+            or type(ordinal) is not int or not 1 <= ordinal <= len(crops.FAMILIES)
+            or type(window) is not list or len(window) != 4
+            or any(type(n) is not int for n in window)
+            or any(n < 0 for n in window[:2]) or any(n <= 0 for n in window[2:])
+            or any(type(v) is not list or len(v) != 2 or any(type(n) is not int for n in v)
+                   for v in (origin, parent))):
+        raise ValueError("Missing or malformed crop extent metadata")
+    expected = crops.frozen_design()["family_windows"][ordinal - 1]
+    if (spec.get("scenario_family_id") != expected["scenario_family_id"]
+            or window != expected["global_origin"] + expected["shape"]
+            or origin != window[:2] or parent != list(crops.PARENT_SHAPE)
+            or any(o + n > p for o, n, p in zip(window[:2], window[2:], parent, strict=True))):
+        raise ValueError("Inconsistent crop extent metadata")
+    row_origin, col_origin, height, width = window
+    for row, col in zip(batch.global_rows, batch.global_cols, strict=True):
+        if not (row_origin <= row < row_origin + height
+                and col_origin <= col < col_origin + width):
+            raise ValueError("Observation outside bound crop extent")
+
+
 class EvidenceStore:
     """Exclusively allocated, retained evidence; no abort cleanup or retry."""
     def __init__(self, root: Path, *, allocated=None) -> None:
@@ -231,6 +268,7 @@ class EvidenceStore:
 
     def persist(self, binding: dict, snapshot: tuple) -> None:
         for batch in snapshot:
+            _validate_crop_extent(binding, batch)
             envelope, rows = release.reconcile_batch(batch, binding)
             run_id = binding["spec"]["run_id"]
             before = self.transitions.get(run_id, 0)
@@ -274,6 +312,30 @@ def persist_and_acknowledge(engine, store: EvidenceStore) -> None:
     engine.acknowledge_batches(snapshot)
 
 
+_RECONCILIATION_CHUNK_ROWS = 4096
+
+
+def _reconcile_retained_chunk(retained, envelope, binding, start, stop) -> int:
+    """Validate a nonpersisted view; only scalar accounting leaves this frame."""
+    selected = retained[start:stop]
+    columns = [release.decode_row(r["csv"]) for r in selected]
+    arrays = [np.array([v[0] for v in columns], dtype=np.float32).reshape(-1, 11),
+        np.array([v[1] for v in columns], dtype=np.int8),
+        np.array([r["payload"]["cell_row"] for r in selected], dtype=np.int64),
+        np.array([r["payload"]["cell_col"] for r in selected], dtype=np.int64),
+        np.array([r["observation_id"].encode("ascii") for r in selected], dtype="S64"),
+        np.array([r["q32_bits"] for r in selected], dtype=np.uint32)]
+    for array in arrays:
+        array.setflags(write=False)
+    view = dict(envelope, bindings=envelope["bindings"][start:stop])
+    batch = collection.CandidateBatch(*arrays, envelope_bytes=release.json_bytes(view))
+    _validate_crop_extent(binding, batch)
+    _, rebuilt = release.reconcile_batch(batch, binding)
+    if rebuilt != selected:
+        raise ValueError("Retained transition/row reconciliation failed")
+    return sum(v[1] for v in columns)
+
+
 def load_completed_evidence(root: Path, config: dict, authority: dict, check) -> tuple:
     rows, transitions, runs, row_counts, positive_counts, prior_states = [], {}, [], {}, {}, {}
     with (root / "transitions.jsonl").open("rb") as stream:
@@ -286,29 +348,27 @@ def load_completed_evidence(root: Path, config: dict, authority: dict, check) ->
             spec = binding["spec"]
             if release.digest_bytes(release.json_bytes(binding)) != authority["run_bindings"][spec["run_id"]]:
                 raise ValueError("Retained run binding mismatch")
-            columns = [release.decode_row(r["csv"]) for r in retained]
-            arrays = [np.array([v[0] for v in columns], dtype=np.float32).reshape(-1, 11),
-                np.array([v[1] for v in columns], dtype=np.int8),
-                np.array([r["payload"]["cell_row"] for r in retained], dtype=np.int64),
-                np.array([r["payload"]["cell_col"] for r in retained], dtype=np.int64),
-                np.array([r["observation_id"].encode("ascii") for r in retained], dtype="S64"),
-                np.array([r["q32_bits"] for r in retained], dtype=np.uint32)]
-            for array in arrays:
-                array.setflags(write=False)
-            batch = collection.CandidateBatch(*arrays, envelope_bytes=release.json_bytes(envelope))
-            _, rebuilt = release.reconcile_batch(batch, binding)
+            count = len(retained)
+            if len(envelope["bindings"]) != count:
+                raise ValueError("Comparison envelope/run/count mismatch")
+            positives = 0
+            for start in range(0, max(1, count), _RECONCILIATION_CHUNK_ROWS):
+                positives += _reconcile_retained_chunk(retained, envelope, binding,
+                    start, min(start + _RECONCILIATION_CHUNK_ROWS, count))
             run_id = spec["run_id"]
-            if rebuilt != retained or envelope["timestep_t"] != transitions.get(run_id, 0):
+            if envelope["timestep_t"] != transitions.get(run_id, 0):
                 raise ValueError("Retained transition/row reconciliation failed")
             if run_id in prior_states and envelope["state_t_sha256"] != prior_states[run_id]:
                 raise ValueError("Completed transition state-hash chain is discontinuous")
+            if len(rows) + count > collection.MAX_PACKAGE_ROWS:
+                raise ValueError("Retained package exceeds cap")
             prior_states[run_id] = envelope["state_t1_sha256"]
             transitions[run_id] = transitions.get(run_id, 0) + 1
             rows.extend(retained)
-            row_counts[run_id] = row_counts.get(run_id, 0) + len(retained)
-            positive_counts[run_id] = positive_counts.get(run_id, 0) + sum(v[1] for v in columns)
-            if len(rows) > collection.MAX_PACKAGE_ROWS:
-                raise ValueError("Retained package exceeds cap")
+            row_counts[run_id] = row_counts.get(run_id, 0) + count
+            positive_counts[run_id] = positive_counts.get(run_id, 0) + positives
+            # Raw bytes survive chunking; record-only owners retire before the next read.
+            del line, item, binding, envelope, retained, spec
     with (root / "runs.jsonl").open("rb") as stream:
         for line in stream:
             check("run_reconciliation")
@@ -324,7 +384,9 @@ def load_completed_evidence(root: Path, config: dict, authority: dict, check) ->
         total = row_counts.get(spec["run_id"], 0)
         before, after = initial["completed"]["state_counts"], final["completed"]["state_counts"]
         names = {"non_burnable", "not_yet_burning", "ignited", "blazing", "extinguished"}
-        cells = config["grid"]["shape"][0] * config["grid"]["shape"][1]
+        shape = (config["spatial_design"]["family_windows"][spec["family_ordinal"] - 1]["shape"]
+                 if "spatial_design" in config else config["grid"]["shape"])
+        cells = shape[0] * shape[1]
         seeds = len(config["inventory"][spec["family_ordinal"] - 1]["ignition_points"])
         positives = positive_counts.get(spec["run_id"], 0)
         if (set(before) != names or set(after) != names
@@ -384,6 +446,57 @@ def _capture_resource_report(report, guard, config, coverage):
         report["finalization_failures"].append("resource-report capture: " + repr(error))
 
 
+def _read_family_crop(config, family):
+    window = config["spatial_design"]["family_windows"][family["ordinal"] - 1]
+    prepared = read_inputs({k: v["path"] for k, v in config["inputs"].items()},
+        {k: v["sha256"] for k, v in config["inputs"].items()}, expected_grid=config["grid"],
+        configured_nodata=config["configured_nodata"], capability=config["reader_capability"],
+        window=window["global_origin"] + window["shape"])
+    validate_seeds(family["ignition_points"], prepared, family["coordinate_system"])
+    return prepared
+
+
+def inspect_crop_inputs(config, check):
+    """Read-only inventory, callable only with separate real-input authorization.
+
+    No context/CA construction, RNG, output files or outcome-based selection.
+    """
+    collection.validate_configuration(config, active=True)
+    if "spatial_design" not in config:
+        raise ValueError("A frozen cropped campaign is required")
+    entries = []
+    for family, window in zip(config["inventory"], config["spatial_design"]["family_windows"], strict=True):
+        check("before_crop_inventory")
+        prepared = _read_family_crop(config, family)
+        crops.validate_preparation(config["spatial_design"],
+            dict(family_ordinal=family["ordinal"], scenario_family_id=family["scenario_family_id"]), prepared)
+        entry = crops.inventory_entry(window, prepared)
+        entry["local_ignition_points"] = [list(p) for p in validate_seeds(
+            family["ignition_points"], prepared, family["coordinate_system"])]
+        entries.append(entry)
+        del prepared
+        check("after_crop_inventory")
+    return dict(spatial_design=deepcopy(config["spatial_design"]), windows=entries,
+                geometric_overlaps=crops.overlapping_windows(config["spatial_design"]),
+                qualification="Overlap is not independence; observed global blocks still govern grouping")
+
+
+def _family_context(config, family, check):
+    prepared = _read_family_crop(config, family)
+    check("after_input_preparation")
+    context = collection.build_candidate_context(prepared, config)
+    check("after_candidate_context")
+    return context
+
+
+def _check_family_bindings(config, authority, plan, context):
+    for spec in plan:
+        binding = collection.execution_binding(config, context.prepared, spec, authority["source"],
+                                               static_context=context)
+        if release.digest_bytes(release.json_bytes(binding)) != authority["run_bindings"][spec["run_id"]]:
+            raise PermissionError("Run binding mismatch before allocation/RNG")
+
+
 def run(config: dict, authority: dict, *, execution_authorized: bool = False, publication_authorized: bool = False,
         expected_execution_sha256: str | None = None, expected_publication_sha256: str | None = None,
         started: float | None = None, emit=None) -> dict:
@@ -413,24 +526,40 @@ def run(config: dict, authority: dict, *, execution_authorized: bool = False, pu
                 report["allocation_status"] = "allocated"
         check("before_preflight")
         verify_sources_runtime(authority, check)
-        prepared = read_inputs({k: v["path"] for k, v in config["inputs"].items()},
-            {k: v["sha256"] for k, v in config["inputs"].items()}, expected_grid=config["grid"],
-            configured_nodata=config["configured_nodata"], capability=config["reader_capability"])
-        check("after_input_preparation")
-        for family in config["inventory"]:
-            validate_seeds(family["ignition_points"], prepared, family["coordinate_system"])
-        static_context = collection.build_candidate_context(prepared, config)
-        prepared = static_context.prepared
-        check("after_candidate_context")
-        for spec in plan:
-            binding = collection.execution_binding(config, prepared, spec, authority["source"],
-                                                   static_context=static_context)
-            if release.digest_bytes(release.json_bytes(binding)) != authority["run_bindings"][spec["run_id"]]:
-                raise PermissionError("Run binding mismatch before allocation/RNG")
+        cropped = "spatial_design" in config
+        if cropped:
+            # First pass checks every commitment before a journal or run generator exists.
+            for family in config["inventory"]:
+                static_context = _family_context(config, family, check)
+                family_plan = [p for p in plan if p["family_ordinal"] == family["ordinal"]]
+                _check_family_bindings(config, authority, family_plan, static_context)
+                static_context = None
+            prepared = None
+            active_family = None
+        else:
+            prepared = read_inputs({k: v["path"] for k, v in config["inputs"].items()},
+                {k: v["sha256"] for k, v in config["inputs"].items()}, expected_grid=config["grid"],
+                configured_nodata=config["configured_nodata"], capability=config["reader_capability"])
+            check("after_input_preparation")
+            for family in config["inventory"]:
+                validate_seeds(family["ignition_points"], prepared, family["coordinate_system"])
+            static_context = collection.build_candidate_context(prepared, config)
+            prepared = static_context.prepared
+            check("after_candidate_context")
+            _check_family_bindings(config, authority, plan, static_context)
         check("before_evidence_allocation")
         store = EvidenceStore(evidence, allocated=lambda: report.update(evidence=str(evidence)))
         for spec in plan:
             check("before_run")
+            if cropped and active_family != spec["family_ordinal"]:
+                # Release the previous family before reading/owning the next window.
+                static_context = prepared = None
+                family = config["inventory"][spec["family_ordinal"] - 1]
+                static_context = _family_context(config, family, check)
+                family_plan = [p for p in plan if p["family_ordinal"] == family["ordinal"]]
+                _check_family_bindings(config, authority, family_plan, static_context)
+                prepared = static_context.prepared
+                active_family = family["ordinal"]
             engine = collection.CandidateAutomata(prepared, config, spec, authority["source"],
                 execution_authorized=True, approval_reference=config["authorization_reference"],
                 expected_binding_sha256=authority["run_bindings"][spec["run_id"]],
@@ -469,6 +598,8 @@ def run(config: dict, authority: dict, *, execution_authorized: bool = False, pu
             gc.collect()
             check("after_engine_retirement")
         store.close()
+        if cropped:
+            static_context = prepared = None
         rows, runs = load_completed_evidence(evidence, config, authority, check)
         items = release.components(rows, config["complete_event_ids"],
                                    authority["custody"]["families"], check)

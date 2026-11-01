@@ -4,9 +4,9 @@
 
 - **Purpose:** Navigation index; identified source, inputs, artifacts and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-10-23 (Asia/Manila), source-sharing navigation only.
-- **Snapshot base:** `8962fbba4c924b183f091edcc3744c256f1e6357`, plus the committed Phase 15 diff.
-- **Current handoff:** `docs/RF_Review_Handoff_2026-10-23.md`; separates source checks from owner-reported results.
+- **Last updated:** 2026-11-01 (Asia/Manila), D-120 source/manuscript checkpoint.
+- **Snapshot base:** D-120 on `codex/rf-phase15-review`; inspect Git for the checkpoint commit.
+- **Current handoff:** D-120; `docs/Thesis_Paper/Chapt4&6.md` Section 5.5. October 23 handoff remains historical.
 - **Historical index:** The tables below retain the October 12 evidence scope; they are not the latest execution status.
 - **Staleness rule:** Recheck a fact when its source revision, input/artifact hash, configuration, dependency, or approval changes.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
@@ -14,13 +14,13 @@
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Active objective:** Share Phase 15 source for review; refine the proposed RF/LR shared-dataset contract.
-- **Methodology:** D-009–D-015 define Set C's 11 predictors, model-free `all_eligible` labels, 128×128 containment, population, duplicates and adequacy. D-029: predictor collisions audit-only. D-077: prespecified sigmoid; no RF refit.
-- **Accepted evidence:** Phase 8/9 immutable aggregate reports establish the controlled population and prospective feasibility; D-033/D-034 identify and accept Set C v1 after Tasks 11.1/11.2.
-- **Current authorization:** Owner requests a new review branch and push. Dataset work remains preparation only.
-- **Hard boundary:** Preserve artifacts/stashes and LR files; no new execution, training, generation or cleanup.
-- **Next gate:** Review shared-dataset compatibility, then obtain separate adoption/implementation/execution scope.
-- **Agent tooling:** D-030 pins engineer `gpt-6-luna`/medium, validator/researcher `gpt-6-sol`/medium, lead `gpt-6-sol`/high. Parent/repository boundaries govern the lead conflict.
+- **Active objective:** Checkpoint cropped Set C RF source, agent profiles and Chapter 5 Section 5.5; owner requests commit and push.
+- **Reported acceptances:** Cropped dataset, one-fit RF, frozen sigmoid calibration and single-F01 engineering run; independent closeouts supplied in owner chat. See D-120 for identities and limits.
+- **Direct checks:** Reviewed RF source pins match current files. Section 5.5 matches the Writer handback apart from formatting; metrics reconcile arithmetically.
+- **Status:** Phase 14 closed; Phase 15 open. F01 is development/calibration evidence; final-test data remain restricted.
+- **Boundaries:** No new experiments, model/data access, artifact publication, LR edits or cleanup. Commit only intended source, profiles and manuscript; exclude generated artifacts.
+- **Next action:** Independent manuscript review and remaining cross-chapter reconciliation; a later owner decision governs Phase 15 closure.
+- **Agent tooling:** Owner updated model choices; inspect current `.codex/agents/*.toml`. Thesis Writer is available; no automatic dispatch.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state

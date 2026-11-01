@@ -267,3 +267,132 @@ def test_compensating_malformed_chunks_fail_at_the_first_chunk():
     with pytest.raises(ValueError, match="row count"):
         engine._predict_with_model(np.ones((3, 2), dtype=np.int8), np.ones((3, 2), dtype=bool))
     assert engine.model.calls == 1
+
+
+
+@pytest.mark.parametrize("probability,draw,ignites", [
+    (0.0, 0.0, False),
+    (1.0, 0.99, True),
+    (0.25, 0.30, False),
+    (0.50000001, 0.500000005, False),
+    (0.49999999, 0.499999995, True),
+])
+def test_candidate_calibrated_probability_is_compared_as_float32_without_extra_factors(
+        monkeypatch, probability, draw, ignites):
+    config = _config()
+    config["wind"].update(speed_kmh=17.7, direction_deg=315.0)
+    config["placeholder_transition"].update(wind_weight=0.20, T_3_to_4=1, T_4_to_5=1)
+    config["simulation"].update(seed=42, emergency_checkpoint_enabled=False, checkpoint_interval=0)
+    engine = FireAutomata(_environment(), config)
+    engine.set_ignition([(0, 0)])
+    engine.p_base.fill(0.0)  # An accidental teacher multiplier would destroy p=1.
+    calls = []
+    class Calibrated:
+        feature_names_in_ = np.asarray(CANONICAL_FEATURE_NAMES)
+        classes_ = np.array([1, 0], dtype=np.int64)
+        def predict_proba(self, features):
+            assert list(features.columns) == list(CANONICAL_FEATURE_NAMES)
+            assert all(dtype == np.dtype("float32") for dtype in features.dtypes)
+            calls.append(features.to_numpy(copy=True))
+            return np.tile([probability, 1.0 - probability], (len(features), 1))
+    class Draw:
+        def random(self, shape):
+            assert shape == (1, 2)
+            return np.array([[0.0, draw]], dtype=np.float64)
+    engine.model, engine.rng = Calibrated(), Draw()
+    monkeypatch.setattr(engine, "_save_emergency_checkpoint", lambda: pytest.fail("checkpoint"))
+    engine.step()
+    assert len(calls) == 1 and calls[0].shape == (1, 11)
+    assert (engine.grid[0, 1] == STATE_IGNITED) == ignites
+    assert ignites == (draw < float(np.float32(probability)))
+
+
+def test_candidate_multistep_matches_independent_scalar_state_features_timers_and_rng():
+    # Independent scalar neighbourhood/feature/transition expectation; no engine,
+    # feature assembler, wind helper, teacher or observer is used for the reference.
+    shape = (3, 4)
+    rr, cc = np.indices(shape)
+    material = ((rr + cc) % 5 + 1).astype(np.int8)
+    receiving = np.ones(shape, dtype=bool)
+    receiving[0, 3] = False
+    environment = dict(slope_risk=(rr / 10).astype(np.float32),
+        proximity_risk=(cc / 10).astype(np.float32),
+        building_presence=receiving.astype(np.int8), material_class=material,
+        burnable_mask=np.ones(shape, dtype=bool), nodata_mask=np.zeros(shape, dtype=bool),
+        grid_shape=shape, transform=None, crs=None)
+    config = _config()
+    config["simulation"].update(seed=42, emergency_checkpoint_enabled=False, checkpoint_interval=0)
+    config["wind"].update(speed_kmh=17.7, direction_deg=315.0)
+    config["placeholder_transition"].update(wind_weight=0.20, T_3_to_4=1, T_4_to_5=1)
+    engine = FireAutomata(environment, config)
+    engine.set_ignition([(1, 1)])
+    reference_rng = np.random.default_rng(42)
+    state = np.where(receiving, 2, 1).astype(np.int8)
+    state[1, 1] = 4
+    ignition = np.zeros(shape, dtype=np.int16)
+    blazing = np.zeros(shape, dtype=np.int16)
+    sine, cosine = np.sin(np.deg2rad(315.0)), np.cos(np.deg2rad(315.0))
+    offsets = [(r, c) for r in (-1, 0, 1) for c in (-1, 0, 1) if (r, c) != (0, 0)]
+    kernel = np.zeros((3, 3), dtype=np.float32)
+    for dr, dc in offsets:
+        distance = float(np.hypot(dr, dc))
+        alignment = (-dr / distance) * cosine + (-dc / distance) * (-sine)
+        kernel[dr + 1, dc + 1] = np.float32(max(1.0 + 0.20 * (17.7 / 10.0) * alignment, 0.05))
+    risk_table = np.array([0.0, 0.95, 0.8, 0.48, 0.30, 0.15], dtype=np.float32)
+    expected_features, call_counts = [], []
+    class Calibrated:
+        feature_names_in_ = np.asarray(CANONICAL_FEATURE_NAMES)
+        classes_ = np.array([1, 0], dtype=np.int64)
+        def predict_proba(self, features):
+            actual = features.to_numpy()
+            assert actual.dtype == np.float32
+            np.testing.assert_array_equal(actual.view(np.uint32), expected_features[0].view(np.uint32))
+            call_counts.append(len(features))
+            return np.tile([0.675, 0.325], (len(features), 1))
+    engine.model = Calibrated()
+    expected_draws = 0
+    for update in range(1, 7):
+        counts = np.zeros(shape, dtype=np.int8)
+        score = np.zeros(shape, dtype=np.float32)
+        for r in range(shape[0]):
+            for c in range(shape[1]):
+                sources = [(dr, dc) for dr, dc in offsets
+                           if 0 <= r + dr < shape[0] and 0 <= c + dc < shape[1]
+                           and state[r + dr, c + dc] == 4]
+                counts[r, c] = len(sources)
+                score[r, c] = np.float32(sum(float(kernel[dr + 1, dc + 1]) for dr, dc in sources))
+        score = score / np.float32(kernel.sum())
+        eligible = receiving & (state == 2) & (counts > 0)
+        rows = []
+        for r, c in zip(*np.nonzero(eligible)):
+            presence = np.float32(environment["building_presence"][r, c])
+            risk = risk_table[material[r, c]] if presence > 0 else np.float32(0)
+            rows.append([environment["slope_risk"][r, c], environment["proximity_risk"][r, c],
+                presence, risk, material[r, c], 17.7, sine, cosine, counts[r, c],
+                np.float32(presence * risk), score[r, c]])
+        expected_features[:] = [np.asarray(rows, dtype=np.float32).reshape(-1, 11)]
+        next_state = state.copy()
+        for r in range(shape[0]):
+            for c in range(shape[1]):
+                if state[r, c] == 3:
+                    ignition[r, c] += 1
+                    if ignition[r, c] >= 1:
+                        next_state[r, c], ignition[r, c], blazing[r, c] = 4, 0, 0
+                if state[r, c] == 4:
+                    blazing[r, c] += 1
+                    if blazing[r, c] >= 1:
+                        next_state[r, c], blazing[r, c] = 5, 0
+        if np.any(eligible):
+            draw = reference_rng.random(shape)
+            expected_draws += 1
+            new = eligible & (draw < np.float32(0.675))
+            next_state[new], ignition[new], blazing[new] = 3, 0, 0
+        engine.step()
+        state = next_state
+        for actual, expected in ((engine.grid, state), (engine.ignition_timers, ignition),
+                                 (engine.blazing_timers, blazing)):
+            np.testing.assert_array_equal(actual, expected)
+            assert actual.dtype == expected.dtype
+        assert engine.timestep == update
+        assert engine.rng.bit_generator.state == reference_rng.bit_generator.state
+    assert len(call_counts) == expected_draws

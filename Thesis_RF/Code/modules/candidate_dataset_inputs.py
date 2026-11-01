@@ -14,6 +14,7 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.env import get_gdal_config
 from rasterio.transform import Affine, rowcol
+from rasterio.windows import Window
 
 from .transition_observer import mask_sha256
 
@@ -179,8 +180,8 @@ def _file_hash(path):
     return digest.hexdigest()
 
 
-def read_inputs(paths, pins, *, expected_grid, configured_nodata, capability):
-    """Full native-resolution reads only; no companion inventory or fallback.
+def read_inputs(paths, pins, *, expected_grid, configured_nodata, capability, window=None):
+    """Native-resolution reads only; no companion inventory or fallback.
 
     capability is a later independently reviewed installed-reader verification
     record, not execution authority. Echoed open options alone are not proof.
@@ -194,6 +195,19 @@ def read_inputs(paths, pins, *, expected_grid, configured_nodata, capability):
             or capability.get("open_options") != OPEN_OPTIONS):
         raise PermissionError("Installed-reader interpretation verification is unresolved")
     require_text(capability.get("verification_reference"))
+    origin, shape = (0, 0), tuple(expected_grid["shape"])
+    read_options = {}
+    if window is not None:
+        if (not isinstance(window, (list, tuple)) or len(window) != 4
+                or any(type(n) is not int for n in window)
+                or any(n < 0 for n in window[:2]) or any(n <= 0 for n in window[2:])
+                or any(o + n > f for o, n, f in zip(window[:2], window[2:], shape))):
+            raise ValueError("Explicit integer crop must lie inside the parent grid")
+        if capability.get("windowed_reads_verified") is not True:
+            raise PermissionError("Windowed-reader verification is unresolved")
+        require_text(capability.get("window_verification_reference"))
+        origin, shape = tuple(window[:2]), tuple(window[2:])
+        read_options["window"] = Window(origin[1], origin[0], shape[1], shape[0])
     if any(str(path).replace("/", "\\").startswith("\\\\") for path in paths.values()):
         raise ValueError("UNC/network TIFF paths are not permitted")
     raw, masks, nodata, metadata = {}, {}, {}, {}
@@ -227,8 +241,10 @@ def read_inputs(paths, pins, *, expected_grid, configured_nodata, capability):
                         or tuple(dataset.transform) != tuple(expected_grid["transform"])):
                     raise ValueError("Raster alignment or approved grid mismatch")
                 _geometry(tuple(dataset.shape), dataset.crs, dataset.transform)
-                raw[name] = dataset.read(1)
-                masks[name] = dataset.read_masks(1)
+                raw[name] = dataset.read(1, **read_options)
+                masks[name] = dataset.read_masks(1, **read_options)
+                if raw[name].shape != shape or masks[name].shape != shape:
+                    raise ValueError("Native-resolution read returned an unexpected shape")
                 if "all_valid" in flags and not np.all(masks[name] != 0):
                     raise ValueError("Contradictory all-valid mask")
                 nodata[name] = dataset.nodatavals[0]
@@ -243,6 +259,10 @@ def read_inputs(paths, pins, *, expected_grid, configured_nodata, capability):
     interpretation = dict(policy_id=POLICY_ID, runtime=runtime,
         environment_options=dict(ENV_OPTIONS), open_options=dict(OPEN_OPTIONS),
         capability_reference=capability["verification_reference"], capability=dict(capability), layers=metadata)
+    if window is not None:
+        interpretation["window"] = list(window)
+    local_transform = Affine(*expected_grid["transform"][:6]) * Affine.translation(origin[1], origin[0])
     return prepare_arrays(raw, masks, nodata, configured_nodata=configured_nodata,
-        crs=expected_grid["crs"], transform=expected_grid["transform"],
-        input_hashes=pins, interpretation=interpretation)
+        crs=expected_grid["crs"], transform=local_transform,
+        input_hashes=pins, interpretation=interpretation,
+        global_origin=origin, full_grid_shape=tuple(expected_grid["shape"]))

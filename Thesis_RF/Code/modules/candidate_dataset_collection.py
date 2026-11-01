@@ -13,6 +13,7 @@ from .additive_exposure_teacher import (
     compute_additive_exposure_probability, compute_susceptibility32,
 )
 from .automata_engine import FireAutomata
+from . import candidate_dataset_crops as crops
 from .ca_state import STATE_CODES, STATE_ENCODING, validate_full_state_grid
 from .candidate_dataset_inputs import (
     MASK_POLICY_ID, POLICY_ID, PreparedInputs, require_digest, require_text, validate_seeds,
@@ -107,6 +108,11 @@ def validate_configuration(config, *, active=False):
     compared = deepcopy(config)
     pending = ("inventory", "complete_event_ids", "inputs", "grid",
                "configured_nodata", "reader_capability")
+    if "spatial_design" in compared:
+        crops.validate_design(compared["spatial_design"], compared["inventory"],
+                              compared["grid"]["shape"], compared["maximum_completed_updates"])
+        expected["spatial_design"] = None
+        pending += ("spatial_design",)
     if set(compared) != set(expected):
         raise ValueError("Unknown or missing candidate configuration fields")
     if active:
@@ -191,6 +197,10 @@ def execution_binding(config, prepared, spec, provenance, *, static_context=None
             or tuple(grid.get("transform", ())) != prepared.full_grid_transform
             or grid.get("crs") != str(prepared.environment["crs"])):
         raise ValueError("Configured global grid does not bind preparation")
+    if "spatial_design" in config:
+        crops.validate_preparation(config["spatial_design"], spec, prepared)
+        if not provenance["execution_id"].startswith(crops.CAMPAIGN_ID + "-"):
+            raise ValueError("Cropped execution requires a new cropped campaign identity")
     if static_context is None:
         _validate_common_masks(prepared)
         masks = prepared.mask_identities()

@@ -1,0 +1,73 @@
+# Source preparation only. Missing bindings/authority/resources deny execution.
+schema_version: candidate_cropped_rf_sigmoid.v1
+proposal_sha256: 440f9bf5a70b3c9b48ee864eb9936e314d29ada8f4ad9673cfce79824ff897bf
+enabled: false
+authorization_reference: null
+dataset_id: candidate-r2-cropped-1024-v1-g364-r1
+package_root: 'C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\candidate-r2-cropped-1024-v1-g364-r1-package'
+base_package: 'C:\Users\gibgib\Thesis-Cellular-Automata\Thesis_RF\Code\output\candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1'
+base:
+  model:
+    bytes: 1089577
+    sha256: 46e5929bdf6669d4cd6a5b1635d07a7aa5d2e81044e9ed3db3e577a35f8be90d
+  manifest:
+    bytes: 3881
+    sha256: 5675a588d7b6905194e9c351d0cfd5d589af24cde40e443f7bdaee9eab665452
+  configuration:
+    bytes: 2808
+    sha256: 32de2d6a31ab85a2177fa4593ea270f4db27c694aa81bf711007c6058befa970
+public_marker:
+  bytes: 150
+  sha256: 76acce9bb029f699766dfc5a2d5ba737806076fafd90a7ff90e5599fdf7f9b10
+calibration:
+  rows: 181265
+  manifest: null
+  csv: null
+teacher_id: exploratory_additive_exposure_teacher.r2
+numerical_contract_id: additive_exposure_quantized_f32_f64.r2
+feature_names:
+  - slope_risk
+  - proximity_risk
+  - building_presence
+  - material_risk
+  - material_class
+  - wind_speed
+  - wind_sin
+  - wind_cos
+  - neighbor_burning_count
+  - composite_flammability
+  - wind_weighted_score
+feature_dtype: float32
+target_name: Ignited
+target_dtype: int8
+positive_label: 1
+procedure:
+  method: sigmoid
+  cv: null
+  ensemble: auto
+  n_jobs: 1
+  sample_weight: null
+  forest_refit: false
+  method_search: false
+  threshold: null
+  input_score: raw_probability
+  optimizer_status: unavailable_through_reused_api
+roundtrip:
+  relative_tolerance: 0.0000000001
+  absolute_tolerance: 0.000000000001
+environment:
+  python: "3.14.3"
+  sklearn: "1.8.0"
+  numpy: "2.4.4"
+  pandas: "3.0.2"
+  scipy: "1.17.1"
+  joblib: "1.5.3"
+  pyyaml: "6.0.3"
+resources:
+  max_process_rss_bytes: null
+  min_available_physical_memory_bytes: null
+  min_free_disk_bytes: null
+  max_wall_seconds: null
+  observation_interval_seconds: null
+destination: null
+evidence_dir: null
