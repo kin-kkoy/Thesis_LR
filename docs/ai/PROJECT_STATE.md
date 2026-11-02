@@ -4,9 +4,9 @@
 
 - **Purpose:** Navigation index; identified source, inputs, artifacts and raw records remain primary evidence.
 - **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-11-02 (Asia/Manila), closeout/AUC planning D-157.
-- **Snapshot:** `66d08e0`, `codex/rf-phase16`; nine-path uncommitted diff.
-- **Current handoff:** D-157 independent closeout PASS; checkpoint/AUC plan next.
+- **Last updated:** 2026-11-02 (Asia/Manila), evidence preservation D-160.
+- **Snapshot:** `861574b`, `codex/rf-phase16`; only parent memory pending.
+- **Current handoff:** D-160 local evidence copy verified; memory commit/push ready.
 - **Historical index:** Tables retain October 12 evidence, not current execution status.
 - **Staleness rule:** Recheck changed source, input/artifact hashes, configuration, dependencies or approvals.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
@@ -19,7 +19,7 @@
 - **Limits:** F01 calibration. F1 315°:0.785902, 49°:0.852327 on 135,992 cells; 42.33% reference-burn exclusion. No held-out/physical-validity claim.
 - **Adopted:** INFERRED NASA true-49 converts to constant grid-from 48.825208, ignition pixel centre/six decimals. F01 is owner-identified Santa Maria.
 - **Timing:** HR=11/BFP 11:31 owner/partner-adopted. Preserve reported screenshot year 2024, owner year 2023, DSWD 13:25 discrepancy.
-- **Next:** Owner checkpoints/preserves evidence; Validator plans probability ROC-AUC, no run.
+- **Next:** Owner commits/pushes two memory files. AUC identified D-159; no inference needed.
 - **Pending:** Manuscript/viewer review; A/B, matched CA and partner handoff qualified. 16B prior-use/overlap/protocol and synthetic final test gated.
 - **Boundaries:** D-155 consumed; retained evidence review/parent memory only. No edits/tests/input access/reruns/cleanup/Git or dispatch.
 <!-- END CODEX DIGEST -->
@@ -89,7 +89,8 @@
 | Phase 11 validation report | `docs/Phase11_Tasks_11_1_11_2_Report.md` |
 | Phase 12 Task 12.1 policy review | `docs/Phase12_Task12_1_Grouped_Allocation_Policy_Review.md` |
 | Phase 12 failure / supervisor | Unchanged `docs/Phase12Block.md`; D-042–D-045; `run_set_c_supervised.py`; focused tests |
-| Current review / authority | D-157 closeout PASS; retention/checkpoint/AUC planning |
+| Current review / authority | D-160 preservation PASS; manual memory checkpoint |
+| Local evidence copy | `Thesis_RF/Code/output/phase16_evidence/p16a-closeout-20261102-r1/`; D-160 manifest |
 | Phase 13 numerical proposal for re-review | `docs/Phase13A_RF_Tuning_Protocol_Proposal.md` Draft 1; D-055 |
 | Phase 14 protocol / source gates | `docs/Phase14A_Calibration_Final_Test_Protocol_Proposal.md` Draft 4; D-077–D-118 |
 | Active configuration | `Thesis_RF/Code/config/default_experiment.yaml` |
