@@ -182,13 +182,51 @@ def run_simulation(config: dict) -> None:
 	checkpoint_interval = int(checkpoint_interval_cfg) if checkpoint_interval_cfg is not None else 0
 	checkpoint_enabled = checkpoint_interval > 0
 
+	# Duration-study snapshots (2026-11-03): save the grid after these completed steps.
+	# Read-only (get_grid copies the array); no RNG use, so the trajectory is unchanged.
+	snapshot_steps = sorted({int(s) for s in (sim_cfg.get("snapshot_steps") or [])})
+	snapshot_log = []
+
+	def write_grid(grid: np.ndarray, path: Path) -> None:
+		with rasterio.open(
+			path,
+			"w",
+			driver="GTiff",
+			height=grid.shape[0],
+			width=grid.shape[1],
+			count=1,
+			dtype="int8",
+			crs=automata.crs,
+			transform=automata.transform,
+		) as dst:
+			dst.write(grid, 1)
+
+	def save_snapshot(requested: int, actual: int) -> None:
+		grid = automata.get_grid().astype(np.int8)
+		write_grid(grid, output_dir / f"snapshot_step_{requested:04d}.tif")
+		counts = automata.get_state_counts()
+		snapshot_log.append(dict(
+			requested_step=requested,
+			actual_step=actual,
+			active_cells=counts["ignited"] + counts["blazing"],
+			reached_cells=counts["ignited"] + counts["blazing"] + counts["extinguished"],
+			status="time-limited (active)" if counts["ignited"] + counts["blazing"] else "inactive",
+		))
+		print(f"Snapshot saved: step {requested} (state after step {actual})")
+
 	start_step = int(automata.timestep) + 1
+	last_step = start_step - 1
+	stop_reason = "max_timesteps"
 	for step in range(start_step, max_timesteps + 1):
 		automata.step()
+		last_step = step
 
 		if step % 10 == 0:
 			counts = automata.get_state_counts()
 			print(f"Step {step}: {counts}")
+
+		if step in snapshot_steps:
+			save_snapshot(step, step)
 
 		if checkpoint_enabled and (step % checkpoint_interval == 0):
 			checkpoint_path = output_dir / f"checkpoint_step_{step:06d}.npz"
@@ -197,22 +235,23 @@ def run_simulation(config: dict) -> None:
 
 		if not automata.is_active():
 			print(f"Simulation stopped early at step {step}: no active fire cells remain.")
+			stop_reason = "inactive"
 			break
+
+	# Fire went out before a later snapshot: that snapshot is the terminal state.
+	for requested in snapshot_steps:
+		if requested > last_step:
+			save_snapshot(requested, last_step)
 
 	final_grid = automata.get_grid().astype(np.int8)
 	output_path = output_dir / "final_state.tif"
-	with rasterio.open(
-		output_path,
-		"w",
-		driver="GTiff",
-		height=final_grid.shape[0],
-		width=final_grid.shape[1],
-		count=1,
-		dtype="int8",
-		crs=automata.crs,
-		transform=automata.transform,
-	) as dst:
-		dst.write(final_grid, 1)
+	write_grid(final_grid, output_path)
+
+	if snapshot_steps:
+		import json
+		with open(output_dir / "termination.json", "w") as fh:
+			json.dump(dict(stop_step=last_step, stop_reason=stop_reason,
+				max_timesteps=max_timesteps, snapshots=snapshot_log), fh, indent=2)
 
 	print(f"Final state written to: {output_path}")
 

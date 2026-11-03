@@ -1019,3 +1019,179 @@ Observations:
 **Stage A added (2026-10-25, seeds 43–46, same runner):** Stage A unthresholded, n=5: whole-map F1 **0.604 ± 0.011** (0.595–0.623), Recall 0.914 ± 0.004, Precision 0.451 ± 0.012, Jaccard 0.432 ± 0.012, recall ≥ 0.80 in 5/5; buildings-only F1 0.663 ± 0.010, Recall 0.943 ± 0.001. Per-seed F1 (42–46): 0.595/0.602/0.601/0.623/0.597. Peak RAM 6.14–6.18 GB.
 
 Effect of wind_weighted_score on the map (Stage A → Stage C, same sandbox dataset, unthresholded): mean whole-map F1 0.604 → 0.617 (**+0.013**); Stage C is higher than Stage A at every one of the 5 seeds (per-seed differences +0.013, +0.006, +0.009, +0.019, +0.017), though the two ranges overlap (A max 0.623 > C min 0.608). Buildings-only 0.663 → 0.672 (+0.009; C higher in 4 of 5 seeds). A small but consistent gain.
+
+### Wind-direction diagnostic: Kent's F01 wind on our LR (2026-11-01, `Code/run_kent315.sh`)
+Why: Kent's RF F01 run (`codex/rf-phase15-review`, `phase15_candidate_r2_rf_ca_v1.yaml`, buildings-only F1 0.786 inside a 1,024 × 1,024 crop, seed 42) used 17.7 km/h **from 315°** (NW) instead of the real NASA POWER 49° (NE). He said the two were "the same"; they are 94° apart (his own `wind_convention.py` treats both as clockwise-from-north "from" bearings, and his master.csv stores the 17.7 km/h rows as wind_sin = −0.707, wind_cos = 0.707 = 315°). To show how much direction alone matters, reran our headline config with 315°.
+
+Setup: Stage B + t=0.40, `models/fire_lr_windweighted_windfix.joblib`, seeds 42–46, 100 steps, Sta. Maria ignition; configs `config/windfix_B_kent315_t040{,_s43..s46}.yaml` = the `windfix_B_nasa_t040*` configs with `direction_deg: 315.0` (nothing else changed). Raw: `Code/output/windfix/kent315_summary.txt`. Mean ± sample SD over n=5 (min–max). Peak RAM 6.15–6.23 GB, ~8 min per run.
+
+| Wind (B, t=0.40) | Whole-map F1 | Recall | Precision | Jaccard | Recall ≥ 0.80 | Bldg-only F1 | Bldg-only Recall |
+|---|---|---|---|---|---|---|---|
+| **NASA 17.7 km/h from 49° (real)** | **0.634 ± 0.010** (0.625–0.648) | 0.913 ± 0.018 (0.882–0.929) | 0.486 ± 0.012 | 0.464 ± 0.010 | 5/5 | 0.679 ± 0.012 (0.667–0.695) | 0.941 ± 0.008 |
+| 17.7 km/h from 315° (Kent F01) | 0.592 ± 0.038 (0.536–0.630) | 0.801 ± 0.077 (0.681–0.857) | 0.470 ± 0.022 | 0.422 ± 0.038 | 3/5 | 0.623 ± 0.035 (0.571–0.652) | 0.846 ± 0.067 |
+
+Per-seed whole-map F1 (42/43/44/45/46), 315°: 0.612/0.630/0.571/0.611/0.536 (vs 49°: 0.648/0.625/0.632/0.638/0.627). Differences 315° − 49°: −0.036/+0.005/−0.061/−0.027/−0.091; mean **−0.042** F1, **−0.112** recall. Recall lower at every seed; seeds 44 and 46 fail the 0.80 recall target.
+
+Interpretation: wind direction materially changes our LR's footprint and the real (NE) wind fits the scar better and more stably (SD 0.010 vs 0.038), so the LR is using direction as intended. Kent's F01 number therefore cannot be compared with ours or reported until it is rerun with `direction_deg: 49`; his training winds also include 17.7/315. Diagnostic only, not a paper table.
+
+### LR trained on Kent's shared Set C dataset (2026-11-01, `Code/train_lr_kent_r2.py`, `Code/run_kent_r2.sh`)
+Data: Kent's package `candidate-r2-cropped-1024-v1-g364-r1` (R2 teacher labels, 26 crop families × 7 winds × 2 replicates; built with 17.7 km/h from 315° among its winds; family 1 is centred on the Sta. Maria ignition pixel). Only the role files were extracted, to `Code/dataFiles/kent_r2_package/{train,validation,calibration}/` (sha256 and row counts checked against his manifests: 227,576 / 136,341 / 181,265). `custodian/master.csv` and `custodian/final_test/` were left inside the zip, never read for training. A copy of master.csv sits at `dataFiles/kent_candidate_r2_master.csv` (sha256 c7a92327…), not used. 63.8% of train rows are ignited (ours: 5–7%); 98.4% of master feature rows are duplicates.
+
+**Per-cell (fit on train role, scored on validation role; calibration role unused).** StandardScaler + LR (C=1, l2, lbfgs, max_iter 2000, seed 42), all 11 features. Raw: `Code/output/windfix/kent_r2_lr_training.txt`.
+
+| Model (validation role) | AP | ROC AUC | Brier | Log loss | Mean p |
+|---|---|---|---|---|---|
+| LR unweighted | 0.8331 | 0.7439 | 0.1921 | 0.5643 | 0.642 |
+| LR balanced | 0.8331 | 0.7439 | 0.2053 | 0.5951 | 0.529 |
+| Kent RF, uncalibrated (his Table 13, not recomputed) | 0.8303 | 0.7400 | 0.1948 | 0.5716 | — |
+
+LR ties/slightly exceeds his RF per cell on his own validation role. Balanced weighting only lowers probabilities here (positives are the majority). Largest scaled coefficient: wind_weighted_score (0.87). Models: `sandbox_kent/models/fire_lr_kent_r2_{unweighted,balanced}.joblib`.
+
+**Spatial (unweighted model in our sandbox CA).** Sta. Maria, NASA 17.7 km/h from 49°, 100 steps, no probability cutoff (probabilities used directly), seeds 42–46; configs `sandbox_kent/config/windfix_KR2u_nasa_t000*` = `windfix_C_nasa_t000*` with only the model swapped. Raw: `sandbox_kent/output/windfix/kent_r2_summary.txt`. Peak RAM 6.19–6.22 GB, ~10 min per run. Mean ± sample SD, n=5 (min–max).
+
+| Model in our CA (no cutoff) | Whole-map F1 | Recall | Precision | Jaccard | Predicted cells | Recall ≥ 0.80 | Bldg-only F1 | Bldg-only Recall |
+|---|---|---|---|---|---|---|---|---|
+| Stage C, our data (existing) | **0.617 ± 0.014** (0.608–0.642) | 0.917 ± 0.004 | 0.465 ± 0.017 | 0.446 ± 0.015 | 6,547 | 5/5 | **0.672 ± 0.017** (0.661–0.702) | 0.947 ± 0.004 |
+| LR on Kent's data, unweighted | 0.587 ± 0.005 (0.580–0.592) | 0.933 ± 0.003 | 0.428 ± 0.005 | 0.415 ± 0.005 | 7,224 | 5/5 | 0.650 ± 0.005 (0.643–0.654) | 0.954 ± 0.001 |
+
+Per-seed whole-map F1 (42–46), Kent data: 0.589/0.588/0.580/0.592/0.584 (Stage C: 0.608/0.608/0.610/0.642/0.614). Kent-data model lower at every seed (−0.019 to −0.050; mean −0.030 whole map, −0.022 buildings-only), slightly higher recall, more over-prediction (+10% predicted cells), very stable (SD 0.005).
+
+Caveats: run in OUR CA, whose transition (timers, burnout) differs from the R2 teacher that generated his labels, so this is not his F01 setup; a like-for-like run in his CA/crop (17.7 km/h from 49°, after he reruns) is still to do. Sta. Maria favours his dataset (training family at the ignition point), yet it still scored lower here. Second fire needed before calling either dataset better.
+
+### Same-kitchen comparison: LR vs RF in Kent's phase16 F01 setup (2026-11-02, partner-run)
+Kent ran `fire_lr_kent_r2_unweighted` (rebuilt under sklearn 1.8.0 from `~/Downloads/LR_for_Kent/` params; validation metrics reproduced exactly) in his `codex/rf-phase16` F01 setup, changing only the model (path/hash, no calibration manifest, run IDs). Setup for both: 1,024 × 1,024 crop at origin [256, 2176], ignition local [638, 554] (global [894, 2730]), seed 42, 17.7 km/h from 48.825208° grid-north (= NASA 49° true north at hour 11), wind_weight 0.20, timers 1/1, max 300 updates, stochastic probability, no thresholds. Scored with his `final_results.py` on 135,992 common-valid mapped-building cells (1,910 reference positives; 1,402 of 3,312 reference cells outside the domain). **Single seed; partner-reported** (Kent's report: `~/Downloads/LR_SameKitchen_Result.md`; LR final state sha256 1706cc63…). Kent's RF runs: 315° = original F01, 49° = `p16-f01-nasa-hr11-s42-r1`.
+
+| Model (Kent's CA, seed 42) | Dataset | Wind | TP | FP | FN | Precision | Recall | F1 | Jaccard | Burned cells | Updates |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| RF, sigmoid-calibrated | Kent R2 | 49° | 1,795 | 507 | 115 | 0.7798 | 0.9398 | **0.8523** | 0.7427 | 2,302 | 135 |
+| LR, uncalibrated | Kent R2 | 49° | 1,774 | 821 | 136 | 0.6836 | 0.9288 | **0.7876** | 0.6496 | 2,595 | 151 |
+| RF, sigmoid-calibrated | Kent R2 | 315° | 1,795 | 863 | 115 | 0.6753 | 0.9398 | 0.7859 | 0.6473 | 2,658 | 161 |
+
+Circle baselines on the same domain (buildings in crop, centred on the ignition; computed here from `stack_ground_truth.tif`/`stack_buildings.tif`, 1,919 truth cells, so ±9 cells from his 1,910): same size as RF prediction (R ≈ 105 m) F1 0.733; same size as LR prediction (R ≈ 113 m) 0.728; best circle in hindsight 0.738 at R = 100 m. **Both models beat the circle in Kent's CA** (our CA did not).
+
+Kitchen effect for the same LR model (Kent R2 data, 49°, buildings-only F1): our CA 0.650 ± 0.005 (5 seeds, full map) → Kent's CA 0.788 (seed 42, crop domain). Most of the gap between our LR results and Kent's RF result comes from the CA setup, not the model or data. In the same CA, RF − LR = −0.065 F1 at seed 42 (LR burns +293 cells: +314 FP, +21 FN).
+
+Note on wind sensitivity in Kent's CA: RF 315° vs 49° runs share 2,292 of 2,302 burned cells (TP identical), i.e. a 94° direction change barely moves the footprint there (it mainly trims over-spread). Asked Kent why.
+
+Limits: one seed each, Sta. Maria is the development fire for Kent's pipeline (training family at the ignition point), domains differ from our whole-map/building-mask scoring, RF calibrated vs LR not. Need seeds 42–46 for both and the second fire.
+
+#### Same-kitchen, seeds 42–46 (2026-11-02, partner-run; supersedes the single-seed reading above)
+Kent added seeds 43–46 for both models (orchestrator allowance for seeds 42–46 only; everything else identical to the seed-42 runs). Report: `~/Downloads/LR_SameKitchen_Result_Seeds42_46.md`. Buildings-in-crop domain, 135,992 cells, 1,910 reference positives. Means/SDs below recomputed here from his per-seed values (match his report).
+
+| Seed | RF F1 | RF Recall | RF Precision | RF cells | LR F1 | LR Recall | LR Precision | LR cells |
+|---|---|---|---|---|---|---|---|---|
+| 42 | 0.852 | 0.940 | 0.780 | 2,302 | 0.788 | 0.929 | 0.684 | 2,595 |
+| 43 | 0.664 | 0.880 | 0.532 | 3,157 | 0.665 | 0.950 | 0.512 | 3,548 |
+| 44 | 0.781 | 0.932 | 0.671 | 2,653 | 0.764 | 0.930 | 0.648 | 2,744 |
+| 45 | 0.693 | 0.957 | 0.543 | 3,364 | 0.653 | 0.926 | 0.504 | 3,512 |
+| 46 | 0.692 | 0.934 | 0.549 | 3,249 | 0.647 | 0.949 | 0.491 | 3,691 |
+| **Mean ± SD** | **0.736 ± 0.078** | 0.929 ± 0.029 | 0.615 ± 0.108 | 2,945 | **0.703 ± 0.067** | 0.937 ± 0.012 | 0.567 ± 0.091 | 3,218 |
+
+- Seed 42 was the best run for both models; the single-seed 0.852 / 0.788 overstate typical performance. F1 ≥ 0.80 in 1/5 runs (RF) and 0/5 (LR); recall ≥ 0.80 in 5/5 for both.
+- RF − LR per seed: +0.065 / −0.002 / +0.017 / +0.040 / +0.045, mean **+0.033 ± 0.026**; RF higher in 4/5. Mostly precision (LR burns ~270 more cells on average).
+- Same-size circle per run (buildings in crop, computed here): RF runs' circles mean 0.701 → RF − circle mean **+0.035** (per seed +0.119 / −0.026 / +0.056 / +0.018 / +0.008); LR runs' circles mean 0.686 → LR − circle mean **+0.017** (+0.059 / +0.003 / +0.043 / −0.012 / −0.008). Both beat a same-size circle on average, but only narrowly, and not at every seed. Best hindsight circle 0.738 ≈ RF mean.
+- Kent's CA is far more seed-sensitive than ours (SD 0.07–0.08 vs 0.005–0.017 buildings-only in our CA), so single-seed numbers from it should not be reported.
+
+#### Same-kitchen, RF with the 0.40 cutoff (2026-11-02, partner-run, side check)
+Kent applied the LR's cutoff rule to his RF (probabilities < 0.40 set to 0, then the usual stochastic draw; no retraining), seeds 42–46, otherwise identical to the no-cutoff RF runs. Source: screenshot of his report (full report not yet received). Per seed F1 / recall / precision / burned cells: 42 0.860 / 0.940 / 0.793 / 2,264; 43 0.678 / 0.880 / 0.551 / 3,052; 44 0.797 / 0.932 / 0.696 / 2,560; 45 0.708 / 0.957 / 0.562 / 3,250; 46 0.699 / 0.934 / 0.559 / 3,191. **Mean F1 0.748 ± 0.077**, recall 0.929 ± 0.029, precision 0.632 ± 0.108, 2,863 cells; F1 ≥ 0.80 in 1/5. vs RF no cutoff: +0.008 / +0.014 / +0.016 / +0.015 / +0.008 (mean **+0.012**), 38–114 fewer burned cells, recall identical at every seed (cutoff only removed cells outside the reference). Side check only: 0.40 was chosen for the LR, so the RF's main result stays the no-cutoff 0.736 ± 0.078. LR with cutoff: pending.
+
+#### Same-kitchen, LR with the 0.40 cutoff (2026-11-02, partner-run)
+Report: `~/Downloads/LR_Threshold040_Seeds42_46_Result.md`. Kent's engine already had the rule as `inference_mode: stochastic_probability_gate` + `proba_threshold: 0.40` (p < 0.40 → 0, then the usual draw; byte-identical engine to his RF 0.40 runs). Before the cutoff runs, a rerun of the old LR seed-42 no-cutoff config reproduced the original matrix and the exact final-state TIFF hash (1706cc63…), so the engine change did not alter no-cutoff behaviour. Only 0.40 was run.
+
+| Seed | F1 | Recall | Precision | Burned cells | Matrix [[TN,FP],[FN,TP]] |
+|---|---|---|---|---|---|
+| 42 | 0.789 | 0.929 | 0.686 | 2,585 | [[133271, 811], [136, 1774]] |
+| 43 | 0.676 | 0.950 | 0.525 | 3,460 | [[132437, 1645], [95, 1815]] |
+| 44 | 0.782 | 0.930 | 0.675 | 2,633 | [[133226, 856], [133, 1777]] |
+| 45 | 0.667 | 0.926 | 0.521 | 3,395 | [[132456, 1626], [141, 1769]] |
+| 46 | 0.662 | 0.949 | 0.508 | 3,564 | [[132330, 1752], [98, 1812]] |
+
+**Summary of the same-kitchen comparison (Kent's CA, buildings-in-crop domain, seeds 42–46, mean ± SD):**
+
+| | No cutoff | Cutoff 0.40 |
+|---|---|---|
+| RF (calibrated) | 0.736 ± 0.078 | 0.748 ± 0.077 (side check) |
+| LR (uncalibrated, unweighted) | 0.703 ± 0.067 | **0.715 ± 0.065** |
+
+- LR cutoff gain +0.012 (per seed +0.002 / +0.011 / +0.019 / +0.014 / +0.015, every seed positive), the same size as the RF's +0.012. Much smaller than the +0.046 the cutoff gave Stage B in our CA.
+- RF − LR with both at 0.40: +0.071 / +0.002 / +0.015 / +0.041 / +0.037, mean +0.033 ± 0.027, RF higher 5/5. Gap unchanged by the cutoff.
+- Recall identical with and without the cutoff at every seed, for both models (TP/FN unchanged; only FP removed). Same pattern as RF 315° vs 49°. Asked Kent to confirm the TP cell sets are identical (not a scoring artifact).
+- Neither model reaches mean F1 ≥ 0.80 on Sta. Maria in any configuration; recall ≥ 0.80 in all 20 runs.
+
+#### Identical-recall sanity check (2026-11-02, partner-run)
+Kent re-read the final-state TIFFs and compared actual TP/FN cell positions (`~/Downloads/RF_Recall_TP_Cell_Sanity_Check.md`). RF 49°, cutoff vs no cutoff: TP and FN sets exactly identical at all five seeds; every changed burned cell is reference-negative (38–137 cells per seed). RF seed 42, 315° vs 49°: 1,795 TP each, 1,793 shared, two swapped each way (4 reference-positive cells differ, 372 reference-negative); the same recall comes from equal counts. No scoring artifact. Interpretation: in Kent's CA the reached part of the scar is almost fixed for a given seed (the fire engulfs it regardless), and both the cutoff and a 94° wind change mainly alter over-spread outside the scar. So F1 differences there are driven by precision, and wind direction has weak influence on which reference cells burn.
+
+### Second fire: Sitio Airbase (Sanggi Interior, Pajo), LR in our CA (2026-11-02, `Code/run_airbase.sh`)
+**Fire and ground truth.** Sitio Airbase / Sitio Sanggi Interior, Brgy. Pajo, Friday 2025-01-24, BFP 1328H (DSWD ~1:32 PM, out 2:58 PM), ~36–46 houses. Date confirmed by Kristian from a news reel ("Friday afternoon, January 24"). GT: `stack_ground_truth_airbase.tif` from the RF side's May branch (commit a719a80, 2026-05-26), copied unchanged to `Code/processedData/raster/raster/` (sha256 1627ac903354f029…). Same grid as Sta. Maria (EPSG:32651, 6896 × 5489, 3 m). **281 burned cells, 178 on buildings.** Traced by the RF side (Kent, confirmed 2026-11-03) from 2025 imagery; exact imagery date not recorded. Google Earth's only post-fire image of the area is dated 2025-03-04 (seen 2026-11-02), so that is the likely source, ~6 weeks after the fire (unconfirmed). Kent's May runs against it used pre-wind-fix code (invalid). RF side confirmed (2026-11-03) that nothing in phase16 was tuned on the airbase or pusok maps; only Sta. Maria was used, same as the LR side.
+
+**Ignition.** Kent's suggested point 606063.9, 1140379.2 fell on a non-building cell; moved one cell (3 m) south onto the nearest building: **606063.2784, 1140377.2699 (row 1332, col 2501)**, material class 2 (lightweight). The ignition house is unknown; the point is 9.5 m from the scar centroid (Sta. Maria: 41 m). Scar is compact: max 49 m from ignition, 95% within 42 m.
+
+**Wind.** NASA POWER, 13:00 LST: **10.6 km/h from 61°** (12:00 12.2/61, 14:00 9.4/59). Grid bearing for Kent's CA 60.826528 (method reproduces his 48.825208 for Sta. Maria).
+
+**Setup, fixed in advance (nothing re-tuned on this fire).** Copies of `windfix_B_nasa_t040*.yaml` with only ignition, wind and output_dir changed (`config/windfix_airbase_B_t040*.yaml`): Stage B model `fire_lr_windweighted_windfix.joblib`, proba_threshold 0.40, 100 steps, seeds 42–46. Scored with `score_both_areas.py --gt stack_ground_truth_airbase.tif`. Peak RAM 5.8 GB, ~10–15 min per run. Output `output/windfix/airbase_B_t040*/`, summary `output/windfix/airbase_summary.txt`, baselines `output/windfix/airbase_baselines.txt`.
+
+| Seed | Whole F1 | Whole R | Whole P | Bld F1 | Bld R | Bld P | Pred cells (whole / bld) |
+|---|---|---|---|---|---|---|---|
+| 42 | 0.1055 | 0.9502 | 0.0559 | 0.1558 | 0.9888 | 0.0845 | 4,780 / 2,082 |
+| 43 | 0.0971 | 0.9680 | 0.0511 | 0.1355 | 1.0000 | 0.0727 | 5,321 / 2,450 |
+| 44 | 0.1062 | 0.9466 | 0.0562 | 0.1575 | 0.9944 | 0.0855 | 4,730 / 2,069 |
+| 45 | 0.1004 | 0.9644 | 0.0530 | 0.1399 | 1.0000 | 0.0752 | 5,118 / 2,366 |
+| 46 | 0.0988 | 0.9502 | 0.0521 | 0.1525 | 1.0000 | 0.0825 | 5,122 / 2,157 |
+
+**Five-seed mean ± SD (min–max):** whole-map F1 **0.102 ± 0.004** (0.097–0.106), recall 0.956 ± 0.010, precision 0.054 ± 0.002; buildings-only F1 **0.148 ± 0.010** (0.136–0.158), recall 0.997 ± 0.005, precision 0.080 ± 0.006. Predicted 5,014 ± 251 cells vs 281 true (~18×). Recall ≥ 0.80 met; F1 far below 0.80.
+
+**Circle baselines (centred on the ignition).** Same-size circle per seed (r 116–123 m): whole F1 0.106 ± 0.005, buildings 0.165 ± 0.006, recall 1.000. The equal-area circle beats the LR at every seed (whole and buildings). Fixed radii: 30 m → whole 0.712 / bld 0.754 (best; chosen with hindsight, optimistic); 50 m → 0.485 / 0.542; 100 m → 0.148 / 0.220. Caveat: the ignition is near the scar centre, which favours the circle.
+
+**Diagnosis (spread over time, from the step logs).** Burned cells by step, seed 42: 10:64, 20:256, 30:531, 50:1,207, 100:4,780; seed 43: 20:271, 30:609, 100:5,321. The simulated fire matched the true size (~281 cells) around step 20 and was still growing at step 100 (no early stop). Interpretation: the CA has no suppression or duration limit and always runs 100 steps. Sta. Maria (581 houses, 3,312 cells) happened to fit that horizon; the Airbase fire was put out in ~1.5 h at ~46 houses. So this mainly tests the fixed 100-step horizon, not only the LR. **Not used for any change:** choosing a stop step from this fire would be tuning on the test fire. A duration-based stopping rule is future work (would need a second training fire to pick it fairly).
+
+**Package for Kent (RF no cutoff + LR 0.40 main, RF 0.40 side; seeds 42–46; buildings-only):** `~/Downloads/Airbase_for_Kent.zip` (README + GT). Crop origin [768, 1920], local ignition [564, 581], scar inside (min margin 442 cells). Sent by Kristian 2026-11-02. Results pending.
+
+### Open item: material_risk inverted in our main CA (found 2026-11-02, not fixed)
+Our main pipeline (`Code/modules/data_loader.py:116`, used by Stage B) computes `material_risk = materials_raw / 10`, giving class 1 (pure lightweight) 0.1 and class 3 (half) 0.3, i.e. the most flammable class gets the lowest risk. Kent's mapping (`sandbox_kent/modules/feature_pipeline.py`, `data_loader.py`): 0 none, 1 pure lightweight 0.95, 2 lightweight 0.80, 3 half 0.48, 4 mostly concrete 0.30, 5 concrete 0.15. The raster only contains classes 0–3 across the whole map. Affects Sta. Maria and Airbase equally (Stage B was trained on the inverted feature; its coefficient was small, +0.02 to +0.06). Fixing it needs dataset regeneration, retraining and rerunning both fires, so it was deliberately not fixed before the second-fire run, to keep that run on the frozen paper pipeline. Decide with Kent; if fixed, rerun both fires together.
+
+#### Second fire, Kent's CA: RF no cutoff (2026-11-02, partner-run, screenshot sent to Kristian)
+Buildings-in-crop scoring, seeds 42–46. F1 0.266 / 0.251 / 0.242 / 0.265 / 0.194; recall 0.843 / 0.888 / 0.792 / 0.888 / 0.893; precision 0.158 / 0.146 / 0.143 / 0.156 / 0.109; burned cells 948 / 1,082 / 987 / 1,013 / 1,459; updates 103 / 161 / 129 / 125 / 189 (fire died out before the 300-update cap). **Mean ± SD: F1 0.244 ± 0.030, recall 0.861 ± 0.043, precision 0.142 ± 0.020.** Recall ≥ 0.80 at 4/5 seeds (seed 44: 0.792). Over-burns ~5–8× (178 true building cells). Same failure mode as our LR in our CA (0.148 buildings F1), but different CA, so not a like-for-like comparison. LR in Kent's CA (cutoff 0.40) not run yet. Kent is considering a fire-duration-based stopping rule (see next item).
+
+#### Second fire, Kent's CA: LR cutoff 0.40 (2026-11-02, partner-run)
+Report: `~/Downloads/Airbase_LR_Cutoff040_Seeds42_46_Result.md` (Kent's Codex labels this "Kristian's CA"; it is Kent's phase16 CA, branch `codex/rf-airbase-simulation`). Model fire_lr_kent_r2_unweighted (sha 41e6f55d…), gate p < 0.40 → 0, 300-update cap + inactivity stop, no new stopping rule. Kent centred his crop on the ignition (origin [820, 1989], local [512, 512]) rather than the 128-aligned [768, 1920] in our package; all 281 GT cells inside. Domain 215,553 building cells, 178 positives (103 of 281 GT cells are off-building and excluded). Same domain as his Airbase RF.
+
+| Seed | F1 | Recall | Precision | Reached | Updates | Matrix [[TN,FP],[FN,TP]] |
+|---|---|---|---|---|---|---|
+| 42 | 0.254 | 0.843 | 0.150 | 1,003 | 103 | [[214522, 853], [28, 150]] |
+| 43 | 0.274 | 0.882 | 0.163 | 966 | 123 | [[214566, 809], [21, 157]] |
+| 44 | 0.247 | 0.854 | 0.144 | 1,053 | 135 | [[214474, 901], [26, 152]] |
+| 45 | 0.297 | 0.994 | 0.175 | 1,012 | 125 | [[214540, 835], [1, 177]] |
+| 46 | 0.270 | 0.899 | 0.159 | 1,009 | 99 | [[214526, 849], [18, 160]] |
+
+**Mean ± SD: F1 0.269 ± 0.020, recall 0.894 ± 0.060, precision 0.158 ± 0.012, reached 1,009 ± 31.** All runs went inactive before the cap.
+
+**Second fire, same-kitchen summary (Kent's CA, buildings-in-crop, fixed-horizon/inactivity stop):** RF no cutoff 0.244 ± 0.030 vs LR cutoff 0.40 **0.269 ± 0.020**. LR − RF per seed: −0.012 / +0.024 / +0.005 / +0.032 / +0.075, mean +0.025, LR higher 4/5 (reverses Sta. Maria, where RF was higher 5/5 by +0.033). Both over-predict ~5.5–6× (178 true building cells). In our CA, Stage B LR: buildings 0.148 ± 0.010. Neither model is near F1 0.80 on this fire; recall ≥ 0.80 in 9/10 Kent-CA runs and 5/5 ours.
+
+#### Fire durations for a stopping rule (decided 2026-11-03, Kristian)
+Source: **DSWD for both fires** (BFP file has start times only; its Sta. Maria row's date and time disagree with all other sources). Endpoint: DSWD "fire out".
+- Sta. Maria: ~1:25 PM → 4:57 PM = **~212 min** (DSWD DROMIC Terminal Report, 21 Apr 2024). Other reports: under control 3:25 PM (SunStar quoting BFP), 3:43 PM (Rappler); fire out 4:57 PM (DSWD, Rappler, SunStar/BFP).
+- Airbase: ~1:32 PM → 2:58 PM = **~86 min** (DSWD DROMIC #3, 3 Feb 2025). Philstar/BFP: reported 1:28 PM, under control 2:58 PM.
+Not yet implemented. Airbase has now informed the stopping discussion, so any Airbase run with a new stopping rule is development/sensitivity, not held-out validation.
+
+#### Pusok map as a possible third fire (2026-11-03, open)
+`stack_ground_truth_pusok.tif`: 1,927 cells, centroid 605355.3, 1140818.3; May config ignition 605358.28, 1140812.27 (row 1187, col 2266). RF side says it is a Pusok fire from 2019 or 2018, not sure. The BFP file covers 2019-2025; its only 2019 Pusok row is Sitio Ibabao, 06/20/2019 0541H (62-80 houses in news). Size check: Sta. Maria is ~5.7 GT cells per house (3,312 / 581), so 62-80 houses would be roughly 350-460 cells; 1,927 is ~4-5x that, so the map may be a different fire or a generous trace. Not usable until incident, date and imagery are confirmed. RF side is leaving it for now.
+
+### Duration study, LR simulator (2026-11-03, `Code/run_duration.sh`, `spatial_validation/score_duration.py`)
+**Protocol (frozen with the RF side before running, 2026-11-03):** stop at inactivity or the duration horizon, whichever comes first. Horizon = DSWD fire-out interval ÷ assumed minutes per update. Airbase 86 min, Sta. Maria 212 min. Clock is an **assumption**, not calibrated: 1 min/update primary; 2 and 0.5 min/update sensitivity. Stage B LR, t = 0.40, seeds 42–46, nothing else changed (`config/duration_*.yaml`). One trajectory per seed to the longest horizon, with snapshots after the shorter horizons (`orchestrator.py` `snapshot_steps`, read-only, no RNG use). **Check:** the step-100 snapshot is cell-for-cell identical to the existing 100-step final state for all 9 seeds compared (the 5 Airbase runs and Sta. Maria seeds 42/43/44/46). Sta. Maria seed 45 was OOM-killed overnight (exit 137) and rerun; its step-100 snapshot was not compared. Sta. Maria seed 42 went inactive at step 411 (424 snapshot = terminal state); every other run was still active at its last horizon. Peak RAM 6.3–6.5 GB. Output in `output/windfix/duration/` (`summary.txt`, `duration_scores.txt` with per-seed rows, `duration_scores.json`).
+
+Five-seed mean ± SD (min–max). Buildings in the RF side's crop gave identical scores to whole-map buildings in every case (no predicted building cells outside the crop).
+
+| Fire | Horizon (clock) | Whole F1 | Whole R | Bld F1 | Bld R | Bld P | Reached cells |
+|---|---|---|---|---|---|---|---|
+| Airbase | 43 (2 min) | 0.378 ± 0.021 (0.341–0.392) | 0.893 | 0.431 ± 0.031 (0.380–0.456) | 0.946 | 0.280 | 1,053 ± 151 |
+| Airbase | **86 (1 min, primary)** | **0.132 ± 0.007** (0.124–0.141) | 0.956 | **0.180 ± 0.011** (0.167–0.192) | 0.997 | 0.099 | 3,793 ± 258 |
+| Airbase | 172 (0.5 min) | 0.042 ± 0.001 | 0.956 | 0.075 ± 0.002 | 0.997 | 0.039 | 12,500 ± 352 |
+| Sta. Maria | 106 (2 min) | 0.617 ± 0.008 (0.609–0.626) | 0.938 | 0.665 ± 0.008 (0.658–0.675) | 0.961 | 0.509 | 6,764 ± 187 |
+| Sta. Maria | **212 (1 min, primary)** | **0.501 ± 0.004** (0.496–0.506) | 0.976 | **0.589 ± 0.005** (0.585–0.597) | 0.992 | 0.419 | 9,591 ± 116 |
+| Sta. Maria | 424 (0.5 min) | 0.379 ± 0.049 | 0.976 | 0.470 ± 0.053 | 0.992 | 0.309 | 13,955 ± 2,103 |
+
+Baselines for reference (100 steps, the paper's setup): Sta. Maria whole 0.634 ± 0.010 / buildings 0.679 ± 0.012; Airbase whole 0.102 ± 0.004 / buildings 0.148 ± 0.010.
+
+**Reading.** In the LR simulator the fire never burns out on its own, so F1 falls steadily with every longer horizon, for both fires. Recall stays ≥ 0.89 everywhere. Under the primary 1 min/update clock, Sta. Maria drops from 0.634 to 0.501 (whole) and Airbase rises from 0.102 to 0.132 (it now stops at 86 steps instead of 100). The 2 min/update clock gives Sta. Maria ≈ the paper's 100-step result (106 vs 100 steps) and the best Airbase result (0.378 / 0.431), but it is a pre-declared sensitivity setting and must not be promoted to primary after seeing these results. Neither fire reaches F1 0.80 under any clock. The results depend strongly on the assumed clock, and the LR simulator lacks a burnout mechanism (future work).
+
+**Domain counts for the RF side (buildings in crop, LR simulator's building mask):** Airbase crop [820, 1989]: 216,187 building cells, 178 positives (RF side: 215,553 / 178). Sta. Maria crop [256, 2176]: 136,867 building cells, 1,919 positives (RF side: 135,992 / 1,910). The difference is the RF side's common-valid mask; positives match for Airbase and differ by 9 for Sta. Maria.
