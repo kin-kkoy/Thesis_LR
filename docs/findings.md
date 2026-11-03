@@ -1146,8 +1146,13 @@ Kent re-read the final-state TIFFs and compared actual TP/FN cell positions (`~/
 
 **Package for Kent (RF no cutoff + LR 0.40 main, RF 0.40 side; seeds 42–46; buildings-only):** `~/Downloads/Airbase_for_Kent.zip` (README + GT). Crop origin [768, 1920], local ignition [564, 581], scar inside (min margin 442 cells). Sent by Kristian 2026-11-02. Results pending.
 
-### Open item: material_risk inverted in our main CA (found 2026-11-02, not fixed)
-Our main pipeline (`Code/modules/data_loader.py:116`, used by Stage B) computes `material_risk = materials_raw / 10`, giving class 1 (pure lightweight) 0.1 and class 3 (half) 0.3, i.e. the most flammable class gets the lowest risk. Kent's mapping (`sandbox_kent/modules/feature_pipeline.py`, `data_loader.py`): 0 none, 1 pure lightweight 0.95, 2 lightweight 0.80, 3 half 0.48, 4 mostly concrete 0.30, 5 concrete 0.15. The raster only contains classes 0–3 across the whole map. Affects Sta. Maria and Airbase equally (Stage B was trained on the inverted feature; its coefficient was small, +0.02 to +0.06). Fixing it needs dataset regeneration, retraining and rerunning both fires, so it was deliberately not fixed before the second-fire run, to keep that run on the frozen paper pipeline. Decide with Kent; if fixed, rerun both fires together.
+### Material codes: what 0–3 mean (corrected 2026-11-03; supersedes the "material_risk inverted" item of 2026-11-02)
+The 2026-11-02 claim that our `material_risk = materials_raw / 10` is inverted was **wrong**: it assumed the RF side's 0–5 legend (1 = pure lightweight … 5 = concrete), which belongs to a different raster. Evidence from git (all RF-side commits on the shared repo):
+- **7fc2e61 / 91556bd (2026-03-19) and parent of 83cd423:** `data_loader.py` mapped the 0–3 `stack_materials.tif` as **1 = concrete (0.2), 2 = mixed (0.5), 3 = wood (0.9)**, 0 = no building (risk 0). This is the only code-level meaning found for the 0–3 raster.
+- **83cd423 (2026-03-21):** replaced that with `materials_raw / 10` (0.1 / 0.2 / 0.3). Same order (concrete < mixed < wood), compressed scale. The LR main pipeline (`Code/modules/data_loader.py`) inherited this; Stage B was trained and run with it, so training and inference are consistent.
+- **ff70bc6 (2026-04-24):** introduced the 0–5 legend `MATERIAL_CLASS_TO_RISK = [0, 0.95, 0.80, 0.48, 0.30, 0.15]` (0 none, 1 pure lightweight, 2 lightweight, 3 half, 4 mostly concrete, 5 concrete). The RF simulator now uses an int16 0–5 raster (`21f5c98c…`, codes 4–5 present on buildings). The LR sandbox (`sandbox_kent/`, Stages A/C) copied this legend but reads the 0–3 raster `e2432e59…`, so under the 2026-03-19 meaning it maps concrete (1) to 0.95 and wood (3) to 0.48, i.e. **the sandbox mapping is the inverted one**, not the main pipeline. Stages A/C are consistent between their own training and inference, but their material semantics are likely reversed.
+- No producer documentation (QGIS project, style file, README) for either raster is in our files. Raster value counts (0–3 file): 1: 532,260; 2: 324,893; 3: 220,649. Producer meaning of the codes: NEEDS EVIDENCE from the RF side (who built the rasters).
+- Consequence for the paper: Stage B (main LR) needs no change. Stages A/C material wording should be checked once the producer meaning is confirmed.
 
 #### Second fire, Kent's CA: RF no cutoff (2026-11-02, partner-run, screenshot sent to Kristian)
 Buildings-in-crop scoring, seeds 42–46. F1 0.266 / 0.251 / 0.242 / 0.265 / 0.194; recall 0.843 / 0.888 / 0.792 / 0.888 / 0.893; precision 0.158 / 0.146 / 0.143 / 0.156 / 0.109; burned cells 948 / 1,082 / 987 / 1,013 / 1,459; updates 103 / 161 / 129 / 125 / 189 (fire died out before the 300-update cap). **Mean ± SD: F1 0.244 ± 0.030, recall 0.861 ± 0.043, precision 0.142 ± 0.020.** Recall ≥ 0.80 at 4/5 seeds (seed 44: 0.792). Over-burns ~5–8× (178 true building cells). Same failure mode as our LR in our CA (0.148 buildings F1), but different CA, so not a like-for-like comparison. LR in Kent's CA (cutoff 0.40) not run yet. Kent is considering a fire-duration-based stopping rule (see next item).
@@ -1195,3 +1200,25 @@ Baselines for reference (100 steps, the paper's setup): Sta. Maria whole 0.634 �
 **Reading.** In the LR simulator the fire never burns out on its own, so F1 falls steadily with every longer horizon, for both fires. Recall stays ≥ 0.89 everywhere. Under the primary 1 min/update clock, Sta. Maria drops from 0.634 to 0.501 (whole) and Airbase rises from 0.102 to 0.132 (it now stops at 86 steps instead of 100). The 2 min/update clock gives Sta. Maria ≈ the paper's 100-step result (106 vs 100 steps) and the best Airbase result (0.378 / 0.431), but it is a pre-declared sensitivity setting and must not be promoted to primary after seeing these results. Neither fire reaches F1 0.80 under any clock. The results depend strongly on the assumed clock, and the LR simulator lacks a burnout mechanism (future work).
 
 **Domain counts for the RF side (buildings in crop, LR simulator's building mask):** Airbase crop [820, 1989]: 216,187 building cells, 178 positives (RF side: 215,553 / 178). Sta. Maria crop [256, 2176]: 136,867 building cells, 1,919 positives (RF side: 135,992 / 1,910). The difference is the RF side's common-valid mask; positives match for Airbase and differ by 9 for Sta. Maria.
+
+### Scoring-domain alignment with the RF side (2026-11-03, `spatial_validation/scoring_domain_report.py`, `scoring_domain_addendum.py`)
+Report sent to the RF side: `~/Downloads/LR_scoring_domain_report.zip` (report + addendum, md + json).
+- **RF-spec domain reproduced from LR files:** crop & four-layer validity (same `build_masks` rule in both data loaders) & buildings == 10 gives Airbase 215,553 cells / 178 positives and Sta. Maria 135,992 / 1,910, exactly the RF side's counts (computed independently). The 9 Sta. Maria positives dropped are building cells with slope = −9999. LR reported scores so far use full-grid buildings without the validity filter (1,919 positives for Sta. Maria). The LR simulator never ignites invalid cells, so for P/R/F1 the only difference is those 9 positives (Sta. Maria) and none for Airbase.
+- **Materials raster differs between the simulators.** Slope, proximity, buildings and the Sta. Maria/Airbase GT match the RF side's fingerprints. The LR side's `stack_materials.tif` is `e2432e59…` (classes 0–3) everywhere we have it (LR repo, sandbox, response-ref, Google Drive). The RF phase16 config expects `21f5c98c…`, never seen on the LR side. Asked the RF side what it is. This could be part of why the two simulators behave differently.
+- **Sta. Maria ignition cell differs by 2 rows:** LR row 892, col 2730 (UTM 606748.78, 1141695.77, supplied by the RF side on 2026-05-03; rasterio floor of 892.99997). RF uses row 894. Historical runs on both sides are left as they are; the RF side was asked to explain 894.
+
+### LR scores on the RF-specification domain (2026-11-03, `spatial_validation/score_rf_domain.py`)
+Separately labelled column for matched LR-vs-RF comparison (crop & four-layer validity & buildings == 10; digests confirmed equal by the RF side). Historical LR scores keep their original domains. Rescored from saved outputs, no simulation. No predicted valid building cells fell outside the crop in any run. Output: `output/windfix/duration/rf_domain_scores.{txt,json}`.
+
+| Fire | Setting | F1 (RF domain) | Recall | Precision |
+|---|---|---|---|---|
+| Airbase (215,553 / 178) | 100 steps (baseline) | 0.148 ± 0.010 | 0.997 | 0.080 |
+| | 43 updates (2 min) | 0.431 ± 0.031 | 0.946 | 0.280 |
+| | **86 updates (1 min, primary)** | **0.180 ± 0.011** | 0.997 | 0.099 |
+| | 172 updates (0.5 min) | 0.075 ± 0.002 | 0.997 | 0.039 |
+| Sta. Maria (135,992 / 1,910) | 100 steps (baseline) | 0.680 ± 0.012 | 0.945 | 0.531 |
+| | 106 updates (2 min) | 0.666 ± 0.008 | 0.965 | 0.509 |
+| | **212 updates (1 min, primary)** | **0.590 ± 0.005** | 0.996 | 0.419 |
+| | 424 updates (0.5 min) | 0.471 ± 0.053 | 0.996 | 0.309 |
+
+Airbase is identical to the full-grid buildings scores (no positives dropped). Sta. Maria differs by ≤ 0.001 F1 (9 positives dropped). Per-seed values are in the txt file.
