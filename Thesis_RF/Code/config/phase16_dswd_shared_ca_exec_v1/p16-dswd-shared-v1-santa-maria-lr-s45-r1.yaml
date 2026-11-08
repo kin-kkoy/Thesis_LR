@@ -1,0 +1,220 @@
+# D-213/D-214 configuration-only draft. No simulation execution is authorized.
+# phase15.enabled stays false; D-217 sets resources and the prospective reference; fresh execution approval and reviewed bindings remain required.
+# Paths remain Code-relative under the existing guarded runner, not relative to this folder.
+# Prospective destination: C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/output/phase15/p16-dswd-shared-v1-santa-maria-lr-s45-r1
+# Destination absence and final executable binding: PENDING; no destination was inspected or reserved.
+# Accepted readiness: C:/Users/gibgib/AppData/Local/Temp/rf-dswd-readiness-6f8d67f16df74225bcb296c681cc0151/readiness.json
+# Readiness SHA-256: bb4500c2642a46e1891353e3628546bb7a307245d1cb9b799649793799326427
+# Incident alignment report SHA-256: 333eeac2191fd8f0a5e87ecaf5fd8e11f535890eb47e2082753ce4f6a183432c
+# Protocol: docs/StoppingRule_DSWD_Plan_v4.md
+# Protocol SHA-256: f4d828b63e4ca812d3e679ae1397f1b8a8e191019b358b648fe7749fd3632b14
+# Receiving eligibility applies to the observed inputs/reader conditions, not historical ignition truth.
+# One trajectory provides three dependent outcomes; clocks remain uncalibrated assumptions.
+# RF no cutoff; LR float32 p<0.40 -> 0, p>=0.40 unchanged before the existing stochastic draw.
+# Feature order (set_c.v1): slope_risk, proximity_risk, building_presence, material_risk, material_class, wind_speed, wind_sin, wind_cos, neighbor_burning_count, composite_flammability, wind_weighted_score
+# Actual shared ignition: local[636,554], global[892,2730]; historical894/local638 is unchanged.
+# Inherited wind anchor E606750.2784,N1141691.2699 is distinct from the new ignition; no bearing recomputation.
+phase15:
+  schema_version: phase16_dswd_shared_ca_snapshots.v1
+  mode: pilot
+  enabled: false
+  authorization_reference: p16-dswd-shared-ca-v1-execution-r1  # Prospective metadata only; fresh execution approval still required.
+  run_id: p16-dswd-shared-v1-santa-maria-lr-s45-r1
+  scenario_id: p16-dswd-shared-v1-santa-maria-lr-s45-r1-snapshots
+  timestep_unit: simulation_step
+  resources:
+    enforcement: between_steps
+    max_process_rss_bytes: 4294967296  # D-217 adopted per-trajectory policy
+    min_system_available_bytes: 2147483648  # D-217 adopted per-trajectory policy
+    min_free_output_bytes: 2147483648  # D-217 adopted per-trajectory policy
+    max_wall_seconds: 1800  # D-217 adopted per-trajectory policy
+    sample_interval_seconds: 1.0  # D-217 adopted per-trajectory policy
+environment:
+  raster_dir: processedData/raster/raster
+  slope_file: stack_slope_final.tif
+  proximity_file: stack_proximity.tif
+  buildings_file: stack_buildings.tif
+  materials_file: stack_materials.tif
+  input_sha256:
+    slope: dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482
+    proximity: 1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5
+    buildings: da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7
+    materials: 21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a
+  nodata_value: -9999
+candidate_inputs:
+  interpretation_policy: embedded_tiff_only.v1
+  mask_seed_policy: candidate_common_environment_receiving_atomic_seeds.v1
+  expected_grid:
+    shape: [5489, 6896]
+    crs: EPSG:32651
+    transform: [3,0,598558.7784,0,-3,1144374.7699,0,0,1]
+  window:
+    family_ordinal: 1
+    scenario_family_id: p8f01_cluster_322_m1
+    global_origin: [256, 2176]
+    shape: [1024, 1024]
+  # Exact evidence/runtime record remains required; provenance is not capability evidence.
+  reader_capability:
+    controls_verified: true
+    environment_options:
+      GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+      GDAL_PAM_ENABLED: "NO"
+    open_options:
+      GEOREF_SOURCES: "INTERNAL"
+    policy_id: "embedded_tiff_only.v1"
+    runtime:
+      gdal: "3.12.1"
+      rasterio: "1.5.0"
+    verification_reference: "Owner-adopted bounded mixed-dtype reader milestone; source tests/test_candidate_reader_capability.py SHA-256 14456daddc4453b34e58d79a1a6b5b491e2559526393510c5805ed16a050f597"
+    window_verification_reference: "Parent-reported native synthetic test test_installed_native_reader_window_matches_identified_synthetic_tiffs; current test source SHA-256 dde4cfb9fa8ba540c6e6b799eaef54edbdc72d06b135bb19e6cc4665caee6ffe; qualified RF Validator report SHA-256 526fff81a669f48d12220304fde8923a61edf8ceb542f87ce14df7c94ba29938"
+    windowed_reads_verified: true
+simulation:
+  seed: 45
+  # Candidate coordinates are LOCAL [row,col], never projected [x,y].
+  ignition_points: [[636, 554]]
+  max_timesteps: 424
+  early_stop: true
+  checkpoint_interval: 0
+  emergency_checkpoint_enabled: false
+  resume_checkpoint: null
+placeholder_transition:
+  T_3_to_4: 1
+  T_4_to_5: 1
+  wind_weight: 0.20
+wind:
+  speed_kmh: 17.7
+  direction_deg: 48.825208
+  direction_convention: meteorological_from
+  direction_units: degrees_clockwise
+  north_reference: projected_grid_north
+  schema_version: simulated_wind.v1
+  calm_representation: speed_zero_direction_zero
+wind_input_basis:
+  schema_version: phase16_f01_nasa_hr11_ignition_center.v1
+  source_row: "2023,12,12,11,4.91,49.0"
+  source_export_sha256: d29f891aacf0aa7932a886d4cebfe37df1a7bcd96823b77e5d37b7fdfa064a90
+  source_point_lat_lon: [10.327, 123.9749]
+  source_time_basis:
+    timezone: LST
+    hour: 11
+    adopted_bfp_time: "11:31 AM"
+    selection_authority: owner/partner
+  source_direction:
+    degrees: 49.0
+    direction_convention: meteorological_from
+    direction_units: degrees_clockwise
+    north_reference: geographic_true_north
+    north_reference_status: INFERRED
+  speed_basis: {source_mps: 4.91, converted_kmh: 17.676, prescribed_kmh: 17.7}
+  anchor:
+    kind: ignition_pixel_centre
+    crs: EPSG:32651
+    easting: 606750.2784
+    northing: 1141691.2699
+  anchor_lat_lon: [10.326650173394397, 123.9749840198514]
+  gamma:
+    approximate_degrees: 0.174792123614
+    definition: clockwise from true north to grid north
+  conversion:
+    formula: (true-from - gamma) mod 360
+    additional_180_degree_reversal: false
+  numerical_specification:
+    unrounded_grid_from_deg: 48.825207876386
+    decimal_places: 6
+    grid_from_deg: 48.825208
+  spatial_approximation:
+    method: one constant anchor-derived bearing over the crop
+    incident: owner-identified Santa Maria F01 development case
+    query_point: nearby NASA point adopted by owner
+    qualification: no independent historical geolocation or physical-wind validity claim
+  source_discrepancies:
+    researcher_reported_screenshot_text: "12/12/2024-1131H"
+    owner_identified_incident_year: 2023
+    dswd_approximate_time: "13:25"
+  evidence_references:
+    source_contract_handback: C:/Users/gibgib/.codex/attachments/49766430-ab36-4395-8c74-7bc3a5db22c4/Pasted text.txt
+    geometry_handback: C:/Users/gibgib/.codex/attachments/d53164bd-be77-4e97-bdc9-07245b8eb129/Pasted text.txt
+    authority: docs/ai/DECISIONS.md D-122
+flammability_weights: {base_weight: 0.5, slope_weight: 0.3, proximity_weight: 0.2}
+ml_model:
+  enabled: true
+  model_path: output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib
+  model_sha256: 41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b
+  calibration_manifest_path: null
+  calibration_manifest_sha256: null
+  positive_label: 1
+  inference_mode: stochastic_probability_gate
+  inference_chunk_size: 200000
+  proba_threshold: 0.40
+  threshold: null
+  inference_threshold: null
+  classification_threshold: null
+rf_contract:
+  feature_schema_version: set_c.v1
+  target_version: ignition_t_plus_1.v1
+output:
+  output_dir: output/phase15
+  save_every_n_steps: 0
+  save_final_state: true
+snapshot_basis:
+  {
+    "arm": "lr",
+    "design": "shared_rf_ca_v1",
+    "duration_basis": {
+      "approximate": true,
+      "end_local": "2023-12-12T16:57:00+08:00",
+      "endpoint": "fire out",
+      "historical_basis": "NASA HR11/BFP 11:31 retained; screenshot reports 2024, owner identifies 2023; no wind-hour revision",
+      "minutes": 212,
+      "source": "DSWD DROMIC Terminal Report, 21 April 2024, p.1",
+      "start_local": "2023-12-12T13:25:00+08:00",
+      "url": "https://dromic.dswd.gov.ph/wp-content/uploads/2023/12/DSWD-DROMIC-Terminal-Report-on-the-Fire-Incident-in-Brgy.-Pusok-Lapu-Lapu-City-Cebu-21-April-2024-6AM.pdf"
+    },
+    "horizons": [
+      {
+        "assumed_minutes_per_update": 0.5,
+        "clock_role": "sensitivity",
+        "clock_status": "ASSUMPTION",
+        "requested_update": 424
+      },
+      {
+        "assumed_minutes_per_update": 1,
+        "clock_role": "primary",
+        "clock_status": "ASSUMPTION",
+        "requested_update": 212
+      },
+      {
+        "assumed_minutes_per_update": 2,
+        "clock_role": "sensitivity",
+        "clock_status": "ASSUMPTION",
+        "requested_update": 106
+      }
+    ],
+    "ignition_global_row_col": [
+      [
+        892,
+        2730
+      ]
+    ],
+    "ignition_local_row_col": [
+      [
+        636,
+        554
+      ]
+    ],
+    "incident": "santa_maria",
+    "model_policy": {
+      "classification_threshold": null,
+      "cutoff": 0.4,
+      "inference_chunk_size": 200000,
+      "inference_mode": "stochastic_probability_gate",
+      "inference_threshold": null,
+      "manifest_path": null,
+      "manifest_sha256": null,
+      "model_path": "output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib",
+      "model_sha256": "41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b",
+      "positive_label": 1,
+      "threshold": null
+    },
+    "protocol_schema_version": "phase16_dswd_shared_ca_snapshots.v1"
+  }

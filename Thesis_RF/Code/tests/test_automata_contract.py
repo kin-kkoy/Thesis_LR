@@ -101,6 +101,94 @@ def test_stochastic_ml_mode_rejects_a_ca_threshold():
         FireAutomata(_environment(), config)
 
 
+@pytest.mark.parametrize("value", [None, 0.30, 0.5, -0.4, 1, True, "0.40", float("nan")])
+def test_exploratory_gate_requires_exact_cutoff(value):
+    config = _config()
+    config["ml_model"].update(inference_mode="stochastic_probability_gate", proba_threshold=value)
+    with pytest.raises(ValueError, match="cutoff 0.40"):
+        FireAutomata(_environment(), config)
+
+
+def test_gate_requires_explicit_mode_and_cannot_change_model_free_teacher():
+    config = _config()
+    config["ml_model"]["proba_threshold"] = 0.40
+    with pytest.raises(ValueError, match="explicit exploratory"):
+        FireAutomata(_environment(), config)
+    config["ml_model"]["inference_mode"] = "stochastic_probability_gate"
+    with pytest.raises(ValueError, match="model inference"):
+        FireAutomata(_environment(), config, model_free=True)
+
+
+@pytest.mark.parametrize("probability", [
+    np.nextafter(np.float32(0.40), np.float32(0)), np.float32(0.40),
+    np.nextafter(np.float32(0.40), np.float32(1)), np.float32(0.75),
+])
+@pytest.mark.parametrize("draw", [0.20, 0.80])
+def test_gate_matches_partner_formula_and_retains_full_grid_rng(probability, draw):
+    config = _config()
+    config["ml_model"].update(inference_mode="stochastic_probability_gate", proba_threshold=0.40)
+
+    class Estimator(_ReorderedEstimator):
+        def predict_proba(self, features):
+            return np.tile([float(probability), 1.0 - float(probability)], (len(features), 1))
+
+    calls = []
+    class Draw:
+        def random(self, shape):
+            calls.append(shape)
+            return np.array([[0.99, draw]], dtype=np.float64)
+
+    engine = FireAutomata(_environment(), config)
+    engine.grid[0, 0] = STATE_BLAZING
+    engine.model = Estimator()
+    engine.rng = Draw()
+    susceptible = np.array([[False, True]])
+    probabilities = engine._predict_with_model(np.array([[0, 1]], dtype=np.int8), susceptible)
+    reference = np.where(np.array([[0, probability]], dtype=np.float32) >= 0.40,
+                         np.array([[0, probability]], dtype=np.float32), np.float32(0.0))
+    np.testing.assert_array_equal(probabilities, reference)
+    assert probabilities.dtype == np.float32
+    engine.step()
+    assert calls == [(1, 2)]
+    expected = STATE_IGNITED if draw < reference[0, 1] else STATE_NOT_YET_BURNING
+    assert engine.grid[0, 1] == expected
+
+
+def test_no_gate_probability_and_seeded_draw_are_unchanged():
+    engine = FireAutomata(_environment(), _config())
+    engine.grid[0, 0] = STATE_BLAZING
+    engine.model = _ReorderedEstimator()
+    reference = np.random.default_rng(7)
+    engine.step()
+    expected = reference.random((1, 2))[0, 1] < np.float32(0.8)
+    assert (engine.grid[0, 1] == STATE_IGNITED) == expected
+    np.testing.assert_array_equal(engine.rng.random((1, 2)), reference.random((1, 2)))
+
+
+@pytest.mark.parametrize("gated", [False, True])
+def test_attached_lr_probability_vector_with_and_without_cutoff(gated):
+    probabilities = np.array([0.10, 0.39, 0.40, 0.75], dtype=np.float32)
+    environment = _environment()
+    for name, value in list(environment.items()):
+        if isinstance(value, np.ndarray):
+            environment[name] = np.repeat(value[:, :1], 4, axis=1)
+    environment["grid_shape"] = (1, 4)
+    config = _config()
+    if gated:
+        config["ml_model"].update(inference_mode="stochastic_probability_gate", proba_threshold=0.40)
+
+    class Estimator(_ReorderedEstimator):
+        def predict_proba(self, features):
+            assert len(features) == 4
+            return np.column_stack([probabilities, 1 - probabilities])
+
+    engine = FireAutomata(environment, config)
+    engine.model = Estimator()
+    actual = engine._predict_with_model(np.ones((1, 4), dtype=np.int8), np.ones((1, 4), dtype=bool))
+    expected = np.array([[0, 0, 0.40, 0.75]], dtype=np.float32) if gated else probabilities.reshape(1, 4)
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_model_free_probability_does_not_reapply_wind(monkeypatch):
     config = _config()
     config["placeholder_transition"]["base_ignition_prob"] = 0.2

@@ -2,11 +2,11 @@
 
 ## Record contract
 
-- **Purpose:** Navigation index; identified source, inputs, artifacts and raw records remain primary evidence.
-- **Scope:** Random Forest work and shared coordination. `Thesis_LR/**` is partner-owned and read-only.
-- **Last updated:** 2026-11-02 (Asia/Manila), evidence preservation D-160.
-- **Snapshot:** `861574b`, `codex/rf-phase16`; only parent memory pending.
-- **Current handoff:** D-160 local evidence copy verified; memory commit/push ready.
+- **Purpose:** Navigation only; source/inputs/artifacts/raw records are evidence.
+- **Scope:** RF work/shared coordination. `Thesis_LR/**` is LR side owned/read-only.
+- **Last updated:** 2026-11-08 (Asia/Manila), caller implementation handback D-339.
+- **Snapshot:** `734b42a`, `codex/rf-airbase-simulation`; prior edits preserved; work uncommitted.
+- **Current handoff:** D-339 source hashes/preservation match; RF warning-name mismatch needs review.
 - **Historical index:** Tables retain October 12 evidence, not current execution status.
 - **Staleness rule:** Recheck changed source, input/artifact hashes, configuration, dependencies or approvals.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
@@ -14,14 +14,20 @@
 <!-- BEGIN CODEX DIGEST -->
 ## Compact startup digest
 
-- **Status:** Phases 14/15 closed; CA 356/viewer 58 PASS; F01 closeout-ready D-157; 16B parked.
+- **Status:** Phases14/15 closed; F01 closeout-ready D-157; Airbase D-167–169 complete, independence unverified.
 - **Accepted:** Cropped Set C, train-only RF, frozen sigmoid/F01; D-120/D-121 owner acceptances.
 - **Limits:** F01 calibration. F1 315°:0.785902, 49°:0.852327 on 135,992 cells; 42.33% reference-burn exclusion. No held-out/physical-validity claim.
+- **Gate0.40:** D-165 seeds42–46 meanF1 RF0.748423±0.077230 / LR0.715312±0.064599; tests560 PASS.
+- **TP sets:** D-166 RF cutoff/no-cutoff identical at all5 seeds;315°/49°42 share1793 of1795, two unique each. Direct recall counts match.
+- **Airbase:** D-167 no-cutoff42–46 meanF1 0.243773±0.029503; domain215553/ref178of281; five inactive; tests601 PASS.
+- **H90:** D-168 owner-assumed1min/update;42–46 meanF1 .294022±.019082, recall .823596, precision .179211; reached822.6; five censored/active90;631tests PASS. Clock uncalibrated, no suppression/fire-out claim.
+- **Airbase LR0.40:** D-169 seeds42–46 meanF1 .268503±.019688, recall .894382, precision .157980; reached1008.6; inactive103/123/135/125/99. Existing cap300, no new stop/tuning;679tests PASS.
 - **Adopted:** INFERRED NASA true-49 converts to constant grid-from 48.825208, ignition pixel centre/six decimals. F01 is owner-identified Santa Maria.
-- **Timing:** HR=11/BFP 11:31 owner/partner-adopted. Preserve reported screenshot year 2024, owner year 2023, DSWD 13:25 discrepancy.
-- **Next:** Owner commits/pushes two memory files. AUC identified D-159; no inference needed.
-- **Pending:** Manuscript/viewer review; A/B, matched CA and partner handoff qualified. 16B prior-use/overlap/protocol and synthetic final test gated.
-- **Boundaries:** D-155 consumed; retained evidence review/parent memory only. No edits/tests/input access/reruns/cleanup/Git or dispatch.
+- **Timing:** D-171 owner confirms Airbase=Sitio Sangi Interior,Brgy.Pajo via BFP1328H row. DSWD86min/StaMaria212min retained; BFP1328≠DSWD1332; historical HR11 basis preserved.
+- **Plan:** D-198/D-200 both frozen models in RF CA; RF/noGate, LR/.40, clocks1/.5/2. New StaMaria892; historical894/v3 preserved. ISPRS415=Tan;319=Patac.
+- **Next:** Validator static review of caller/binding/tests, including RF warning policy; tests NOT RUN.
+- **Pending:** Manuscript/viewer review; A/B, matched CA and LR side handoff qualified. 16B prior-use/overlap/protocol and synthetic final test gated.
+- **Boundaries:** D-332/D-327/D-308/D-297/D-291/D-283/D-274/D-270/D-263/D-254/D-250/D-241 consumed; only D-338 source edits; no tests/bindings/production/Git operations.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state
@@ -29,27 +35,29 @@
 | Status | Current fact | Evidence | Recheck trigger |
 |---|---|---|---|
 | `VERIFIED` | RF is the writable implementation track; LR remains read-only. | `AGENTS.md`; `Thesis_RF/AGENTS.md` | Ownership changes. |
+| `PASS` / `WARNING` | Airbase LR0.40 meanF1 .268503, recall .894382, precision .157980; domain215553/ref178of281. UncalibratedLR/gated vs calibratedRF/ungated; independence unverified. | D-169; current handoff | Inputs/model/protocol changes. |
+| `PASS` / `ASSUMPTION` | H90 footprints25.07% smaller; active counts19/20/18/25/12; same-seed original subsets. Assumed clock, not fire-out. | D-168; duration report above | Time mapping/horizon changes. |
 | `VERIFIED` | Set C is the active 11-feature candidate; Sets A/B remain separate historical chains. | D-009–D-014 | Owner supersedes the methodology. |
 | `VERIFIED` | The RF estimand is eligible mapped-building-cell ignition at `t+1` from state/features at `t`; dynamic neighbor features use BLAZING at `t`. | D-009, D-010, D-013, D-014 | Target/timing contract changes. |
 | `VERIFIED` | Authoritative Set C labels come only from the versioned model-free stochastic teacher. Incumbent RF transitions are not independent truth. | D-014; Phase 7 source and validator reports | Teacher contract changes. |
 | `VERIFIED` | Phase 7: isolated D-014 teacher, five-state `np.int8` transitions, canonical `all_eligible` collector, outcome records, exact retries, disabled publication. | `10b1b7c`; acceptance; 160 tests | Interfaces change. |
-| `VERIFIED` | Phase 8 harness is disabled by default, permits only the exact model-free path, retains no row dataset, and can publish only one hash-bound aggregate report atomically without overwrite. | Commits `ffbda28`, `2fd0e68`, `3d8439c`; repeated Task 8.4 PASS | Harness/publisher changes. |
+| `VERIFIED` | Phase8 harness: disabled, exact model-free path, aggregate-only/no-overwrite atomic publication. | `ffbda28`, `2fd0e68`, `3d8439c`; Task8.4 PASS | Harness changes. |
 | `VERIFIED` | Full-grid building/material mapped identities agree after material-specific normalization; combined validity still excludes slope-invalid cells. | Revision `3d8439c`; real-input preflight; approved domain hashes | Loader or raster changes. |
-| `VERIFIED` | Phase 8 v2 completed from clean revision `df65217`: 32 authoritative inactive runs, 74/74 transitions, 384 rows (26 positive), five both-label leakage components at every tested block size, exact v1 reconciliation, and no forbidden operation or extra output. | Immutable v1/v2 reports; final RF Validator PASS | Report/hash/source/input changes. |
+| `VERIFIED` | Phase8v2 df65217:32 inactive runs,74/74 transitions,384rows/26positive,5both-label components;v1 reconciled. | Immutable reports; Validator PASS | Evidence changes. |
 | `VERIFIED` | The thesis owner formally accepted Phase 8, including the v2 extension, and authorized Phase 9 planning only under a separate bounded contract. | Owner acceptance, 2026-09-25 | Owner grants or revises Phase 9 authorization. |
-| `VERIFIED` | D-015 fixes 128×128 origin-(0,0) conservative grouping, a controlled 26-family/17-condition population design, aggregate-only site discovery, role-level adequacy minima, and conflict-preserving duplicate containment. | Phase 9 Task 9.1; owner approval, 2026-09-27 | Owner supersedes D-015 or production evidence changes the contract. |
+| `VERIFIED` | D-015:128×128 origin(0,0) grouping;26 families/17 conditions; aggregate discovery, role minima, conflict-preserving duplicates. | Task9.1; owner2026-09-27 | Methodology changes. |
 | `VERIFIED` | Phase 8's five components and 26 positives are inadequate for production row publication; aggregate-only independent-family expansion is required. | Phase 9 Task 9.1 RF Validator review; D-015 | Approved adequacy expansion passes all gates. |
 | `VERIFIED` | Gate 4 v2: first-present material 1–5 assignment, aggregate composition, global block reservation, no-overwrite report. | `modules/set_c_site_inventory.py`; configuration; 255 synthetic tests | Source/config/evidence changes. |
 | `VERIFIED` | D-018 assigns mixed-material components to the first eligible class in deterministic order 1–5 and globally reserves their full leakage footprint. This is an inventory rule, not a prevalence or independence claim. | Owner approval; D-018 | Owner revises D-018. |
-| `VERIFIED` | D-016 authorizes only the bounded aggregate population-adequacy diagnostic after its inventory/manifest prerequisites. Production row publication, split execution, training, and final-test access remain unauthorized. | Phase 9 Tasks 9.1–9.3; owner approval, 2026-09-27 | Owner broadens or revokes the authorization. |
-| `VERIFIED` | D-017 approves the disabled Task 9.3 source architecture: versioned package/staging, canonical rows, joint leakage components, development-only loaders, and a separate fail-closed final evaluator. Numerical role targets and protected storage/ACL remain separately gated. | Owner approval; 61 focused tests; final read-only RF Validator PASS | Source or approval changes. |
+| `VERIFIED` | Historical D-016 authorized bounded aggregate adequacy only after prerequisites; production/split/train/final-test separately gated. | Tasks9.1–9.3; owner2026-09-27 | Authority changes. |
+| `VERIFIED` | D-017 disabled architecture: versioned staging/canonical rows/joint leakage components/development loaders/fail-closed final evaluator. Targets/storage separately gated. | Owner;61tests; Validator PASS | Source/approval changes. |
 | `VERIFIED` | D-029: provenance-based duplicate identities; predictor collisions audit-only. V3 replay disabled/block-only; checkpoint identity/state/report checks synthetic-only. | D-029; 47 focused/286 full tests | Review or authorized replay. |
-| `VERIFIED` | Gate 6 v3 independently validates 26 qualifying singleton block components and feasible unexposed role minima; all 97 predictor-collision family links remain audit-only. | Immutable v3 payload/file `3891f54b...9ca96` / `a6cd757f...8bbc`; final RF Validator PASS | V3 artifact, D-015 policy, or source binding changes. |
+| `VERIFIED` | Gate6v3:26 qualifying singleton components/feasible unexposed minima;97collision links audit-only. | Payload/file3891f54b...9ca96/a6cd757f...8bbc; Validator PASS | Artifact/policy/source changes. |
 | `VERIFIED` | Agent profile pins and parsed configuration recorded in D-030. | `.codex/agents/*.toml`; D-030 | Profile/model changes. |
-| `VERIFIED` | The authorized Set C v1 package from clean revision `161b8d0` has 884 ordered complete, inactive, authoritative runs and 10,733 rows (797 positive, 9,936 negative). Its manifest, dataset, all run/batch hashes, and exact 3,902-file inventory passed independent validation; no split role was published. | Manifest file SHA-256 `b700f1b9...e9e3c`, payload `7e993176...e8cbd`; independent RF Validator PASS | Package bytes or validation contract change. |
-| `VERIFIED` | Task 11.1 found no checked row/schema/domain/identity/count defect. All 1,508 batches and 884 runs reconcile; all runs are inactive, complete, authoritative, and transition-count matched. | `docs/Phase11_Tasks_11_1_11_2_Report.md`; independent RF Validator | Package, validator contract, or approved methodology changes. |
+| `VERIFIED` | Set C v1 `161b8d0`: 884 ordered complete/inactive authoritative runs; 10,733 rows (797 positive/9,936 negative). Manifest/dataset/run/batch hashes and 3,902-file inventory independently PASS; no split published. | Manifest `b700f1b9...e9e3c`, payload `7e993176...e8cbd`; Validator PASS | Package/contract changes. |
+| `VERIFIED` | Task11.1:1508batches/884runs reconcile; no checked row/schema/domain/count defect; allcomplete/inactive/authoritative/transitionmatched. | Phase11 report; Validator | Package/contract changes. |
 | `VERIFIED` | Task 11.2 reconstructed 26 singleton-family components with 9–58 positives and 188–496 negatives each. A role-blind solve satisfied every D-015 component/class/material/concentration minimum without publishing assignments. | Same report; actual CSV; Gate 6 v3 comparison | Package bytes or D-015/D-029 policy changes. |
-| `VERIFIED` | D-035 approves exact 11/5/5/5 component counts, D-015 minima, material coverage, ≤50% positive concentration, seedless digest order, and soft balance targets. | D-035; Task 12.1 report | Owner revises policy or dataset identity. |
+| `VERIFIED` | D-035:11/5/5/5 components,D-015 minima,material coverage,≤50%positive concentration,seedless digest order/soft balance. | Task12.1 | Policy/dataset changes. |
 | `VERIFIED` | D-040 staging rejection and D-041 default-deny opt-in/audit-reference/clean-pin guards remain active. | Runner/exporter; focused tests | Source/approval change. |
 | `VERIFIED` (recorded) | R2 at main HEAD `1c5a9727` exited 1/RuntimeError after 37.846 s. Parents recorded empty; no targets/stages observed. No fresh path inspection. | `docs/Phase12Block.md` §§5–8; D-042 | New authorized evidence. |
 | `NEEDS EVIDENCE` | Historical message/traceback/objective missing; timeout hypothetical. Resource floors passed sampled checks only; peak RSS unknown. | Same report; source | New authorized evidence. |
@@ -58,7 +66,7 @@
 | `FAIL` / `VERIFIED` | R3 exited 1 after 40.210 s: objective 7, calibration row deviation, exact optimum not proven. Resources/evidence PASS; no targets/stages. | D-047; retained JSONL/final response | Separately authorized evidence review or source/run change. |
 | `FAIL` / `VERIFIED` | R4 failed internal prepublication final-row consistency, exit 1/172.242 s. Capture/resources PASS; no targets/stages. | D-051; retained response | Owner-directed diagnosis. |
 | `CLOSED` / `VERIFIED` | Phase 12 accepted after R5 paired publication and independent protected review. | D-053/D-054 | Artifact/decision change. |
-| `VERIFIED` | Reconstructed activated configuration matches manifest `configuration_sha256` `f18953d5854286d29e9082caf8e5cd35f1719038627840a2c227ba42227dddfe`; configuration-file hash matches. | Generation runner; configuration load/activation/canonical-hash helpers; manifest | Configuration/source/package changes. |
+| `VERIFIED` | Activated config SHA `f18953d5854286d29e9082caf8e5cd35f1719038627840a2c227ba42227dddfe` matches manifest; file hash matches. | Generation runner/config helpers; manifest | Config/source/package changes. |
 | `WARNING` | The CSV supports source/provenance-consistent `all_eligible` and state-at-`t` timing, but row publication alone cannot prove execution behavior without teacher replay. | Task 11.1 evidence limits | A bounded replay is approved and verified. |
 | `WARNING` | The package binds the approved resource limits but does not contain independent observed peak RSS, memory/disk minima, or elapsed-time telemetry. | Package manifest and independent RF Validator review | Independent execution telemetry is provided and verified. |
 | `WARNING` | Lead profile delegation/output wording conflicts with parent and read-only boundaries; parent/user rules govern. | `.codex/agents/tech-lead.toml`; D-030 | Profile repair. |
@@ -89,7 +97,7 @@
 | Phase 11 validation report | `docs/Phase11_Tasks_11_1_11_2_Report.md` |
 | Phase 12 Task 12.1 policy review | `docs/Phase12_Task12_1_Grouped_Allocation_Policy_Review.md` |
 | Phase 12 failure / supervisor | Unchanged `docs/Phase12Block.md`; D-042–D-045; `run_set_c_supervised.py`; focused tests |
-| Current review / authority | D-160 preservation PASS; manual memory checkpoint |
+| Current review / authority | D-184 new two-file scope needs approval; native parity open |
 | Local evidence copy | `Thesis_RF/Code/output/phase16_evidence/p16a-closeout-20261102-r1/`; D-160 manifest |
 | Phase 13 numerical proposal for re-review | `docs/Phase13A_RF_Tuning_Protocol_Proposal.md` Draft 1; D-055 |
 | Phase 14 protocol / source gates | `docs/Phase14A_Calibration_Final_Test_Protocol_Proposal.md` Draft 4; D-077–D-118 |
@@ -108,10 +116,10 @@
 - Phase 7–11 test commands, immutable hashes, and validation limits are recorded in D-015, D-029, D-033–D-034, and the Phase 11 report; the table above indexes the current claims.
 - D-042/D-043: diagnostics `7f6730b`, recorded 76/1 skipped (9.05 s). D-044 frame mismatch superseded by D-045 repair/source PASS and fresh 131/1 skipped (21.51 s); no production/optimality proof.
 - D-047: capture/evidence PASS; production FAIL. D-048: engineer 143/1 skipped (14.31 s), validator 143/1 skipped (14.21 s); synthetic only.
-- D-052: engineer and independent validator each 147/1 skipped; strict CSV fidelity/tamper checks PASS. Synthetic only; actual R4 subtype unknown.
-- D-053: one R5 and independent protected review PASS; no independent mathematical certificate. D-054 records owner acceptance, 2026-10-06.
-- D-057 / 13B.1: repaired validator run reports 70 passed/1 symlink skip in 11.36 s; reparse-attribute test passed. Repository interpreter, three focused files, `-B -p no:cacheprovider`, fresh OS-temp basetemp. Parent checked source/repairs, not a test rerun. No production evidence.
-- D-058–D-061 / 13D: repaired source reviewed; validator reports 96 passed/1 skip/1 deselected. D-060 defect resolved. Parent verifies hashes/source, not a suite rerun or RF operation.
+- D-052: both reviewers147/1 skip; CSV fidelity/tamper PASS, synthetic only; R4 subtype unknown.
+- D-053/D-054: R5/protected review PASS; no mathematical certificate; owner accepted2026-10-06.
+- D-057/13B.1: Validator70 PASS/1 symlink skip,11.36s; reparse PASS; project python,3files,`-B -p no:cacheprovider`,fresh temp. Parent source only; no production proof.
+- D-058–D-061 / 13D: Validator 96 PASS/1 skip/1 deselected; D-060 resolved. Parent source/hash review only.
 - D-080/116: 14D accepted (104/1 skip); 14E accepted (both 198/0); 14F accepted (both 24/0 exit0). 14G patch PASS; fresh suite released.
 
 ## Update procedure

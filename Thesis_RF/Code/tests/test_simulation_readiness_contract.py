@@ -799,6 +799,178 @@ def test_candidate_profile_is_disabled_distinct_and_pending(filename, schema, be
         o._phase15_normalize(config)
 
 
+def use_rf_gate(candidate_ready):
+    config = candidate_ready.config
+    config["phase15"].update(schema_version=o.PHASE16_RF_GATE_SCHEMA,
+                            scenario_id=o.PHASE16_SCENARIO_ID + "-gate040")
+    config["wind"]["direction_deg"] = o.PHASE16_GRID_FROM_DEG
+    config["wind_input_basis"] = deepcopy(o.PHASE16_WIND_INPUT_BASIS)
+    config["ml_model"].update(inference_mode="stochastic_probability_gate", proba_threshold=0.40)
+    return config
+
+
+@pytest.mark.parametrize("seed", range(42, 47))
+def test_rf_gate_runs_with_bound_exploratory_policy(candidate_ready, seed):
+    config = use_rf_gate(candidate_ready)
+    config["simulation"]["seed"] = seed
+    config["phase15"]["scenario_id"] = o.PHASE16_SCENARIO_ID.replace("-s42-", f"-s{seed}-") + "-gate040"
+    rebind(candidate_ready)
+    scope = candidate_ready.binding["evidence_scope"]
+    assert scope["threshold"] is None and scope["final_test_eligible"] is False
+    assert scope["probability_gate"]["cutoff"] == 0.40
+    assert "manifest" in candidate_ready.binding["model"]
+    run(candidate_ready)
+    assert record(candidate_ready)["output_valid"] is True
+
+
+@pytest.mark.parametrize("section,key,value", [
+    ("ml_model", "proba_threshold", 0.30), ("ml_model", "proba_threshold", None),
+    ("ml_model", "proba_threshold", True), ("ml_model", "proba_threshold", "0.40"),
+    ("ml_model", "inference_mode", "stochastic_probability"),
+    ("ml_model", "model_sha256", o.PHASE16_LR_MODEL_SHA256),
+    ("ml_model", "calibration_manifest_sha256", None),
+    ("ml_model", "threshold", 0.40),
+    ("phase15", "scenario_id", o.PHASE16_SCENARIO_ID),
+    ("phase15", "schema_version", o.PHASE16_CANDIDATE_SCHEMA),
+    ("simulation", "seed", 47), ("wind", "direction_deg", 315.0),
+])
+def test_rf_gate_rejects_unapproved_policy_or_release(candidate_ready, section, key, value):
+    config = use_rf_gate(candidate_ready)
+    config[section][key] = value
+    with pytest.raises((ValueError, TypeError)):
+        o._phase15_normalize(config)
+
+
+def use_lr_comparison(candidate_ready, monkeypatch):
+    config = candidate_ready.config
+    config["phase15"].update(schema_version=o.PHASE16_CANDIDATE_SCHEMA,
+                            scenario_id=o.PHASE16_LR_SCENARIO_ID)
+    config["wind"]["direction_deg"] = o.PHASE16_GRID_FROM_DEG
+    config["wind_input_basis"] = deepcopy(o.PHASE16_WIND_INPUT_BASIS)
+    monkeypatch.setattr(o, "PHASE16_LR_MODEL", str(candidate_ready.model))
+    monkeypatch.setattr(o, "PHASE16_LR_MODEL_SHA256", sha256(candidate_ready.payload).hexdigest())
+    config["ml_model"].update(calibration_manifest_path=None, calibration_manifest_sha256=None)
+    return config
+
+
+def use_lr_gate(candidate_ready, monkeypatch):
+    config = use_lr_comparison(candidate_ready, monkeypatch)
+    config["phase15"].update(schema_version=o.PHASE16_LR_GATE_SCHEMA,
+                            scenario_id=o.PHASE16_LR_SCENARIO_ID + "-gate040")
+    config["ml_model"].update(inference_mode="stochastic_probability_gate", proba_threshold=0.40)
+    return config
+
+
+@pytest.mark.parametrize("seed", range(42, 47))
+def test_lr_gate_runs_without_manifest_and_binds_policy(candidate_ready, monkeypatch, seed):
+    config = use_lr_gate(candidate_ready, monkeypatch)
+    config["simulation"]["seed"] = seed
+    config["phase15"]["scenario_id"] = o.PHASE16_LR_SCENARIO_ID.replace("-s42-", f"-s{seed}-") + "-gate040"
+    rebind(candidate_ready)
+    assert "manifest" not in candidate_ready.binding["model"]
+    assert candidate_ready.binding["evidence_scope"]["probability_gate"]["cutoff"] == 0.40
+    assert candidate_ready.binding["evidence_scope"]["final_test_eligible"] is False
+    run(candidate_ready)
+    result = record(candidate_ready)
+    assert result["output_valid"] is True
+    assert "manifest" not in result["observed_bindings"]["model"]
+
+
+@pytest.mark.parametrize("section,key,value", [
+    ("ml_model", "proba_threshold", 0.30), ("ml_model", "proba_threshold", True),
+    ("ml_model", "inference_threshold", 0.40),
+    ("ml_model", "inference_mode", "stochastic_probability"),
+    ("ml_model", "model_sha256", o.PHASE15_CANDIDATE_MODEL_SHA256),
+    ("ml_model", "model_path", "substitute.joblib"),
+    ("ml_model", "calibration_manifest_path", "calibration_manifest.json"),
+    ("ml_model", "calibration_manifest_sha256", "0" * 64),
+    ("phase15", "schema_version", o.PHASE16_RF_GATE_SCHEMA),
+    ("phase15", "schema_version", o.PHASE16_CANDIDATE_SCHEMA),
+    ("phase15", "scenario_id", o.PHASE16_LR_SCENARIO_ID),
+    ("simulation", "seed", 47),
+])
+def test_lr_gate_rejects_wrong_route_and_release(candidate_ready, monkeypatch, section, key, value):
+    config = use_lr_gate(candidate_ready, monkeypatch)
+    config[section][key] = value
+    with pytest.raises((ValueError, TypeError)):
+        o._phase15_normalize(config)
+
+
+@pytest.mark.parametrize("seed", range(42, 47))
+def test_lr_comparison_runs_without_manifest_and_keeps_development_scope(candidate_ready, monkeypatch, seed):
+    use_lr_comparison(candidate_ready, monkeypatch)
+    candidate_ready.config["simulation"]["seed"] = seed
+    candidate_ready.config["phase15"]["scenario_id"] = o.PHASE16_LR_SCENARIO_ID.replace("-s42-", f"-s{seed}-")
+    rebind(candidate_ready)
+    assert "manifest" not in candidate_ready.binding["model"]
+    run(candidate_ready)
+    result = record(candidate_ready)
+    assert result["output_valid"] is True
+    assert "manifest" not in result["observed_bindings"]["model"]
+    assert result["observed_bindings"]["model"]["interface_validated"] is True
+    assert candidate_ready.binding["evidence_scope"]["final_test_eligible"] is False
+
+
+@pytest.mark.parametrize("seed", range(43, 47))
+def test_rf_extra_seeds_only_allowed_with_matching_phase16_scenario(candidate_ready, seed):
+    config = candidate_ready.config
+    config["simulation"]["seed"] = seed
+    if config["phase15"]["schema_version"] == o.PHASE15_CANDIDATE_SCHEMA:
+        with pytest.raises(ValueError):
+            o._phase15_normalize(config)
+        return
+    with pytest.raises(ValueError, match="scenario identity"):
+        o._phase15_normalize(config)
+    config["phase15"]["scenario_id"] = o.PHASE16_SCENARIO_ID.replace("-s42-", f"-s{seed}-")
+    rebind(candidate_ready)
+    assert "manifest" in candidate_ready.binding["model"]
+    run(candidate_ready)
+    assert record(candidate_ready)["output_valid"] is True
+
+
+@pytest.mark.parametrize("seed", [41, 47, 43.0, True, "43"])
+@pytest.mark.parametrize("lr", [False, True])
+def test_phase16_rejects_unapproved_seed_values(candidate_ready, monkeypatch, seed, lr):
+    config = candidate_ready.config
+    if lr:
+        use_lr_comparison(candidate_ready, monkeypatch)
+    config["phase15"]["schema_version"] = o.PHASE16_CANDIDATE_SCHEMA
+    config["wind"]["direction_deg"] = o.PHASE16_GRID_FROM_DEG
+    config["wind_input_basis"] = deepcopy(o.PHASE16_WIND_INPUT_BASIS)
+    scenario = o.PHASE16_LR_SCENARIO_ID if lr else o.PHASE16_SCENARIO_ID
+    config["phase15"]["scenario_id"] = scenario.replace("-s42-", f"-s{seed}-")
+    config["simulation"]["seed"] = seed
+    with pytest.raises((ValueError, TypeError)):
+        o._phase15_normalize(config)
+
+
+@pytest.mark.parametrize("section,key,value", [
+    ("ml_model", "model_path", "substituted.joblib"),
+    ("ml_model", "model_sha256", "0" * 64),
+    ("ml_model", "calibration_manifest_path", "calibration_manifest.json"),
+    ("ml_model", "calibration_manifest_sha256", "0" * 64),
+    ("phase15", "scenario_id", o.PHASE16_SCENARIO_ID),
+    ("phase15", "schema_version", o.PHASE15_CANDIDATE_SCHEMA),
+    ("simulation", "seed", 47),
+    ("ml_model", "threshold", 0.5),
+])
+def test_lr_comparison_rejects_substitution(candidate_ready, monkeypatch, section, key, value):
+    config = use_lr_comparison(candidate_ready, monkeypatch)
+    config[section][key] = value
+    with pytest.raises((ValueError, TypeError)):
+        o._phase15_normalize(config)
+
+
+def test_lr_comparison_hash_precedes_deserialization(candidate_ready, monkeypatch):
+    use_lr_comparison(candidate_ready, monkeypatch)
+    rebind(candidate_ready)
+    candidate_ready.model.write_bytes(b"substituted LR bytes")
+    monkeypatch.setattr(FireAutomata, "load_model", lambda *_: pytest.fail("unverified LR deserialization"))
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        run(candidate_ready)
+    assert record(candidate_ready)["output_valid"] is False
+
+
 @pytest.mark.parametrize("section,key,value", [
     ("simulation", "checkpoint_interval", 1),
     ("simulation", "emergency_checkpoint_enabled", True),

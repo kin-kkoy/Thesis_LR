@@ -1,0 +1,328 @@
+# D-200/D-201 disabled preparation only; no execution authorization or destination allocation.
+{
+  "dswd_snapshots": {
+    "schema_version": "phase16_dswd_shared_ca_snapshots.v1",
+    "enabled": false,
+    "execution_authorized": false,
+    "protocol_evidence": {
+      "path": "docs/StoppingRule_DSWD_Plan_v4.md",
+      "sha256": "f4d828b63e4ca812d3e679ae1397f1b8a8e191019b358b648fe7749fd3632b14",
+      "authority": "D-200/D-201 source preparation only"
+    },
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "clocks": [
+      {
+        "minutes_per_update": 0.5,
+        "role": "sensitivity"
+      },
+      {
+        "minutes_per_update": 1,
+        "role": "primary"
+      },
+      {
+        "minutes_per_update": 2,
+        "role": "sensitivity"
+      }
+    ],
+    "trajectory_count": 20,
+    "planned_outcome_count": 60,
+    "side": "Both frozen releases in RF-side CA",
+    "input_sha256": {
+      "slope": "dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482",
+      "proximity": "1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5",
+      "buildings": "da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7",
+      "materials": "21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a"
+    },
+    "feature_order": [
+      "slope_risk",
+      "proximity_risk",
+      "building_presence",
+      "material_risk",
+      "material_class",
+      "wind_speed",
+      "wind_sin",
+      "wind_cos",
+      "neighbor_burning_count",
+      "composite_flammability",
+      "wind_weighted_score"
+    ],
+    "fixed_controls": {
+      "timers": [
+        1,
+        1
+      ],
+      "wind_weight": 0.2,
+      "flammability_weights": {
+        "base_weight": 0.5,
+        "slope_weight": 0.3,
+        "proximity_weight": 0.2
+      },
+      "feature_schema": "set_c.v1",
+      "target": "ignition_t_plus_1.v1",
+      "probability_policy": "RF calibrated no cutoff; LR float32 p<0.40 -> 0, p>=0.40 unchanged; existing Bernoulli draw",
+      "resume": false,
+      "checkpoint_interval": 0
+    },
+    "output_schema": "phase16_dswd_snapshot_series.v1",
+    "output_policy": {
+      "native_state": "int8 codes 1..5",
+      "reached": "uint8, states 3/4/5 -> 1; zero valid, no nodata",
+      "capture": "immediately after completed update, before next step",
+      "initial_ignition": "reported separately at update 0; never substituted for a requested horizon",
+      "inactive": "both ignited and blazing zero; later horizons reference actual absorbing stop",
+      "active": "censored timestep_limit; not suppression/fire-out",
+      "failure": "all trajectory outcomes incomplete; preserve every published/partial file",
+      "counts": "per completed update: new ignitions, cumulative reached, active and five state counts",
+      "allowlist": "new profile only; exclusive creation and existing hard-link publication"
+    },
+    "alignment_policy": {
+      "crs": "EPSG:32651",
+      "parent_shape": [
+        5489,
+        6896
+      ],
+      "parent_transform": [
+        3,
+        0,
+        598558.7784,
+        0,
+        -3,
+        1144374.7699
+      ],
+      "validity": "native mask != 0 AND finite AND value != -9999 AND value != embedded nodata",
+      "building_encoding": {
+        "unmapped": 0,
+        "mapped": 10
+      },
+      "reference_encoding": {
+        "negative": 0,
+        "positive": 1
+      },
+      "domain": "environment_valid & prediction_valid & reference_valid & building_valid & mapped_building",
+      "mask_identity": "modules.transition_observer.mask_sha256; matching counts alone insufficient",
+      "lr_side_confirmation": {
+        "status": "NEEDS EVIDENCE",
+        "contract_reference": null,
+        "domain_mask_sha256": null
+      },
+      "shared_pairing": "Verified counterpart records with exact common inputs, geometry, actual ignition, wind, masks, reference and domain; missing counterpart pending; not cross-simulator acceptance"
+    },
+    "reporting": {
+      "group_by": [
+        "design",
+        "incident",
+        "arm",
+        "assumed_minutes_per_update"
+      ],
+      "required_seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "dispersion": "sample SD, n-1; five seeds per incident/arm/clock",
+      "missing_or_failed": "incomplete group; no silent seed removal or partial mean",
+      "horizons_are_independent": false,
+      "pool_incidents": false,
+      "selection": "no best seed/step, reference-area stopping or tuning",
+      "pool_models": false
+    },
+    "incidents": {
+      "airbase": {
+        "name": "Sitio Sangi Interior, Brgy. Pajo",
+        "date": "2025-01-24",
+        "duration": {
+          "start_local": "2025-01-24T13:32:00+08:00",
+          "end_local": "2025-01-24T14:58:00+08:00",
+          "minutes": 86,
+          "endpoint": "fire out",
+          "approximate": true,
+          "source": "DSWD DROMIC Report #3, 03 February 2025, p.1",
+          "url": "https://dromic.dswd.gov.ph/wp-content/uploads/2025/02/DSWD-DROMIC-Report-3-on-the-Fire-Incident-in-Brgy.-Pajo-Lapu-Lapu-City-as-of-03-February-2025-6PM.pdf",
+          "separate_bfp_time": "13:28; owner-confirmed linkage; historical H90 unchanged"
+        },
+        "horizons": [
+          172,
+          86,
+          43
+        ],
+        "max_updates": 172,
+        "crop_origin": [
+          820,
+          1989
+        ],
+        "shape": [
+          1024,
+          1024
+        ],
+        "ignition": [
+          [
+            512,
+            512
+          ]
+        ],
+        "crop_transform": [
+          3,
+          0,
+          604525.7784,
+          0,
+          -3,
+          1141914.7699
+        ],
+        "wind": {
+          "speed_kmh": 10.6,
+          "grid_from": 60.826537,
+          "basis_symbol": "PHASE16_AIRBASE_WIND_INPUT_BASIS",
+          "qualification": "Retain historical HR13/LST, INFERRED true north, ignition-centre/six-decimal constant bearing"
+        },
+        "reference_path": "dataFiles/stack_ground_truth_airbase.tif",
+        "reference_sha256": "1627ac903354f029572fa9abc9c61088909b38a5357c09228361f9021d2f52db",
+        "reference_metadata": {
+          "dtype": "uint8",
+          "nodata": null,
+          "mask_flags": [
+            "all_valid"
+          ],
+          "status": "D-167 historical record; not freshly inspected"
+        },
+        "expected_domain_cells": 215553,
+        "expected_reference_positive_total": 281,
+        "expected_reference_positive_included": 178,
+        "rf_domain_mask_sha256": null,
+        "rf_domain_mask_status": "NEEDS EVIDENCE",
+        "qualification": "Development-used; spatial overlap/prior-use/independence and reference provenance qualified"
+      },
+      "santa_maria": {
+        "name": "Sitio Sta. Maria, Brgy. Pusok",
+        "date": "2023-12-12",
+        "duration": {
+          "start_local": "2023-12-12T13:25:00+08:00",
+          "end_local": "2023-12-12T16:57:00+08:00",
+          "minutes": 212,
+          "endpoint": "fire out",
+          "approximate": true,
+          "source": "DSWD DROMIC Terminal Report, 21 April 2024, p.1",
+          "url": "https://dromic.dswd.gov.ph/wp-content/uploads/2023/12/DSWD-DROMIC-Terminal-Report-on-the-Fire-Incident-in-Brgy.-Pusok-Lapu-Lapu-City-Cebu-21-April-2024-6AM.pdf",
+          "historical_basis": "NASA HR11/BFP 11:31 retained; screenshot reports 2024, owner identifies 2023; no wind-hour revision"
+        },
+        "horizons": [
+          424,
+          212,
+          106
+        ],
+        "max_updates": 424,
+        "crop_origin": [
+          256,
+          2176
+        ],
+        "shape": [
+          1024,
+          1024
+        ],
+        "ignition": [
+          [
+            636,
+            554
+          ]
+        ],
+        "crop_transform": [
+          3,
+          0,
+          605086.7784,
+          0,
+          -3,
+          1143606.7699
+        ],
+        "wind": {
+          "speed_kmh": 17.7,
+          "grid_from": 48.825208,
+          "basis_symbol": "PHASE16_WIND_INPUT_BASIS",
+          "qualification": "Conditional INFERRED NASA true north; ignition-centre/six-decimal constant bearing; no extra 180 reversal"
+        },
+        "reference_path": "processedData/raster/raster/stack_ground_truth.tif",
+        "reference_sha256": "fcf83513ab223072299e33696cd4ec2265d83ee330e1957ba1eb42feeb3a3880",
+        "reference_metadata": {
+          "status": "NEEDS EVIDENCE",
+          "dtype": null,
+          "nodata": null,
+          "mask_flags": null
+        },
+        "expected_domain_cells": 135992,
+        "expected_reference_positive_total": 3312,
+        "expected_reference_positive_included": 1910,
+        "rf_domain_mask_sha256": null,
+        "rf_domain_mask_status": "NEEDS EVIDENCE",
+        "qualification": "F01 calibration/development; reference provenance and physical clock qualified",
+        "ignition_amendment": {
+          "authority": "D-200/D-201",
+          "global_row_col": [
+            [
+              892,
+              2730
+            ]
+          ],
+          "historical_local_row_col": [
+            [
+              638,
+              554
+            ]
+          ],
+          "historical_global_row_col": [
+            [
+              894,
+              2730
+            ]
+          ],
+          "source_point_epsg32651": [
+            606748.78,
+            1141695.77
+          ],
+          "rationale": "Owner-adopted reported affine-floor; original geography/precision qualified",
+          "receiving_eligibility": "NEEDS VERIFICATION",
+          "inherited_wind_anchor_epsg32651": [
+            606750.2784,
+            1141691.2699
+          ],
+          "qualification": "Original conversion anchor retained; not converted at892. Historical comparisons change ignition and duration."
+        }
+      }
+    },
+    "design": "shared_rf_ca_v1",
+    "reporting_group_count": 12,
+    "model_policies": {
+      "rf": {
+        "model_path": "output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/rf_sigmoid.joblib",
+        "model_sha256": "78828dd4b2fcc66e9cdfd8ecb4a3ccd18c268478f3b5e6a4374c3286e3903e54",
+        "manifest_path": "output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/calibration_manifest.json",
+        "manifest_sha256": "3141b8554662d703691c06a327f9a6c96c79f20840ce3738c358d4bdb6632afb",
+        "inference_mode": "stochastic_probability",
+        "positive_label": 1,
+        "inference_chunk_size": 200000,
+        "threshold": null,
+        "inference_threshold": null,
+        "classification_threshold": null,
+        "cutoff": null
+      },
+      "lr": {
+        "model_path": "output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib",
+        "model_sha256": "41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b",
+        "manifest_path": null,
+        "manifest_sha256": null,
+        "inference_mode": "stochastic_probability_gate",
+        "positive_label": 1,
+        "inference_chunk_size": 200000,
+        "threshold": null,
+        "inference_threshold": null,
+        "classification_threshold": null,
+        "cutoff": 0.4
+      }
+    }
+  }
+}

@@ -524,8 +524,61 @@ PHASE15_SOURCES = tuple("Thesis_RF/Code/" + name for name in (
 ))
 PHASE15_CANDIDATE_SCHEMA = "phase15_candidate_r2_rf_ca.v1"
 PHASE16_CANDIDATE_SCHEMA = "phase16_candidate_r2_f01_nasa_hr11.v1"
+PHASE16_RF_GATE_SCHEMA = "phase16_f01_rf_probability_gate_040.v1"
+PHASE16_LR_GATE_SCHEMA = "phase16_f01_lr_probability_gate_040.v1"
+PHASE16_AIRBASE_SCHEMA = "phase16_airbase_rf_nocutoff.v1"
+PHASE16_AIRBASE_LR_GATE_SCHEMA = "phase16_airbase_lr_probability_gate_040.v1"
+PHASE16_AIRBASE_DURATION90_SCHEMA = "phase16_airbase_rf_duration90.v1"
+PHASE16_AIRBASE_DURATION90_BASIS = {
+    "schema_version": "airbase_duration_sensitivity.v1",
+    "reported_start_local": "2025-01-24T13:28:00+08:00",
+    "reported_fireout_local": "2025-01-24T14:58:00+08:00",
+    "reported_duration_minutes": 90, "assumed_minutes_per_update": 1.0, "update_limit": 90,
+    "mapping_status": "ASSUMPTION: owner-approved sensitivity, not calibrated physical time",
+    "stopping_interpretation": "Time-horizon truncation; not simulated suppression or fire-out",
+}
+PHASE16_AIRBASE_GRID_FROM_DEG = 60.826537
+PHASE16_AIRBASE_SCENARIO_ID = "phase16-airbase-rf-w10p6-from60p826537-s42-t1-1"
+PHASE16_AIRBASE_WINDOW = {
+    "incident_id": "airbase_sanggi_20250124", "global_origin": [820, 1989], "shape": [1024, 1024],
+}
+PHASE16_AIRBASE_IGNITIONS = [[512, 512]]
+PHASE16_AIRBASE_WIND_INPUT_BASIS = {
+    "schema_version": "phase16_airbase_nasa_hr13_ignition_center.v1",
+    "incident": "Owner-identified Sitio Sewage (Sanggi Interior), near Airbase, Lapu-Lapu City",
+    "incident_date": "2025-01-24", "owner_reported_local_time": "13:28 Asia/Manila",
+    "source_row": "2025,1,24,13,2.95,60.8",
+    "source_export_sha256": "746afb4b11d10e61d18717838f178b267d5747962e8f1e27c7791d4a958cc67f",
+    "source_point_lat_lon": [10.3143, 123.9681],
+    "source_time_basis": {
+        "timezone": "NASA Local Solar Time (LST)", "hour": 13,
+        "selection": "Owner-prescribed rounded wind matches HR13; hourly average, not an instantaneous observation",
+        "qualification": "NASA LST is longitude-based and is not asserted identical to Philippine civil time",
+    },
+    "speed_basis": {"source_mps": 2.95, "converted_kmh": 10.62, "prescribed_kmh": 10.6},
+    "direction_basis": {
+        "source_degrees": 60.8, "prescribed_true_from_degrees": 61.0,
+        "direction_convention": "meteorological_from", "north_reference": "geographic_true_north",
+        "north_reference_status": "INFERRED", "rounding_authority": "owner request",
+    },
+    "anchor": {"kind": "ignition_pixel_centre", "crs": "EPSG:32651",
+               "easting": 606063.2784, "northing": 1140377.2699},
+    "anchor_lat_lon": [10.314786435731733, 123.96867370380014],
+    "conversion": {
+        "formula": "(prescribed true-from - gamma) mod 360", "additional_180_degree_reversal": False,
+        "gamma_degrees": 0.17346326940467718, "grid_from_degrees": 60.826537, "decimal_places": 6,
+        "method": "Projected symmetric geographic-north tangent using Rasterio/PROJ; latitude delta 0.0001 degrees",
+        "spatial_approximation": "One constant ignition-centre bearing over the crop; not physical accuracy",
+    },
+}
 PHASE16_GRID_FROM_DEG = 48.825208
 PHASE16_SCENARIO_ID = "phase16-candidate-r2-f01-nasa-hr11-w17p7-from48p825208-s42-t1-1"
+PHASE16_LR_SCENARIO_ID = "phase16-candidate-r2-f01-nasa-hr11-lr-w17p7-from48p825208-s42-t1-1"
+# Owner-requested comparisons; only this rebuilt, uncalibrated LR release.
+PHASE16_LR_MODEL = (
+    PHASE15_CODE_DIR / "output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib"
+).as_posix()
+PHASE16_LR_MODEL_SHA256 = "41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b"
 # D-122 adopts this conditional input basis; these are supplied values, not a runtime conversion.
 PHASE16_WIND_INPUT_BASIS = {
     "schema_version": "phase16_f01_nasa_hr11_ignition_center.v1",
@@ -659,32 +712,485 @@ def _phase15_number(value, minimum=0, integer=False):
         raise ValueError("Invalid numeric configuration value")
 
 
+# D-172: a separate RF-only profile; legacy schemas/caps/allowlists are unchanged.
+PHASE16_DSWD_SCHEMA = "phase16_dswd_rf_snapshots.v1"
+PHASE16_DSWD_MANIFEST = "config/phase16_dswd_snapshots_v1.yaml"
+PHASE16_DSWD_PROTOCOL = {"schema_version": "phase16_dswd_snapshots.v1",
+    "enabled": False,
+    "execution_authorized": False,
+    "protocol_evidence": {"path": "docs/StoppingRule_DSWD_Plan_v3.md",
+    "sha256": "04d4d9017fba0e2edf15c7ed4546c3a1c7dd7bf7c12878543821beca59eea511",
+    "authority": "D-171/D-172 source preparation only"},
+    "seeds": [42, 43, 44, 45, 46],
+    "clocks": [{"minutes_per_update": 0.5,
+    "role": "sensitivity"}, {"minutes_per_update": 1,
+    "role": "primary"}, {"minutes_per_update": 2,
+    "role": "sensitivity"}],
+    "trajectory_count": 10,
+    "planned_outcome_count": 30,
+    "side": "RF side",
+    "model_policy": {"model_path": "output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/rf_sigmoid.joblib",
+    "model_sha256": "78828dd4b2fcc66e9cdfd8ecb4a3ccd18c268478f3b5e6a4374c3286e3903e54",
+    "manifest_path": "output/candidate-r2-cropped-1024-v1-g364-r1-rf-estimator-r1-sigmoid-r1/calibration_manifest.json",
+    "manifest_sha256": "3141b8554662d703691c06a327f9a6c96c79f20840ce3738c358d4bdb6632afb",
+    "inference_mode": "stochastic_probability",
+    "positive_label": 1,
+    "inference_chunk_size": 200000,
+    "threshold": None,
+    "inference_threshold": None,
+    "classification_threshold": None,
+    "cutoff": None},
+    "input_sha256": {"slope": "dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482",
+    "proximity": "1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5",
+    "buildings": "da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7",
+    "materials": "21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a"},
+    "feature_order": ["slope_risk", "proximity_risk", "building_presence", "material_risk", "material_class", "wind_speed", "wind_sin", "wind_cos", "neighbor_burning_count", "composite_flammability", "wind_weighted_score"],
+    "fixed_controls": {"timers": [1, 1],
+    "wind_weight": 0.2,
+    "flammability_weights": {"base_weight": 0.5,
+    "slope_weight": 0.3,
+    "proximity_weight": 0.2},
+    "feature_schema": "set_c.v1",
+    "target": "ignition_t_plus_1.v1",
+    "probability_policy": "Unchanged calibrated probabilities; no RF cutoff; unchanged full-grid Bernoulli sampling",
+    "resume": False,
+    "checkpoint_interval": 0},
+    "output_schema": "phase16_dswd_snapshot_series.v1",
+    "output_policy": {"native_state": "int8 codes 1..5",
+    "reached": "uint8, states 3/4/5 -> 1; zero valid, no nodata",
+    "capture": "immediately after completed update, before next step",
+    "initial_ignition": "reported separately at update 0; never substituted for a requested horizon",
+    "inactive": "both ignited and blazing zero; later horizons reference actual absorbing stop",
+    "active": "censored timestep_limit; not suppression/fire-out",
+    "failure": "all trajectory outcomes incomplete; preserve every published/partial file",
+    "counts": "per completed update: new ignitions, cumulative reached, active and five state counts",
+    "allowlist": "new profile only; exclusive creation and existing hard-link publication"},
+    "alignment_policy": {"crs": "EPSG:32651",
+    "parent_shape": [5489, 6896],
+    "parent_transform": [3, 0, 598558.7784, 0, -3, 1144374.7699],
+    "validity": "native mask != 0 AND finite AND value != -9999 AND value != embedded nodata",
+    "building_encoding": {"unmapped": 0,
+    "mapped": 10},
+    "reference_encoding": {"negative": 0,
+    "positive": 1},
+    "domain": "environment_valid & prediction_valid & reference_valid & building_valid & mapped_building",
+    "mask_identity": "modules.transition_observer.mask_sha256; matching counts alone insufficient",
+    "lr_side_confirmation": {"status": "NEEDS EVIDENCE",
+    "contract_reference": None,
+    "domain_mask_sha256": None}},
+    "reporting": {"group_by": ["incident", "assumed_minutes_per_update"],
+    "required_seeds": [42, 43, 44, 45, 46],
+    "dispersion": "sample SD, n-1; five seeds per incident/clock",
+    "missing_or_failed": "incomplete group; no silent seed removal or partial mean",
+    "horizons_are_independent": False,
+    "pool_incidents": False,
+    "selection": "no best seed/step, reference-area stopping or tuning"},
+    "incidents": {"airbase": {"name": "Sitio Sangi Interior, Brgy. Pajo",
+    "date": "2025-01-24",
+    "duration": {"start_local": "2025-01-24T13:32:00+08:00",
+    "end_local": "2025-01-24T14:58:00+08:00",
+    "minutes": 86,
+    "endpoint": "fire out",
+    "approximate": True,
+    "source": "DSWD DROMIC Report #3, 03 February 2025, p.1",
+    "url": "https://dromic.dswd.gov.ph/wp-content/uploads/2025/02/DSWD-DROMIC-Report-3-on-the-Fire-Incident-in-Brgy.-Pajo-Lapu-Lapu-City-as-of-03-February-2025-6PM.pdf",
+    "separate_bfp_time": "13:28; owner-confirmed linkage; historical H90 unchanged"},
+    "horizons": [172, 86, 43],
+    "max_updates": 172,
+    "crop_origin": [820, 1989],
+    "shape": [1024, 1024],
+    "ignition": [[512, 512]],
+    "crop_transform": [3, 0, 604525.7784, 0, -3, 1141914.7699],
+    "wind": {"speed_kmh": 10.6,
+    "grid_from": 60.826537,
+    "basis_symbol": "PHASE16_AIRBASE_WIND_INPUT_BASIS",
+    "qualification": "Retain historical HR13/LST, INFERRED true north, ignition-centre/six-decimal constant bearing"},
+    "reference_path": "dataFiles/stack_ground_truth_airbase.tif",
+    "reference_sha256": "1627ac903354f029572fa9abc9c61088909b38a5357c09228361f9021d2f52db",
+    "reference_metadata": {"dtype": "uint8",
+    "nodata": None,
+    "mask_flags": ["all_valid"],
+    "status": "D-167 historical record; not freshly inspected"},
+    "expected_domain_cells": 215553,
+    "expected_reference_positive_total": 281,
+    "expected_reference_positive_included": 178,
+    "rf_domain_mask_sha256": None,
+    "rf_domain_mask_status": "NEEDS EVIDENCE",
+    "qualification": "Development-used; spatial overlap/prior-use/independence and reference provenance qualified"},
+    "santa_maria": {"name": "Sitio Sta. Maria, Brgy. Pusok",
+    "date": "2023-12-12",
+    "duration": {"start_local": "2023-12-12T13:25:00+08:00",
+    "end_local": "2023-12-12T16:57:00+08:00",
+    "minutes": 212,
+    "endpoint": "fire out",
+    "approximate": True,
+    "source": "DSWD DROMIC Terminal Report, 21 April 2024, p.1",
+    "url": "https://dromic.dswd.gov.ph/wp-content/uploads/2023/12/DSWD-DROMIC-Terminal-Report-on-the-Fire-Incident-in-Brgy.-Pusok-Lapu-Lapu-City-Cebu-21-April-2024-6AM.pdf",
+    "historical_basis": "NASA HR11/BFP 11:31 retained; screenshot reports 2024, owner identifies 2023; no wind-hour revision"},
+    "horizons": [424, 212, 106],
+    "max_updates": 424,
+    "crop_origin": [256, 2176],
+    "shape": [1024, 1024],
+    "ignition": [[638, 554]],
+    "crop_transform": [3, 0, 605086.7784, 0, -3, 1143606.7699],
+    "wind": {"speed_kmh": 17.7,
+    "grid_from": 48.825208,
+    "basis_symbol": "PHASE16_WIND_INPUT_BASIS",
+    "qualification": "Conditional INFERRED NASA true north; ignition-centre/six-decimal constant bearing; no extra 180 reversal"},
+    "reference_path": "processedData/raster/raster/stack_ground_truth.tif",
+    "reference_sha256": "fcf83513ab223072299e33696cd4ec2265d83ee330e1957ba1eb42feeb3a3880",
+    "reference_metadata": {"status": "NEEDS EVIDENCE",
+    "dtype": None,
+    "nodata": None,
+    "mask_flags": None},
+    "expected_domain_cells": 135992,
+    "expected_reference_positive_total": 3312,
+    "expected_reference_positive_included": 1910,
+    "rf_domain_mask_sha256": None,
+    "rf_domain_mask_status": "NEEDS EVIDENCE",
+    "qualification": "F01 calibration/development; reference provenance and physical clock qualified"}}}
+
+
+PHASE16_DSWD_SHARED_SCHEMA = "phase16_dswd_shared_ca_snapshots.v1"
+PHASE16_DSWD_SHARED_MANIFEST = "config/phase16_dswd_snapshots_v2.yaml"
+# Frozen source contract; no file is opened at import time.
+PHASE16_DSWD_SHARED_PROTOCOL = deepcopy(PHASE16_DSWD_PROTOCOL)
+PHASE16_DSWD_SHARED_PROTOCOL.update(
+    schema_version=PHASE16_DSWD_SHARED_SCHEMA, design="shared_rf_ca_v1",
+    protocol_evidence={"path": "docs/StoppingRule_DSWD_Plan_v4.md", "sha256": "f4d828b63e4ca812d3e679ae1397f1b8a8e191019b358b648fe7749fd3632b14", "authority": "D-200/D-201 source preparation only"},
+    trajectory_count=20, planned_outcome_count=60, reporting_group_count=12,
+    side="Both frozen releases in RF-side CA")
+PHASE16_DSWD_SHARED_PROTOCOL["model_policies"] = {
+    "rf": PHASE16_DSWD_SHARED_PROTOCOL.pop("model_policy"),
+    "lr": {"model_path": "output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib", "model_sha256": "41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b", "manifest_path": None, "manifest_sha256": None, "inference_mode": "stochastic_probability_gate", "positive_label": 1, "inference_chunk_size": 200000, "threshold": None, "inference_threshold": None, "classification_threshold": None, "cutoff": 0.4}}
+PHASE16_DSWD_SHARED_PROTOCOL["fixed_controls"]["probability_policy"] = "RF calibrated no cutoff; LR float32 p<0.40 -> 0, p>=0.40 unchanged; existing Bernoulli draw"
+PHASE16_DSWD_SHARED_PROTOCOL["reporting"].update(
+    group_by=["design", "incident", "arm", "assumed_minutes_per_update"], pool_models=False,
+    dispersion="sample SD, n-1; five seeds per incident/arm/clock")
+PHASE16_DSWD_SHARED_PROTOCOL["alignment_policy"]["shared_pairing"] = "Verified counterpart records with exact common inputs, geometry, actual ignition, wind, masks, reference and domain; missing counterpart pending; not cross-simulator acceptance"
+PHASE16_DSWD_SHARED_PROTOCOL["incidents"]["santa_maria"].update(
+    ignition=[[636, 554]], ignition_amendment={"authority": "D-200/D-201", "global_row_col": [[892, 2730]], "historical_local_row_col": [[638, 554]], "historical_global_row_col": [[894, 2730]], "source_point_epsg32651": [606748.78, 1141695.77], "rationale": "Owner-adopted reported affine-floor; original geography/precision qualified", "receiving_eligibility": "NEEDS VERIFICATION", "inherited_wind_anchor_epsg32651": [606750.2784, 1141691.2699], "qualification": "Original conversion anchor retained; not converted at892. Historical comparisons change ignition and duration."})
+
+
+def _phase16_is_shared(config):
+    profile = config.get("phase15") if isinstance(config, dict) else None
+    return isinstance(profile, dict) and profile.get("schema_version") == PHASE16_DSWD_SHARED_SCHEMA
+
+
+def _phase16_shared_basis(incident, arm):
+    protocol = PHASE16_DSWD_SHARED_PROTOCOL
+    if (not isinstance(incident, str) or not isinstance(arm, str)
+            or incident not in protocol["incidents"] or arm not in protocol["model_policies"]):
+        raise ValueError("Unknown shared-CA incident or model arm")
+    item = protocol["incidents"][incident]
+    return {"protocol_schema_version": protocol["schema_version"], "design": protocol["design"],
+            "incident": incident, "arm": arm, "model_policy": deepcopy(protocol["model_policies"][arm]),
+            "ignition_local_row_col": deepcopy(item["ignition"]),
+            "ignition_global_row_col": [[r + item["crop_origin"][0], c + item["crop_origin"][1]]
+                                        for r, c in item["ignition"]],
+            "duration_basis": deepcopy(item["duration"]),
+            "horizons": [{"requested_update": horizon, "assumed_minutes_per_update": clock["minutes_per_update"],
+                          "clock_role": clock["role"], "clock_status": "ASSUMPTION"}
+                         for clock, horizon in zip(protocol["clocks"], item["horizons"])]}
+
+
+def _phase16_shared_normalize(config):
+    _phase15_metadata(config)
+    basis = config.get("snapshot_basis", {})
+    if not isinstance(basis, dict):
+        raise ValueError("Shared-CA basis must be a mapping")
+    incident, arm = basis.get("incident"), basis.get("arm")
+    expected = _phase16_shared_basis(incident, arm)
+    if _phase15_json_bytes(basis) != _phase15_json_bytes(expected):
+        raise ValueError("Shared-CA design, arm, policy, ignition or clock basis differs")
+    protocol = PHASE16_DSWD_SHARED_PROTOCOL
+    item, sim, p = protocol["incidents"][incident], config["simulation"], config["phase15"]
+    seed = sim["seed"]
+    run_id = f"p16-dswd-shared-v1-{incident.replace('_', '-')}-{arm}-s{seed}-r1"
+    # D-245: fixed replacement attempts, never a generic revision override.
+    recovery = {"p16-dswd-shared-v1-airbase-rf-s42-r2"} | {
+        f"p16-dswd-shared-v1-airbase-lr-s{value}-r2" for value in range(42, 47)}
+    proposed = run_id[:-2] + "r2"
+    if proposed in recovery and p["run_id"] == proposed:
+        run_id = proposed
+    scenario = run_id + "-snapshots"
+    if (type(seed) is not int or seed not in protocol["seeds"]
+            or type(sim["max_timesteps"]) is not int or sim["max_timesteps"] != item["max_updates"]
+            or _phase15_json_bytes(sim["ignition_points"]) != _phase15_json_bytes(item["ignition"])
+            or p["run_id"] != run_id or p["scenario_id"] != scenario
+            or config["environment"]["input_sha256"] != protocol["input_sha256"]
+            or config["ml_model"]["inference_chunk_size"] != 200000):
+        raise ValueError("Shared-CA trajectory identity or frozen controls differ")
+    ml, policy = config["ml_model"], expected["model_policy"]
+    if (_phase15_path(ml["model_path"]) != _phase15_path(policy["model_path"])
+            or ml["model_sha256"] != policy["model_sha256"]
+            or ml["calibration_manifest_sha256"] != policy["manifest_sha256"]
+            or ml["inference_mode"] != policy["inference_mode"]
+            or (None if ml["calibration_manifest_path"] is None else _phase15_path(ml["calibration_manifest_path"]))
+               != (None if policy["manifest_path"] is None else _phase15_path(policy["manifest_path"]))
+            or (arm == "lr" and (type(ml.get("proba_threshold")) not in (int, float)
+                                or ml["proba_threshold"] != policy["cutoff"]))):
+        raise ValueError("Shared-CA frozen model/manifest/probability policy differs")
+    base = deepcopy(config)
+    del base["snapshot_basis"]
+    lr, airbase = arm == "lr", incident == "airbase"
+    schema = ((PHASE16_AIRBASE_LR_GATE_SCHEMA if airbase else PHASE16_LR_GATE_SCHEMA) if lr
+              else (PHASE16_AIRBASE_SCHEMA if airbase else PHASE16_CANDIDATE_SCHEMA))
+    old_scenario = PHASE16_AIRBASE_SCENARIO_ID if airbase else PHASE16_LR_SCENARIO_ID if lr else PHASE16_SCENARIO_ID
+    if airbase and lr:
+        old_scenario = old_scenario.replace("-rf-", "-lr-")
+    old_scenario = old_scenario.replace("-s42-", f"-s{seed}-") + ("-gate040" if lr else "")
+    base["phase15"].update(schema_version=schema, scenario_id=old_scenario)
+    base["simulation"]["max_timesteps"] = 300
+    # Validate the actual shared seed, never substitute the historical seed.
+    active = _phase15_normalize_base(base, shared_incident=incident)
+    active["phase15"].update(schema_version=PHASE16_DSWD_SHARED_SCHEMA, scenario_id=scenario)
+    active["simulation"]["max_timesteps"] = item["max_updates"]
+    active["snapshot_basis"] = deepcopy(expected)
+    return active
+
+
+def _phase16_is_snapshot(config):
+    profile = config.get("phase15") if isinstance(config, dict) else None
+    return isinstance(profile, dict) and profile.get("schema_version") in (PHASE16_DSWD_SCHEMA, PHASE16_DSWD_SHARED_SCHEMA)
+
+
+def _phase16_snapshot_basis(incident):
+    item = PHASE16_DSWD_PROTOCOL["incidents"][incident]
+    return {"protocol_schema_version": PHASE16_DSWD_PROTOCOL["schema_version"],
+            "incident": incident, "duration_basis": deepcopy(item["duration"]),
+            "horizons": [{"requested_update": horizon,
+                          "assumed_minutes_per_update": clock["minutes_per_update"],
+                          "clock_role": clock["role"], "clock_status": "ASSUMPTION"}
+                         for clock, horizon in zip(PHASE16_DSWD_PROTOCOL["clocks"], item["horizons"])]}
+
+
+def _phase16_snapshot_manifest(active=None):
+    shared = _phase16_is_shared(active)
+    protocol = PHASE16_DSWD_SHARED_PROTOCOL if shared else PHASE16_DSWD_PROTOCOL
+    path = PHASE15_CODE_DIR / (PHASE16_DSWD_SHARED_MANIFEST if shared else PHASE16_DSWD_MANIFEST)
+    _phase15_no_reparse(path)
+    raw = path.read_bytes()
+    expected = {"dswd_snapshots": protocol}
+    if _phase15_json_bytes(_phase15_yaml(raw)) != _phase15_json_bytes(expected):
+        raise ValueError("Frozen disabled DSWD protocol manifest changed")
+    identity = {"path": path.as_posix(), "sha256": sha256(raw).hexdigest()}
+    if shared:
+        document = PHASE15_CODE_DIR.parents[1] / protocol["protocol_evidence"]["path"]
+        _phase15_no_reparse(document)
+        if _sha256_file(document) != protocol["protocol_evidence"]["sha256"]:
+            raise ValueError("Shared-CA v4 protocol document changed")
+        identity["protocol_evidence"] = deepcopy(protocol["protocol_evidence"])
+    return identity
+
+
+def _phase16_snapshot_normalize(config):
+    _phase15_metadata(config)
+    basis = config.get("snapshot_basis", {})
+    if not isinstance(basis, dict):
+        raise ValueError("DSWD snapshot basis must be a mapping")
+    incident = basis.get("incident")
+    if incident not in PHASE16_DSWD_PROTOCOL["incidents"]:
+        raise ValueError("Unknown DSWD incident")
+    if _phase15_json_bytes(basis) != _phase15_json_bytes(_phase16_snapshot_basis(incident)):
+        raise ValueError("DSWD horizons/clock/source basis must match the frozen protocol")
+    item, sim, p = PHASE16_DSWD_PROTOCOL["incidents"][incident], config["simulation"], config["phase15"]
+    seed = sim["seed"]
+    expected_run = f"p16-dswd-{incident.replace('_', '-')}-rf-s{seed}-r1"
+    base_schema = PHASE16_AIRBASE_SCHEMA if incident == "airbase" else PHASE16_CANDIDATE_SCHEMA
+    base_scenario = (PHASE16_AIRBASE_SCENARIO_ID if incident == "airbase" else PHASE16_SCENARIO_ID).replace("-s42-", f"-s{seed}-")
+    if (type(seed) is not int or seed not in PHASE16_DSWD_PROTOCOL["seeds"]
+            or sim["max_timesteps"] != item["max_updates"] or type(sim["max_timesteps"]) is not int
+            or p["run_id"] != expected_run or p["scenario_id"] != base_scenario + "-dswd-snap-v1"
+            or config["environment"]["input_sha256"] != PHASE16_DSWD_PROTOCOL["input_sha256"]
+            or config["ml_model"]["model_sha256"] != PHASE15_CANDIDATE_MODEL_SHA256
+            or config["ml_model"]["calibration_manifest_sha256"] != PHASE15_CANDIDATE_MANIFEST_SHA256
+            or config["ml_model"]["inference_chunk_size"] != 200000
+            or config["candidate_inputs"]["window"]["global_origin"] != item["crop_origin"]
+            or config["candidate_inputs"]["window"]["shape"] != item["shape"]
+            or sim["ignition_points"] != item["ignition"]):
+        raise ValueError("DSWD trajectory identity, maximum horizon or frozen controls changed")
+    base = deepcopy(config)
+    del base["snapshot_basis"]
+    base["phase15"].update(schema_version=base_schema, scenario_id=base_scenario)
+    base["simulation"]["max_timesteps"] = 300
+    active = _phase15_normalize(base)
+    active["phase15"].update(schema_version=PHASE16_DSWD_SCHEMA,
+                             scenario_id=p["scenario_id"])
+    active["simulation"]["max_timesteps"] = item["max_updates"]
+    active["snapshot_basis"] = deepcopy(basis)
+    return active
+
+
+def _phase16_snapshot_outputs(basis):
+    names = set(PHASE15_OUTPUTS)
+    for row in basis["horizons"]:
+        for kind in ("state", "reached"):
+            name = f"snapshot_h{row['requested_update']:04d}_{kind}.tif"
+            names.update((name, name + ".partial"))
+    return frozenset(names)
+
+
+class _Phase16Snapshots:
+    """Post-step observation only; never calls an estimator or random generator."""
+
+    def __init__(self, basis):
+        self.basis = deepcopy(basis)
+        horizons = basis["horizons"]
+        if (not isinstance(horizons, list) or not horizons
+                or any(type(r.get("requested_update")) is not int or r["requested_update"] <= 0
+                       or type(r.get("assumed_minutes_per_update")) not in (int, float)
+                       or not math.isfinite(r["assumed_minutes_per_update"])
+                       or r["assumed_minutes_per_update"] <= 0 for r in horizons)
+                or len({r["requested_update"] for r in horizons}) != len(horizons)):
+            raise ValueError("Distinct positive integer post-update horizons and finite clocks required")
+        self.rows = [dict(deepcopy(row), status="incomplete", output_valid=False,
+                         duration_basis=deepcopy(basis.get("duration_basis")),
+                         actual_capture_update=None, actual_stop_update=None,
+                         absorbing_carry_forward=False, outputs=[]) for row in horizons]
+        if basis.get("design") == PHASE16_DSWD_SHARED_PROTOCOL["design"]:
+            for row in self.rows:
+                row.update({key: deepcopy(basis[key]) for key in
+                            ("design", "arm", "model_policy", "ignition_local_row_col", "ignition_global_row_col")})
+        self.curve, self.completed, self.counts = [], 0, None
+        self.failed_step = None
+        self.failure_stage = "snapshot_failure"
+
+    def fail(self):
+        # A failed trajectory is never promoted to three successful horizon outcomes.
+        for row in self.rows:
+            row.update(status="incomplete", output_valid=False,
+                       trajectory_stop_update=self.completed, actual_stop_update=self.completed)
+
+    def record(self):
+        return {"schema_version": "phase16_dswd_snapshot_series.v1",
+                "basis": deepcopy(self.basis), "completed_updates": self.completed,
+                "failed_step": self.failed_step,
+                "initial": deepcopy(getattr(self, "initial", None)),
+                "per_update": deepcopy(self.curve), "outcomes": deepcopy(self.rows)}
+
+    def run(self, automata, check, capture):
+        def observe(new_ignitions):
+            state = validate_full_state_grid(automata.get_grid())
+            counts = {name: int(np.count_nonzero(state == code)) for code, name in
+                      enumerate(("non_burnable", "not_yet_burning", "ignited", "blazing", "extinguished"), 1)}
+            reached = np.isin(state, (3, 4, 5))
+            self.counts = counts
+            return state, {"completed_update": self.completed, "new_ignition_count": new_ignitions,
+                           "cumulative_reached_count": int(np.count_nonzero(reached)),
+                           "active_cell_count": counts["ignited"] + counts["blazing"],
+                           "state_counts": counts}
+        def emit(state, observation, inactive):
+            for row in self.rows:
+                if row["actual_capture_update"] is not None:
+                    continue
+                if row["requested_update"] != self.completed and not inactive:
+                    continue
+                row.update(actual_capture_update=self.completed,
+                           horizon_outcome_update=self.completed,
+                           absorbing_carry_forward=self.completed < row["requested_update"],
+                           state_counts=deepcopy(observation["state_counts"]),
+                           cumulative_reached_count=observation["cumulative_reached_count"],
+                           active_cell_count=observation["active_cell_count"],
+                           termination_reason="inactive" if inactive else "timestep_limit",
+                           censoring=not inactive)
+                native = state.copy()
+                reached = np.isin(native, (3, 4, 5)).astype(np.uint8)
+                native.setflags(write=False)
+                reached.setflags(write=False)
+                self.failure_stage = "output_failure"
+                check("before_snapshot")
+                row["outputs"] = capture(deepcopy(row), native, reached)
+                check("after_snapshot")
+                row.update(status="complete" if inactive else "censored", output_valid=True)
+        try:
+            state, observation = observe(0)
+            self.initial = dict(deepcopy(observation),
+                                initial_ignition_count=observation["active_cell_count"],
+                                initial_reached_count=observation["cumulative_reached_count"])
+            self.curve.append(deepcopy(observation))
+            maximum = max(row["requested_update"] for row in self.rows)
+            while True:
+                inactive = observation["active_cell_count"] == 0
+                emit(state, observation, inactive)
+                if inactive or self.completed == maximum:
+                    for row in self.rows:
+                        row["trajectory_stop_update"] = self.completed
+                        row["actual_stop_update"] = self.completed
+                    return ("inactive" if inactive else "timestep_limit"), self.completed, self.counts
+                self.failure_stage = "step_failure"
+                check("before_step")
+                susceptible_before = (state == 2)
+                reached_before = np.isin(state, (3, 4, 5))
+                self.failed_step = self.completed + 1
+                automata.step()
+                self.completed += 1
+                self.failed_step = None
+                state, observation = observe(0)
+                reached_after = np.isin(state, (3, 4, 5))
+                if np.any(reached_before & ~reached_after):
+                    raise ValueError("Reached-state membership must be cumulative")
+                observation["new_ignition_count"] = int(np.count_nonzero(susceptible_before & reached_after))
+                self.curve.append(deepcopy(observation))
+                check("after_step")
+        except BaseException:
+            self.fail()
+            raise
+
+
 def _phase15_is_candidate(config):
     profile = config.get("phase15")
     return isinstance(profile, dict) and profile.get("schema_version") in (
-        PHASE15_CANDIDATE_SCHEMA, PHASE16_CANDIDATE_SCHEMA,
+        PHASE15_CANDIDATE_SCHEMA, PHASE16_CANDIDATE_SCHEMA, PHASE16_RF_GATE_SCHEMA, PHASE16_LR_GATE_SCHEMA,
+        PHASE16_AIRBASE_SCHEMA, PHASE16_AIRBASE_DURATION90_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA,
+        PHASE16_DSWD_SCHEMA, PHASE16_DSWD_SHARED_SCHEMA,
+
     )
 
 
-def _phase15_candidate_contract(active):
+def _phase15_candidate_contract(active, *, shared_incident=None):
     c, sim, ml = active["candidate_inputs"], active["simulation"], active["ml_model"]
-    successor = active["phase15"]["schema_version"] == PHASE16_CANDIDATE_SCHEMA
-    bearing = PHASE16_GRID_FROM_DEG if successor else 315.0
+    schema = active["phase15"]["schema_version"]
+    duration90 = schema == PHASE16_AIRBASE_DURATION90_SCHEMA
+    airbase = schema in (PHASE16_AIRBASE_SCHEMA, PHASE16_AIRBASE_DURATION90_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA)
+    gated = schema in (PHASE16_RF_GATE_SCHEMA, PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA)
+    successor = schema in (PHASE16_CANDIDATE_SCHEMA, PHASE16_RF_GATE_SCHEMA, PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_SCHEMA, PHASE16_AIRBASE_DURATION90_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA)
+    lr_comparison = schema in (PHASE16_CANDIDATE_SCHEMA, PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA) and ml["model_sha256"] == PHASE16_LR_MODEL_SHA256
+    if schema in (PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA) and not lr_comparison:
+        raise ValueError("LR gate requires the exact rebuilt LR release")
+    bearing = PHASE16_AIRBASE_GRID_FROM_DEG if airbase else PHASE16_GRID_FROM_DEG if successor else 315.0
+    allowed_seeds = range(42, 47) if successor else (42,)
     if successor:
+        scenario = PHASE16_AIRBASE_SCENARIO_ID if airbase else PHASE16_LR_SCENARIO_ID if lr_comparison else PHASE16_SCENARIO_ID
+        if airbase and lr_comparison:
+            scenario = scenario.replace("-rf-", "-lr-")
+        scenario = scenario.replace("-s42-", f"-s{sim['seed']}-")
+        if gated:
+            scenario += "-gate040"
+        if duration90:
+            scenario += "-h90-dt1m"
         # Canonical JSON retains scalar types, unlike dict equality (False == 0, 49 == 49.0).
-        if (_phase15_json_bytes(active["wind_input_basis"]) != _phase15_json_bytes(PHASE16_WIND_INPUT_BASIS)
-                or active["phase15"]["scenario_id"] != PHASE16_SCENARIO_ID):
+        basis = PHASE16_AIRBASE_WIND_INPUT_BASIS if airbase else PHASE16_WIND_INPUT_BASIS
+        if (_phase15_json_bytes(active["wind_input_basis"]) != _phase15_json_bytes(basis)
+                or active["phase15"]["scenario_id"] != scenario):
             raise ValueError("Phase 16 requires the adopted wind input basis and scenario identity")
+    if duration90 and _phase15_json_bytes(active["duration_basis"]) != _phase15_json_bytes(PHASE16_AIRBASE_DURATION90_BASIS):
+        raise ValueError("Duration sensitivity requires the exact owner-approved assumption and horizon")
     _phase15_exact(c, "interpretation_policy mask_seed_policy expected_grid window reader_capability")
     if (c["interpretation_policy"] != candidate_inputs.POLICY_ID
             or c["mask_seed_policy"] != candidate_inputs.MASK_POLICY_ID
-            or canonical_metadata_hash(c["window"]) != canonical_metadata_hash(PHASE15_CANDIDATE_WINDOW)):
-        raise ValueError("Candidate requires the frozen F01 window and input policies")
-    if (sim["ignition_points"] != PHASE15_CANDIDATE_IGNITIONS
+            or canonical_metadata_hash(c["window"]) != canonical_metadata_hash(PHASE16_AIRBASE_WINDOW if airbase else PHASE15_CANDIDATE_WINDOW)):
+        raise ValueError("Candidate requires the frozen incident window and input policies")
+    if shared_incident is not None and shared_incident != ("airbase" if airbase else "santa_maria"):
+        raise ValueError("Shared-CA incident and base policy disagree")
+    ignitions = (PHASE16_DSWD_SHARED_PROTOCOL["incidents"][shared_incident]["ignition"]
+                 if shared_incident is not None else
+                 PHASE16_AIRBASE_IGNITIONS if airbase else PHASE15_CANDIDATE_IGNITIONS)
+    if (sim["ignition_points"] != ignitions
             or any(type(v) is not int for point in sim["ignition_points"] for v in point)
-            or sim["seed"] != 42 or sim["max_timesteps"] != 300
+            or sim["seed"] not in allowed_seeds or sim["max_timesteps"] != (90 if duration90 else 300)
             or active["placeholder_transition"] != {"T_3_to_4": 1, "T_4_to_5": 1, "wind_weight": 0.20}
-            or active["wind"]["speed_kmh"] != 17.7 or active["wind"]["direction_deg"] != bearing
+            or active["wind"]["speed_kmh"] != (10.6 if airbase else 17.7) or active["wind"]["direction_deg"] != bearing
             or active["flammability_weights"] != DEFAULT_FLAMMABILITY_WEIGHTS
             or active["environment"]["nodata_value"] != -9999):
         raise ValueError("Candidate engineering case may not substitute seeds, wind, timers or weights")
@@ -709,6 +1215,12 @@ def _phase15_candidate_contract(active):
         raise ValueError("Scoped candidate window-reader evidence is unresolved")
     candidate_inputs.require_text(capability.get("verification_reference"))
     candidate_inputs.require_text(capability.get("window_verification_reference"))
+    if lr_comparison:
+        if (ml["model_path"] != _phase15_path(PHASE16_LR_MODEL)
+                or ml["calibration_manifest_path"] is not None
+                or ml["calibration_manifest_sha256"] is not None):
+            raise ValueError("LR comparison requires the exact rebuilt release and no calibration manifest")
+        return
     if (ml["model_path"] != _phase15_path(PHASE15_CANDIDATE_MODEL)
             or ml["model_sha256"] != PHASE15_CANDIDATE_MODEL_SHA256
             or ml["calibration_manifest_sha256"] != PHASE15_CANDIDATE_MANIFEST_SHA256):
@@ -719,16 +1231,31 @@ def _phase15_candidate_contract(active):
 
 
 def _phase15_normalize(config):
+    if _phase16_is_shared(config):
+        return _phase16_shared_normalize(config)
+    if _phase16_is_snapshot(config):
+        return _phase16_snapshot_normalize(config)
+    return _phase15_normalize_base(config)
+
+
+def _phase15_normalize_base(config, *, shared_incident=None):
     _phase15_metadata(config)
     candidate = _phase15_is_candidate(config)
-    successor = candidate and config["phase15"]["schema_version"] == PHASE16_CANDIDATE_SCHEMA
+    gated = candidate and config["phase15"]["schema_version"] in (PHASE16_RF_GATE_SCHEMA, PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA)
+    duration90 = candidate and config["phase15"]["schema_version"] == PHASE16_AIRBASE_DURATION90_SCHEMA
+    airbase = candidate and config["phase15"]["schema_version"] in (PHASE16_AIRBASE_SCHEMA, PHASE16_AIRBASE_DURATION90_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA)
+    successor = candidate and config["phase15"]["schema_version"] in (PHASE16_CANDIDATE_SCHEMA, PHASE16_RF_GATE_SCHEMA, PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_SCHEMA, PHASE16_AIRBASE_DURATION90_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA)
     keys_by_section = dict(PHASE15_KEYS)
     if candidate:
         keys_by_section["phase15"] = keys_by_section["phase15"].replace(" phase14_reconciliation_sha256", "")
         keys_by_section["ml_model"] += " calibration_manifest_path calibration_manifest_sha256"
         keys_by_section["candidate_inputs"] = "interpretation_policy mask_seed_policy expected_grid window reader_capability"
     if successor:
-        keys_by_section["wind_input_basis"] = " ".join(PHASE16_WIND_INPUT_BASIS)
+        keys_by_section["wind_input_basis"] = " ".join(PHASE16_AIRBASE_WIND_INPUT_BASIS if airbase else PHASE16_WIND_INPUT_BASIS)
+    if gated:
+        keys_by_section["ml_model"] += " proba_threshold"
+    if duration90:
+        keys_by_section["duration_basis"] = " ".join(PHASE16_AIRBASE_DURATION90_BASIS)
     _phase15_exact(config, " ".join(keys_by_section))
     active = deepcopy(config)
     for section, keys in keys_by_section.items():
@@ -752,8 +1279,11 @@ def _phase15_normalize(config):
     for value in (sim["checkpoint_interval"], active["output"]["save_every_n_steps"]):
         if type(value) is not int or value != 0:
             raise ValueError("Periodic writes must be disabled")
-    if ml["enabled"] is not True or type(ml["positive_label"]) is not int or ml["positive_label"] != 1 or ml["inference_mode"] != "stochastic_probability":
+    mode = "stochastic_probability_gate" if gated else "stochastic_probability"
+    if ml["enabled"] is not True or type(ml["positive_label"]) is not int or ml["positive_label"] != 1 or ml["inference_mode"] != mode:
         raise ValueError("Approved stochastic model interface required")
+    if gated and (type(ml["proba_threshold"]) not in (int, float) or ml["proba_threshold"] != 0.40):
+        raise ValueError("Exploratory gate requires exact probability cutoff 0.40")
     if active["output"]["save_final_state"] is not True or active["rf_contract"] != {"feature_schema_version": "set_c.v1", "target_version": "ignition_t_plus_1.v1"}:
         raise ValueError("Unsupported output or feature contract")
     _phase15_number(sim["seed"], integer=True)
@@ -770,8 +1300,8 @@ def _phase15_normalize(config):
     direction = active["wind"]["direction_deg"]
     if type(direction) not in (int, float) or not math.isfinite(direction):
         raise ValueError("Finite wind bearing required")
-    if successor and direction != PHASE16_GRID_FROM_DEG:
-        raise ValueError("Phase 16 requires the exact raw grid-from bearing 48.825208")
+    if successor and direction != (PHASE16_AIRBASE_GRID_FROM_DEG if airbase else PHASE16_GRID_FROM_DEG):
+        raise ValueError("Phase 16 requires the exact prescribed raw grid-from bearing")
     active["wind"] = WindContract.from_config(active["wind"]).to_config()
     points = sim["ignition_points"]
     if not isinstance(points, list) or not points:
@@ -810,7 +1340,7 @@ def _phase15_normalize(config):
         raise ValueError("Only the Phase 15 output root is permitted")
     active["output"]["output_dir"] = root
     if candidate:
-        _phase15_candidate_contract(active)
+        _phase15_candidate_contract(active, shared_incident=shared_incident)
     active = apply_pipeline_defaults(active)
     active["phase15"]["enabled"] = True
     return active
@@ -864,13 +1394,55 @@ def _phase15_binding(active, config_path, disk_sha256):
                     "destination": (Path(active["output"]["output_dir"]) / p["run_id"]).as_posix()}}
     if candidate:
         ml = active["ml_model"]
-        result["model"]["manifest"] = {"path": ml["calibration_manifest_path"],
-                                       "sha256": ml["calibration_manifest_sha256"]}
+        if ml["calibration_manifest_path"] is not None:
+            result["model"]["manifest"] = {"path": ml["calibration_manifest_path"],
+                                           "sha256": ml["calibration_manifest_sha256"]}
         result["candidate_inputs"] = deepcopy(active["candidate_inputs"])
         result["evidence_scope"] = {"family": "F01", "use": "calibration_development",
                                    "final_test_eligible": False, "threshold": None}
+        if p["schema_version"] in (PHASE16_AIRBASE_SCHEMA, PHASE16_AIRBASE_DURATION90_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA):
+            result["evidence_scope"] = {
+                "incident": "airbase_sanggi_20250124", "use": "second_incident_exploratory",
+                "final_test_eligible": False, "threshold": None,
+                "qualification": "Spatial overlap/prior use and independence unverified; not held-out validation",
+                "reference_accessed_by_simulation": False,
+            }
+            if p["schema_version"] == PHASE16_AIRBASE_DURATION90_SCHEMA:
+                result["evidence_scope"]["duration_basis"] = deepcopy(active["duration_basis"])
+        if p["schema_version"] in (PHASE16_RF_GATE_SCHEMA, PHASE16_LR_GATE_SCHEMA, PHASE16_AIRBASE_LR_GATE_SCHEMA):
+            result["evidence_scope"]["probability_gate"] = {
+                "cutoff": 0.40, "rule": "p < cutoff -> 0; p >= cutoff unchanged",
+                "probability_dtype": "float32", "sampling": "unchanged full-grid Bernoulli",
+                "status": "exploratory_threshold_sensitivity",
+            }
     else:
         result["phase14_reconciliation_sha256"] = p["phase14_reconciliation_sha256"]
+    if _phase16_is_snapshot(active):
+        result["snapshot_basis"] = deepcopy(active["snapshot_basis"])
+        result["protocol_manifest"] = (_phase16_snapshot_manifest(active) if _phase16_is_shared(active)
+                                       else _phase16_snapshot_manifest())
+        source_path = PHASE15_CODE_DIR / "dswd_snapshot_results.py"
+        _phase15_no_reparse(source_path)
+        result["source"]["files"]["Thesis_RF/Code/dswd_snapshot_results.py"] = _sha256_file(source_path)
+        result["evidence_scope"] = {
+            "incident": active["snapshot_basis"]["incident"], "use": "development_duration_sensitivity",
+            "final_test_eligible": False, "threshold": None,
+            "reference_accessed_by_simulation": False,
+            "clock_status": "ASSUMPTION; not physical calibration or simulated suppression",
+            "production_acceptance": ("PENDING: verified shared-arm counterpart required" if _phase16_is_shared(active)
+                                      else "BLOCKED: RF/LR spatial domain parity NEEDS EVIDENCE")}
+        if _phase16_is_shared(active):
+            guard_path = PHASE15_CODE_DIR / "dswd_inference_guard.py"
+            _phase15_no_reparse(guard_path)
+            result["source"]["files"]["Thesis_RF/Code/dswd_inference_guard.py"] = _sha256_file(guard_path)
+            caller_path = PHASE15_CODE_DIR / "run_dswd_shared_ca_v1.ps1"
+            _phase15_no_reparse(caller_path)
+            result["source"]["files"]["Thesis_RF/Code/run_dswd_shared_ca_v1.ps1"] = _sha256_file(caller_path)
+            result["evidence_scope"].update(
+                design=active["snapshot_basis"]["design"], arm=active["snapshot_basis"]["arm"],
+                actual_ignition=deepcopy(active["simulation"]["ignition_points"]),
+                probability_policy=deepcopy(active["snapshot_basis"]["model_policy"]),
+                inherited_wind_anchor_distinct_from_new_ignition=True)
     return result
 
 
@@ -1102,7 +1674,10 @@ def _phase15_environment(active, identities, monitor):
     return environment, {"inputs": observed, "grid": geometry}
 
 
-def _phase15_raster(destination, name, array, automata, monitor):
+def _phase15_raster(destination, name, array, automata, monitor, *, allowed_outputs=None):
+    allowed_outputs = PHASE15_OUTPUTS if allowed_outputs is None else allowed_outputs
+    if name not in allowed_outputs or name + ".partial" not in allowed_outputs:
+        raise ValueError("Raster filename is outside the approved output policy")
     partial, final = destination / (name + ".partial"), destination / name
     monitor.check("before_write_" + name)
     with partial.open("xb"):
@@ -1122,7 +1697,7 @@ def _phase15_raster(destination, name, array, automata, monitor):
     _phase15_finalize(partial, final)
     monitor.check("after_finalize_" + name)
     digest = _sha256_file(final, lambda: monitor.check("output_hash_chunk", force=False))
-    if not {path.name for path in destination.iterdir()} <= PHASE15_OUTPUTS:
+    if not {path.name for path in destination.iterdir()} <= allowed_outputs:
         raise ValueError("Unexpected output/sidecar")
     return {"filename": name, "bytes": final.stat().st_size, "sha256": digest,
             "verified": True, "shape": list(array.shape), "dtype": array.dtype.name,
@@ -1156,6 +1731,10 @@ def _run_phase15(config, *, explicitly_authorized, approval_reference, expected_
     destination.mkdir()
     start_hash, completed, counts, failed_step = None, None, None, None
     observed, outputs = {}, []
+    snapshots = None
+    snapshot_profile = _phase16_is_snapshot(active)
+    allowed_outputs = (_phase16_snapshot_outputs(active["snapshot_basis"])
+                       if snapshot_profile else PHASE15_OUTPUTS)
     reason, publication_attempted = "output_failure", False
 
     def termination(stop, error=None):
@@ -1174,6 +1753,7 @@ def _run_phase15(config, *, explicitly_authorized, approval_reference, expected_
                                  "limits_are_cooperative": True},
                 "resource_observations": monitor.summary(), "violations": list(monitor.violations),
                 "observed_bindings": observed, "output_valid": success, "outputs": outputs,
+                **({"snapshot_series": snapshots.record()} if snapshots is not None else {}),
                 "error": None if error is None else {"type": type(error).__name__, "message": str(error)}}
 
     try:
@@ -1191,7 +1771,7 @@ def _run_phase15(config, *, explicitly_authorized, approval_reference, expected_
                               "grid": None, "timing": active["placeholder_transition"],
                               "max_timesteps": active["simulation"]["max_timesteps"]},
                  "resource_policy": monitor.policy, "initial_resource_observations": monitor.summary(),
-                 "output_policy": {"allowlist": sorted(PHASE15_OUTPUTS), "resume": False}}
+                 "output_policy": {"allowlist": sorted(allowed_outputs), "resume": False}}
         start_hash = _phase15_write_json(destination / "start.json", start)
         monitor.check("after_start_record")
         reason = "preflight_failure"
@@ -1213,26 +1793,50 @@ def _run_phase15(config, *, explicitly_authorized, approval_reference, expected_
             completed, counts = 0, automata.get_state_counts()
             reason = "reporting_failure"
             print(f"Phase 15 started: {destination.name}")
-            for step in range(1, active["simulation"]["max_timesteps"] + 1):
-                monitor.check("before_step")
-                reason, failed_step = "step_failure", step
-                automata.step()
-                completed, counts, failed_step = step, None, None
-                counts = automata.get_state_counts()
-                monitor.check("after_step")
-                if counts["ignited"] + counts["blazing"] == 0:
-                    reason = "inactive"
-                    break
-                reason = "timestep_limit"
+            if snapshot_profile:
+                snapshots = _Phase16Snapshots(active["snapshot_basis"])
+                for row in snapshots.rows:
+                    row.update(execution_binding_sha256=expected_binding_sha256,
+                               configuration_sha256=binding["configuration"]["activated_effective_sha256"],
+                               start_record_sha256=start_hash, run_id=active["phase15"]["run_id"],
+                               seed=active["simulation"]["seed"], incident=active["snapshot_basis"]["incident"])
+                def capture(row, native, reached):
+                    captured = []
+                    for kind, array in (("state", native), ("reached", reached)):
+                        name = f"snapshot_h{row['requested_update']:04d}_{kind}.tif"
+                        identity = _phase15_raster(destination, name, array, automata, monitor,
+                                                   allowed_outputs=allowed_outputs)
+                        outputs.append(identity)
+                        captured.append(identity)
+                    return captured
+                try:
+                    reason, completed, counts = snapshots.run(automata, monitor.check, capture)
+                finally:
+                    completed, counts = snapshots.completed, snapshots.counts
+                    failed_step = snapshots.failed_step
+            else:
+                for step in range(1, active["simulation"]["max_timesteps"] + 1):
+                    monitor.check("before_step")
+                    reason, failed_step = "step_failure", step
+                    automata.step()
+                    completed, counts, failed_step = step, None, None
+                    counts = automata.get_state_counts()
+                    monitor.check("after_step")
+                    if counts["ignited"] + counts["blazing"] == 0:
+                        reason = "inactive"
+                        break
+                    reason = "timestep_limit"
             reason_at_stop = reason
             reason = "output_failure"
             state = validate_full_state_grid(automata.get_grid())
-            outputs.append(_phase15_raster(destination, "final_state.tif", state, automata, monitor))
+            outputs.append(_phase15_raster(destination, "final_state.tif", state, automata, monitor,
+                                           allowed_outputs=allowed_outputs))
             valid = automata.simulation_valid_mask
             if valid.dtype != np.dtype(bool) or valid.shape != state.shape:
                 raise ValueError("Exact environmental-validity mask required")
             mask = valid.astype(np.uint8)
-            outputs.append(_phase15_raster(destination, "simulation_environment_valid.tif", mask, automata, monitor))
+            outputs.append(_phase15_raster(destination, "simulation_environment_valid.tif", mask, automata, monitor,
+                                           allowed_outputs=allowed_outputs))
             observed["simulation_environment_valid_counts"] = {"true": int(np.count_nonzero(valid)),
                                                                "false": int(valid.size - np.count_nonzero(valid))}
             monitor.check("final_completion_decision")
@@ -1246,6 +1850,10 @@ def _run_phase15(config, *, explicitly_authorized, approval_reference, expected_
             publication_attempted = True
             _phase15_publish(destination, record)
     except BaseException as exc:
+        if snapshots is not None:
+            snapshots.fail()
+            if reason != "output_failure":
+                reason = snapshots.failure_stage
         stop = "cancelled" if isinstance(exc, KeyboardInterrupt) else exc.reason if isinstance(exc, _Phase15Stop) else reason
         if not publication_attempted:
             try:
@@ -1265,6 +1873,8 @@ def run_simulation(config: dict, *, transition_observer=None, transition_provena
                    explicitly_authorized=False, approval_reference=None, expected_binding_sha256=None,
                    config_path=None) -> None:
     clock = (time.monotonic(), datetime.now(timezone.utc).isoformat())
+    if "dswd_snapshots" in config:
+        raise PermissionError("Disabled DSWD campaign manifest is preparation only, not an execution configuration")
     if ("candidate_inputs" in config or "wind_input_basis" in config) and not _phase15_is_candidate(config):
         raise ValueError("Candidate-marked configuration requires the candidate Phase 15 profile")
     if "phase15" in config:
@@ -1291,6 +1901,8 @@ def simulation_main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
+        if "dswd_snapshots" in config:
+            raise PermissionError("Disabled DSWD campaign manifest cannot dispatch a trajectory")
         if "phase15" in config:
             _run_phase15(config, explicitly_authorized=args.execute_approved_phase15_pilot,
                          approval_reference=args.approval_reference, expected_binding_sha256=args.expected_binding_sha256,

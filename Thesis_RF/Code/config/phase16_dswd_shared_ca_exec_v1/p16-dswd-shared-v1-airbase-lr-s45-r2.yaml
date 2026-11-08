@@ -1,0 +1,242 @@
+# D-245 Route A recovery preparation only; disabled; no execution authority.
+# Fixed replacement for p16-dswd-shared-v1-airbase-lr-s45-r1; retain that attempt and every partial; no additional independent seed.
+# D-213/D-214 configuration-only draft. No simulation execution is authorized.
+# phase15.enabled stays false; D-217 sets resources and the prospective reference; fresh execution approval and reviewed bindings remain required.
+# Paths remain Code-relative under the existing guarded runner, not relative to this folder.
+# Prospective destination: C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/output/phase15/p16-dswd-shared-v1-airbase-lr-s45-r2
+# Destination absence and final executable binding: PENDING; no destination was inspected or reserved.
+# Accepted readiness: C:/Users/gibgib/AppData/Local/Temp/rf-dswd-readiness-6f8d67f16df74225bcb296c681cc0151/readiness.json
+# Readiness SHA-256: bb4500c2642a46e1891353e3628546bb7a307245d1cb9b799649793799326427
+# Incident alignment report SHA-256: 5bcdf73427f54890883aeab71194e7d0a94e29303722a09f75e2aabc6934d0be
+# Protocol: docs/StoppingRule_DSWD_Plan_v4.md
+# Protocol SHA-256: f4d828b63e4ca812d3e679ae1397f1b8a8e191019b358b648fe7749fd3632b14
+# Receiving eligibility applies to the observed inputs/reader conditions, not historical ignition truth.
+# One trajectory provides three dependent outcomes; clocks remain uncalibrated assumptions.
+# RF no cutoff; LR float32 p<0.40 -> 0, p>=0.40 unchanged before the existing stochastic draw.
+# Feature order (set_c.v1): slope_risk, proximity_risk, building_presence, material_risk, material_class, wind_speed, wind_sin, wind_cos, neighbor_burning_count, composite_flammability, wind_weighted_score
+# Actual shared ignition: local[512,512], global[1332,2501]. Historical Airbase/H90 cases are unchanged.
+phase15:
+  schema_version: phase16_dswd_shared_ca_snapshots.v1
+  mode: pilot
+  enabled: false
+  authorization_reference: p16-dswd-shared-ca-v1-execution-r1  # Prospective metadata only; fresh execution approval still required.
+  run_id: p16-dswd-shared-v1-airbase-lr-s45-r2
+  scenario_id: p16-dswd-shared-v1-airbase-lr-s45-r2-snapshots
+  timestep_unit: simulation_step
+  resources:
+    enforcement: between_steps
+    max_process_rss_bytes: 4294967296  # D-217 adopted per-trajectory policy
+    min_system_available_bytes: 2147483648  # D-217 adopted per-trajectory policy
+    min_free_output_bytes: 2147483648  # D-217 adopted per-trajectory policy
+    max_wall_seconds: 1800  # D-217 adopted per-trajectory policy
+    sample_interval_seconds: 1.0  # D-217 adopted per-trajectory policy
+environment:
+  raster_dir: processedData/raster/raster
+  slope_file: stack_slope_final.tif
+  proximity_file: stack_proximity.tif
+  buildings_file: stack_buildings.tif
+  materials_file: stack_materials.tif
+  input_sha256:
+    slope: dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482
+    proximity: 1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5
+    buildings: da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7
+    materials: 21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a
+  nodata_value: -9999
+candidate_inputs:
+  interpretation_policy: embedded_tiff_only.v1
+  mask_seed_policy: candidate_common_environment_receiving_atomic_seeds.v1
+  expected_grid:
+    shape:
+    - 5489
+    - 6896
+    crs: EPSG:32651
+    transform:
+    - 3
+    - 0
+    - 598558.7784
+    - 0
+    - -3
+    - 1144374.7699
+    - 0
+    - 0
+    - 1
+  window:
+    incident_id: airbase_sanggi_20250124
+    global_origin:
+    - 820
+    - 1989
+    shape:
+    - 1024
+    - 1024
+  reader_capability:
+    controls_verified: true
+    environment_options:
+      GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+      GDAL_PAM_ENABLED: 'NO'
+    open_options:
+      GEOREF_SOURCES: INTERNAL
+    policy_id: embedded_tiff_only.v1
+    runtime:
+      gdal: 3.12.1
+      rasterio: 1.5.0
+    verification_reference: Owner-adopted bounded mixed-dtype reader milestone; source
+      tests/test_candidate_reader_capability.py SHA-256 14456daddc4453b34e58d79a1a6b5b491e2559526393510c5805ed16a050f597
+    window_verification_reference: Parent-reported native synthetic test test_installed_native_reader_window_matches_identified_synthetic_tiffs;
+      current test source SHA-256 dde4cfb9fa8ba540c6e6b799eaef54edbdc72d06b135bb19e6cc4665caee6ffe;
+      qualified RF Validator report SHA-256 526fff81a669f48d12220304fde8923a61edf8ceb542f87ce14df7c94ba29938
+    windowed_reads_verified: true
+simulation:
+  seed: 45
+  ignition_points:
+  - - 512
+    - 512
+  max_timesteps: 172
+  early_stop: true
+  checkpoint_interval: 0
+  emergency_checkpoint_enabled: false
+  resume_checkpoint: null
+placeholder_transition:
+  T_3_to_4: 1
+  T_4_to_5: 1
+  wind_weight: 0.2
+wind:
+  speed_kmh: 10.6
+  direction_deg: 60.826537
+  direction_convention: meteorological_from
+  direction_units: degrees_clockwise
+  north_reference: projected_grid_north
+  schema_version: simulated_wind.v1
+  calm_representation: speed_zero_direction_zero
+wind_input_basis:
+  schema_version: phase16_airbase_nasa_hr13_ignition_center.v1
+  incident: Owner-identified Sitio Sewage (Sanggi Interior), near Airbase, Lapu-Lapu
+    City
+  incident_date: '2025-01-24'
+  owner_reported_local_time: 13:28 Asia/Manila
+  source_row: 2025,1,24,13,2.95,60.8
+  source_export_sha256: 746afb4b11d10e61d18717838f178b267d5747962e8f1e27c7791d4a958cc67f
+  source_point_lat_lon:
+  - 10.3143
+  - 123.9681
+  source_time_basis:
+    timezone: NASA Local Solar Time (LST)
+    hour: 13
+    selection: Owner-prescribed rounded wind matches HR13; hourly average, not an
+      instantaneous observation
+    qualification: NASA LST is longitude-based and is not asserted identical to Philippine
+      civil time
+  speed_basis:
+    source_mps: 2.95
+    converted_kmh: 10.62
+    prescribed_kmh: 10.6
+  direction_basis:
+    source_degrees: 60.8
+    prescribed_true_from_degrees: 61.0
+    direction_convention: meteorological_from
+    north_reference: geographic_true_north
+    north_reference_status: INFERRED
+    rounding_authority: owner request
+  anchor:
+    kind: ignition_pixel_centre
+    crs: EPSG:32651
+    easting: 606063.2784
+    northing: 1140377.2699
+  anchor_lat_lon:
+  - 10.314786435731733
+  - 123.96867370380014
+  conversion:
+    formula: (prescribed true-from - gamma) mod 360
+    additional_180_degree_reversal: false
+    gamma_degrees: 0.17346326940467718
+    grid_from_degrees: 60.826537
+    decimal_places: 6
+    method: Projected symmetric geographic-north tangent using Rasterio/PROJ; latitude
+      delta 0.0001 degrees
+    spatial_approximation: One constant ignition-centre bearing over the crop; not
+      physical accuracy
+flammability_weights:
+  base_weight: 0.5
+  slope_weight: 0.3
+  proximity_weight: 0.2
+ml_model:
+  enabled: true
+  model_path: output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib
+  model_sha256: 41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b
+  calibration_manifest_path: null
+  calibration_manifest_sha256: null
+  positive_label: 1
+  inference_mode: stochastic_probability_gate
+  inference_chunk_size: 200000
+  proba_threshold: 0.40
+  threshold: null
+  inference_threshold: null
+  classification_threshold: null
+rf_contract:
+  feature_schema_version: set_c.v1
+  target_version: ignition_t_plus_1.v1
+output:
+  output_dir: output/phase15
+  save_every_n_steps: 0
+  save_final_state: true
+snapshot_basis:
+  {
+    "arm": "lr",
+    "design": "shared_rf_ca_v1",
+    "duration_basis": {
+      "approximate": true,
+      "end_local": "2025-01-24T14:58:00+08:00",
+      "endpoint": "fire out",
+      "minutes": 86,
+      "separate_bfp_time": "13:28; owner-confirmed linkage; historical H90 unchanged",
+      "source": "DSWD DROMIC Report #3, 03 February 2025, p.1",
+      "start_local": "2025-01-24T13:32:00+08:00",
+      "url": "https://dromic.dswd.gov.ph/wp-content/uploads/2025/02/DSWD-DROMIC-Report-3-on-the-Fire-Incident-in-Brgy.-Pajo-Lapu-Lapu-City-as-of-03-February-2025-6PM.pdf"
+    },
+    "horizons": [
+      {
+        "assumed_minutes_per_update": 0.5,
+        "clock_role": "sensitivity",
+        "clock_status": "ASSUMPTION",
+        "requested_update": 172
+      },
+      {
+        "assumed_minutes_per_update": 1,
+        "clock_role": "primary",
+        "clock_status": "ASSUMPTION",
+        "requested_update": 86
+      },
+      {
+        "assumed_minutes_per_update": 2,
+        "clock_role": "sensitivity",
+        "clock_status": "ASSUMPTION",
+        "requested_update": 43
+      }
+    ],
+    "ignition_global_row_col": [
+      [
+        1332,
+        2501
+      ]
+    ],
+    "ignition_local_row_col": [
+      [
+        512,
+        512
+      ]
+    ],
+    "incident": "airbase",
+    "model_policy": {
+      "classification_threshold": null,
+      "cutoff": 0.4,
+      "inference_chunk_size": 200000,
+      "inference_mode": "stochastic_probability_gate",
+      "inference_threshold": null,
+      "manifest_path": null,
+      "manifest_sha256": null,
+      "model_path": "output/lr_same_kitchen/20261102-r1/fire_lr_kent_r2_unweighted_sk1.8.0.joblib",
+      "model_sha256": "41e6f55d3e07fa27a57b42d7d0be0828c72cf87ff6cc92c3834b0c0dfd8d217b",
+      "positive_label": 1,
+      "threshold": null
+    },
+    "protocol_schema_version": "phase16_dswd_shared_ca_snapshots.v1"
+  }

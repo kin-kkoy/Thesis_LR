@@ -169,10 +169,17 @@ class FireAutomata:
 
 	def _validate_ml_inference_config(self) -> None:
 		mode = self.ml_cfg.get("inference_mode", "stochastic_probability")
-		if mode != "stochastic_probability":
+		if mode not in ("stochastic_probability", "stochastic_probability_gate"):
 			raise ValueError(
-				"Only stochastic_probability ML inference is approved for the CA"
+				"Unsupported stochastic ML inference mode"
 			)
+		gate = self.ml_cfg.get("proba_threshold")
+		if mode == "stochastic_probability_gate":
+			if (self._model_free or type(gate) not in (int, float) or gate != 0.40
+					or self.ml_cfg.get("classification_threshold") is not None):
+				raise ValueError("Exploratory probability gate requires cutoff 0.40 and model inference")
+		elif gate is not None:
+			raise ValueError("proba_threshold requires the explicit exploratory gate mode")
 		if int(self.ml_cfg.get("positive_label", 1)) != 1:
 			raise ValueError("ml_model.positive_label must be integer 1")
 		for threshold_name in ("threshold", "inference_threshold"):
@@ -468,6 +475,9 @@ class FireAutomata:
 			chunk_probabilities.append(proba_chunk.astype(np.float32))
 
 		ignition_proba_flat[susceptible_indices] = np.concatenate(chunk_probabilities)
+		if self.ml_cfg.get("inference_mode") == "stochastic_probability_gate":
+			# Inference-only gate; retain the existing full-grid Bernoulli draw in step().
+			ignition_proba_flat[ignition_proba_flat < np.float32(self.ml_cfg["proba_threshold"])] = np.float32(0.0)
 		return ignition_proba_flat.reshape(self.grid_shape)
 
 	def is_active(self) -> bool:

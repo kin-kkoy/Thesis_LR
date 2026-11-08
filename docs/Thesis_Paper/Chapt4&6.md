@@ -445,7 +445,7 @@ The validation itself is also limited in scope. All spatial results come from a 
 
 ## **5.5 Random Forest Model Analysis**
 
-The Random Forest (RF) workflow used the accepted cropped Set C dataset, candidate-r2-cropped-1024-v1-g364-r1, for one prespecified train-only forest fit followed by frozen sigmoid calibration. The dataset is distinct from the LR feature schemas discussed earlier; the LR designation “Stage C” does not establish equivalence with RF Set C. The training, validation, and calibration results below concern synthetic next-update ignition, while Section 5.6 separately reports final-footprint agreement for one development case.
+The Random Forest (RF) workflow used the accepted cropped Set C dataset, candidate-r2-cropped-1024-v1-g364-r1, for one prespecified train-only forest fit followed by frozen sigmoid calibration. The dataset is distinct from the LR feature schemas discussed earlier; the LR designation “Stage C” does not establish equivalence with RF Set C. The training, validation, and calibration results below concern synthetic next-update ignition, while Section 5.6 separately reports final-footprint agreement for two wind scenarios of the same F01 development case.
 
 The Set C campaign retained 26 families, seven winds, and two replicates, giving 364 runs. Each family used its frozen 1,024 × 1,024-cell crop at a resolution of 3 m, covering 3.072 × 3.072 km. Labels represented eligible next-update ignition under the model-free R2 teacher rather than observed historical-fire outcomes. The forest therefore learned a synthetic ignition response, and its per-cell results describe agreement with that teacher.
 
@@ -471,14 +471,14 @@ The uncalibrated forest was evaluated on the 136,341 validation rows using proba
 
 ##### *Uncalibrated RF Probability Metrics on the Validation Role*
 
-| Metric            |        Value |
-| :---------------- | -----------: |
-| Average precision | 0.8302951875 |
-| ROC AUC           | 0.7399730788 |
-| Brier MSE         | 0.1948404636 |
-| Log loss          | 0.5716014831 |
+| Metric            |              Value |
+| :---------------- | -----------------: |
+| Average precision |       0.8302951875 |
+| ROC AUC           | 0.7399730788065111 |
+| Brier MSE         |       0.1948404636 |
+| Log loss          |       0.5716014831 |
 
-Table 13 reports the reconciled, program-reported validation metrics. Average precision and ROC AUC describe the ranking of synthetic ignition outcomes, while Brier MSE and log loss describe probability error. Predictions were not retained, so these numerical values were not independently recomputed. They provide a validation-role description of the uncalibrated candidate without establishing final-test performance or agreement with observed fire progression.
+Table 13 reports the reconciled, program-reported validation metrics. The Phase 16A four-record inspection confirmed the artifact-reported ROC AUC of 0.7399730788065111 on 136,341 validation rows (D-159); it did not independently recompute probabilities or ROC AUC. Average precision and ROC AUC describe the ranking of synthetic ignition outcomes, while Brier MSE and log loss describe probability error. Predictions were not retained, so these numerical values were not independently recomputed. They provide a validation-role description of the uncalibrated candidate without establishing final-test performance or agreement with observed fire progression.
 
 The accepted base forest was then frozen, and the prespecified sigmoid procedure used all 181,265 calibration rows with equal weighting. Frozen-estimator predictions were obtained through the default five-partition procedure; it did not refit the RF or search among calibration methods. The threshold remained null. Optimizer termination status was unavailable through the reused API, so independently verified convergence cannot be claimed.
 
@@ -486,25 +486,27 @@ The accepted base forest was then frozen, and the prespecified sigmoid procedure
 
 ##### *Calibrated RF In-Sample Diagnostics on the Calibration Role*
 
-| Metric            |        Value |
-| :---------------- | -----------: |
-| Average precision | 0.8912692401 |
-| ROC AUC           | 0.7705163789 |
-| Brier MSE         | 0.1691891904 |
-| Log loss          | 0.5080254876 |
+| Metric            |             Value |
+| :---------------- | ----------------: |
+| Average precision |      0.8912692401 |
+| ROC AUC           | 0.770516378941902 |
+| Brier MSE         |      0.1691891904 |
+| Log loss          |      0.5080254876 |
 
-Table 14 presents the independently replayed calibrated diagnostics, rounded to ten decimal places. These are in-sample calibration diagnostics because they use the same calibration role on which the sigmoid was fitted. Table 13 uses a different role, so differences between the two tables do not demonstrate calibration improvement. Neither table reports performance on the restricted final-test assignment.
+Table 14 retains the calibrated diagnostics previously reported as independently replayed in the accepted verification history. That earlier qualified replay account is distinct from D-159, which confirmed the artifact-reported ROC AUC of 0.770516378941902 on 181,265 calibration rows without a fresh independent probability recomputation. ROC AUC is shown at the reported precision; the other diagnostics remain rounded to ten decimal places. These are in-sample calibration diagnostics because they use the same calibration role on which the sigmoid was fitted. Table 13 uses a different role and estimator version, so differences between the two tables do not demonstrate calibration improvement. Neither table reports calibrated held-out performance, restricted final-test performance, or ROC AUC for either F01 final TIFF.
 
 **5.5.1 Effect of the Wind-Weighted Score**
 The wind\_weighted\_score represents the directional arrangement of pre-update blazing neighbors relative to the wind. A plain neighbor\_burning\_count records how many neighboring cells are blazing but does not distinguish their positions around the receiving cell. Two neighborhoods can therefore have the same count while differing in their alignment with the wind. The directional score supplies this arrangement to the RF alongside the other predictors. Refined Set C includes both wind\_weighted\_score and material\_class, retaining directional exposure and material information within the eleven-predictor schema.
 
-The calibrated RF probability is used directly in the CA stochastic comparison. Wind is represented within the model inputs and is not an additional multiplier applied to the calibrated probability afterward. For the accepted F01 run, the wind was prescribed as 17.7 km/h from 315° under the meteorological-from convention. NASA observational provenance has not been established, so these inputs cannot be described as verified NASA measurements.
+The calibrated RF probability is used directly in the CA stochastic comparison. Wind is represented within the model inputs and is not an additional multiplier applied to the calibrated probability afterward. The original F01 scenario retained prescribed wind of 17.7 km/h from 315° relative to projected grid north. The second scenario used NASA-source direction 49°, implemented as one constant grid-from bearing of 48.825208°. Geographic/true north is an explicitly INFERRED, owner-adopted interpretation of the NASA direction, converted at the ignition pixel centre; six decimals specify reproducible computation rather than physical wind accuracy (D-122). The conversion subtracts approximately 0.174792124° of true-to-grid-north angle, without an additional 180° reversal. Both scenarios retain the meteorological-from convention and prescribed speed of 17.7 km/h; they are distinct wind scenarios, not equivalent directions.
+
+The supplied NASA export identifies the nearby query point at latitude 10.327, longitude 123.9749, with LST and 10 m WS10M/WD10M variables. Its row for 2023-12-12 at HR=11 reports 4.91 m/s and 49°; the converted speed is 17.676 km/h, prescribed as 17.7 km/h. The query point is approximately 39.76 m from the derived ignition pixel centre, not independent confirmation of historical ignition location. F01 is the owner-identified Santa Maria development case. Owner and partner selected HR=11 using the adopted BFP time of 11:31 AM. The reported screenshot text gives 12/12/2024-1131H, whereas the owner adopts year 2023; the DSWD time of approximately 13:25 remains an unresolved source discrepancy. These adopted choices establish neither a corrected screenshot nor a fire-duration wind average, independently verified historical geolocation, or independent NASA download custody.
 
 No matched RF ablation was performed to isolate the contribution of wind\_weighted\_score. The historical Sets A and B and the refined cropped Set C differ in more than this feature, including their datasets, training and evaluation procedures, implementations, and threshold use. Their reported performance differences, summarized in Section 5.6, therefore do not measure a feature-specific improvement or establish physical fire-spread validity.
 
 ## **5.6 Quantitative Comparison of Models (RF)**
 
-The historical findings for Sets A and B provide secondary descriptive evidence. Table 15 selects the highest reported F1 within each document’s explored threshold sweep: threshold 0.10 for Set A and threshold 0.05 for Set B. This selection is retrospective and does not establish a prespecified optimum. The refined cropped Set C row instead reports the accepted F01 development run, p15-candidate-r2-f01-s42-r1, without a classification threshold.
+The historical findings for Sets A and B provide secondary descriptive evidence. Table 15 selects the highest reported F1 within each document’s explored threshold sweep: threshold 0.10 for Set A and threshold 0.05 for Set B. This selection is retrospective and does not establish a prespecified optimum. The refined cropped Set C rows instead report the original F01 development run, p15-candidate-r2-f01-s42-r1, and the NASA-source 49° development run, p16-f01-nasa-hr11-s42-r1, without a classification threshold.
 
 The current Set C spatial values apply only to 135,992 common-valid mapped-building cells. Of 3,312 reference-burn cells within the crop, 1,910 were included and 1,402, or 42.33%, were excluded. These restrictions accompany the current scores in Table 15; the historical summaries do not establish an equivalent evaluation population.
 
@@ -512,51 +514,56 @@ The current Set C spatial values apply only to 135,992 common-valid mapped-build
 
 ##### *Descriptive Historical and Current Summary of Simulation-RF Results*
 
-| Variant                                                                          |       F1 |   Recall | Precision | AUC-ROC      |  Jaccard | Predicted cells |
-| :------------------------------------------------------------------------------- | -------: | -------: | --------: | :----------- | -------: | :-------------- |
-| Historical Set A, threshold 0.10                                                 |    0.603 |    0.738 |     0.510 | Not verified |    0.431 | Not documented  |
-| Historical Set B, threshold 0.05                                                 |    0.624 |    0.792 |     0.515 | Not verified |    0.453 | Not documented  |
-| Refined cropped Set C, accepted F01 development run, no classification threshold | 0.785902 | 0.939791 |  0.675320 | Not reported | 0.647313 | 2,658           |
+| Variant                                                                                          |       F1 |   Recall | Precision | AUC-ROC      |  Jaccard | Predicted cells |
+| :----------------------------------------------------------------------------------------------- | -------: | -------: | --------: | :----------- | -------: | :-------------- |
+| Historical Set A, threshold 0.10                                                                 |    0.603 |    0.738 |     0.510 | Not verified |    0.431 | Not documented  |
+| Historical Set B, threshold 0.05                                                                 |    0.624 |    0.792 |     0.515 | Not verified |    0.453 | Not documented  |
+| Refined cropped Set C, F01 original 315°, no classification threshold                           | 0.785902 | 0.939791 |  0.675320 | Not reported | 0.647313 | 2,658           |
+| Refined cropped Set C, F01 NASA-source 49° (grid-from 48.825208°), no classification threshold | 0.852327 | 0.939791 |  0.779757 | Not reported | 0.742656 | 2,302           |
 
-Table 15 distinguishes historical reported values from the independently reconciled current F01 spatial values. The selected historical rows have F1 scores of 0.603 and 0.624, compared with 0.785902 for the current development case. These differences are descriptive: differing domains, thresholds, datasets, implementations, and provenance prevent interpreting them as a controlled improvement or an isolated wind-feature effect. The historical summaries do not document predicted-cell counts, and these counts cannot be inferred from rounded metrics or an assumed common reference population. The older Set C threshold-sweep findings refer to a separate historical workflow and are not combined with the accepted cropped candidate identity.
+Table 15 distinguishes historical reported values from the independently reconciled current F01 spatial values. The selected historical rows have F1 scores of 0.603 and 0.624, compared with 0.785902 and 0.852327 for the original and NASA-source wind scenarios of the same development case. These differences are descriptive: differing domains, thresholds, datasets, implementations, and provenance prevent interpreting them as a controlled improvement or an isolated wind-feature effect. The historical summaries do not document predicted-cell counts, and these counts cannot be inferred from rounded metrics or an assumed common reference population. The older Set C threshold-sweep findings refer to a separate historical workflow and are not combined with the accepted cropped candidate identity.
 
-The selected historical rows list AUC-ROC values of 0.869 for Set A and 0.896 for Set B. Their computation and score provenance have not been verified, so Table 15 marks them “Not verified” rather than presenting them as comparable probability-based ROC AUC. Spatial AUC-ROC was not reported for the current categorical final-footprint comparison. The per-cell validation and in-sample calibration ROC AUC values in Tables 13 and 14 are not substitutes for it.
+The selected historical rows list AUC-ROC values of 0.869 for Set A and 0.896 for Set B. Their computation and score provenance have not been verified, so Table 15 marks them “Not verified” rather than presenting them as comparable probability-based ROC AUC. Spatial AUC-ROC was not reported for either current categorical final-footprint comparison. The per-cell validation and in-sample calibration ROC AUC values in Tables 13 and 14 are not substitutes for it.
 
-**Accepted Set C Development Run**
-Run p15-candidate-r2-f01-s42-r1 used the accepted calibrated RF through the unchanged model-agnostic CA probability path. Calibrated class-1 probabilities entered the float32 stochastic comparison directly. No extra sigmoid, probability threshold, R2 multiplier, or susceptibility multiplier was applied at this integration stage.
+**Set C Development Runs: Two Wind Scenarios of F01**
+Runs p15-candidate-r2-f01-s42-r1 and p16-f01-nasa-hr11-s42-r1 used the same accepted frozen sigmoid-calibrated RF through the model-agnostic CA probability path, without refitting or recalibration. Calibrated class-1 probabilities entered the float32 stochastic comparison directly. No extra sigmoid, probability threshold, R2 multiplier, or susceptibility multiplier was applied at this integration stage.
 
 ##### Table 16
 
-##### *Configuration and Reported Termination of the F01 RF + CA Run*
+##### *Configuration and Reported Termination of the Two F01 RF + CA Wind Scenarios*
 
-| Item                            | Value                                                     |
-| :------------------------------ | :-------------------------------------------------------- |
-| Crop origin, row and column     | [256, 2176]                                               |
-| Crop shape                      | 1,024 × 1,024 cells                                      |
-| Global ignition, row and column | [894, 2730]                                               |
-| Local ignition, row and column  | [638, 554]                                                |
-| CA seed                         | 42                                                        |
-| Wind                            | 17.7 km/h, 315° meteorological-from                      |
-| Wind weight                     | 0.20                                                      |
-| Ignited and blazing timers      | 1 and 1 abstract updates                                  |
-| Maximum duration                | 300 abstract updates, with earlier stopping on inactivity |
-| Reported termination            | Inactive after 161 updates; not censored                  |
+| Item                            | Original 315° scenario                              | NASA-source 49° scenario                            |
+| :------------------------------ | :--------------------------------------------------- | :--------------------------------------------------- |
+| Run ID                          | p15-candidate-r2-f01-s42-r1                          | p16-f01-nasa-hr11-s42-r1                             |
+| Crop origin, row and column     | [256, 2176]                                          | [256, 2176]                                          |
+| Crop shape                      | 1,024 × 1,024 cells                                 | 1,024 × 1,024 cells                                 |
+| Global ignition, row and column | [894, 2730]                                          | [894, 2730]                                          |
+| Local ignition, row and column  | [638, 554]                                           | [638, 554]                                           |
+| CA seed                         | 42                                                   | 42                                                   |
+| Prescribed wind speed           | 17.7 km/h                                            | 17.7 km/h                                            |
+| Engine grid-from direction      | 315°                                                | 48.825208° (source 49°, true north INFERRED)       |
+| Wind weight                     | 0.20                                                 | 0.20                                                 |
+| Ignited and blazing timers      | 1 and 1 abstract updates                             | 1 and 1 abstract updates                             |
+| Maximum duration                | 300 abstract updates; earlier stopping on inactivity | 300 abstract updates; earlier stopping on inactivity |
+| Reported termination            | Inactive after 161 updates; not censored             | Inactive after 135 updates; not censored             |
 
-Table 16 identifies the configuration of the development run. The update count is an abstract simulation index and has no established conversion to seconds or minutes. Final inactivity and final state populations were directly verified in the accepted reconciliation, whereas the 161-update history remains program-reported.
+Table 16 retains the original configuration alongside the second scenario. The update counts are abstract simulation indices with no established conversion to seconds or minutes. Final inactivity and final state populations were verified in the retained reconciliation; the 161- and 135-update histories remain program-reported rather than independently replayed temporal histories. The bound controls retain the frozen calibrated model, feature order/schema, crop/ignition, seed, timers, weights, masks, stochastic probability policy, null thresholds, duration cap, and stopping rules (D-122, D-156–D-157).
+
+The run bindings also record changes in case authorization, run/scenario/schema identities, configuration, added wind-input provenance, orchestrator source hash, and source HEAD (7aa1904e89eeb33a8b39e4d0b6855bbbd9712b3a versus 66d08e0e7eb1951aa00ed26582d2dce6ee7f88f0). The retained review reconciled these declared differences; it did not establish an isolated causal effect of wind direction or of wind_weighted_score. Both outcomes are preserved as development evidence.
 
 ##### Table 17
 
-##### *Independently Verified Final State Populations of the F01 Run*
+##### *Verified Final State Populations of the Two F01 Wind Scenarios*
 
-| Final state        |               Cells |
-| :----------------- | ------------------: |
-| Non-burnable       |             912,584 |
-| Not yet burning    |             133,334 |
-| Extinguished       |               2,658 |
-| Ignited or blazing |                   0 |
-| **Total**    | **1,048,576** |
+| Final state        | Original 315° cells | NASA-source 49° cells |
+| :----------------- | -------------------: | ---------------------: |
+| Non-burnable       |              912,584 |                912,584 |
+| Not yet burning    |              133,334 |                133,690 |
+| Extinguished       |                2,658 |                  2,302 |
+| Ignited or blazing |                    0 |                      0 |
+| **Total**    |  **1,048,576** |    **1,048,576** |
 
-Table 17 shows that no cells remained ignited or blazing at termination. The receiving population contained 135,992 cells, of which 2,658 were extinguished and 133,334 remained not yet burning. The extinguished footprint included the prescribed ignition. Under the monotonic-state contract, this implies 2,657 additional ignitions; this value is a derivation from final populations, not a retained transition count.
+Table 17 shows that neither scenario retained ignited or blazing cells at termination. The common receiving population contained 135,992 cells; extinguished and not-yet-burning counts sum to that population in each scenario. Both extinguished footprints included the prescribed ignition. Under the monotonic-state contract, the final populations imply 2,657 and 2,301 additional ignitions, respectively; these are derivations from final populations, not retained transition counts.
 
 Spatial comparison treated state 5 as the predicted final extinguished footprint and reference value 1 as burned. The reference is described here as the provided approximate burned-area reference. Its acquisition dates, construction method, registration uncertainty, and independent provenance were not established by the available files. The incident date, tracing method, and reference-accuracy estimate reported for LR are therefore not adopted as verified RF facts.
 
@@ -564,26 +571,28 @@ The evaluation domain was the intersection of environmental, prediction, referen
 
 ##### Table 18
 
-##### *F01 Spatial Confusion Matrix Within the Common-Valid Mapped-Building Domain*
+##### *F01 Spatial Confusion Matrices Within the Same Common-Valid Mapped-Building Domain*
 
-| Reference class |  Predicted 0 | Predicted 1 |
-| :-------------- | -----------: | ----------: |
-| 0: Not burned   | 133,219 (TN) |    863 (FP) |
-| 1: Burned       |     115 (FN) |  1,795 (TP) |
+| Reference class | Original 315°: predicted 0 | Original 315°: predicted 1 | NASA-source 49°: predicted 0 | NASA-source 49°: predicted 1 |
+| :-------------- | --------------------------: | --------------------------: | ----------------------------: | ----------------------------: |
+| 0: Not burned   |                133,219 (TN) |                    863 (FP) |                  133,575 (TN) |                      507 (FP) |
+| 1: Burned       |                    115 (FN) |                  1,795 (TP) |                      115 (FN) |                    1,795 (TP) |
 
-Table 18 places reference classes in rows and predicted classes in columns, both ordered [0, 1]. All 2,658 predicted-burn cells lay within the evaluation domain. The comparison identified 1,795 true positives and 115 false negatives, together with 863 false positives and 133,219 true negatives.
+Table 18 places reference classes in rows and predicted classes in columns, each ordered [0, 1] within a scenario. All 2,658 original and 2,302 new predicted-burn cells lay within the same 135,992-cell evaluation domain. The matrices are [[133219,863],[115,1795]] and [[133575,507],[115,1795]]. Equal TP and FN counts do not establish identical individual TP/FN locations across runs.
 
 ##### Table 19
 
-##### *Independently Reproduced F01 Spatial Metrics Within the Evaluation Domain*
+##### *Reconciled F01 Spatial Metrics Within the Same Evaluation Domain*
 
-| Metric    |    Value |
-| :-------- | -------: |
-| Accuracy  | 0.992808 |
-| Precision | 0.675320 |
-| Recall    | 0.939791 |
-| F1        | 0.785902 |
-| Jaccard   | 0.647313 |
+| Metric    | Original 315° | NASA-source 49° |
+| :-------- | -------------: | ---------------: |
+| Accuracy  |       0.992808 |         0.995426 |
+| Precision |       0.675320 |         0.779757 |
+| Recall    |       0.939791 |         0.939791 |
+| F1        |       0.785902 |         0.852327 |
+| Jaccard   |       0.647313 |         0.742656 |
+
+The values in Tables 18 and 19 reuse the retained score report and accepted arithmetic reconciliation (D-156–D-157); no new scoring is introduced here.
 
 ##### Table 20
 
@@ -600,7 +609,9 @@ Table 18 places reference classes in rows and predicted classes in columns, both
 
 Tables 19 and 20 must be interpreted together. The spatial scores apply to the 135,992-cell evaluation domain, which includes 1,910 of the crop’s 3,312 reference-burn cells. The remaining 1,402 reference-burn cells, or 42.33%, were excluded. The exclusions were disjoint: 20 cells fell outside environmental validity, followed by 1,382 outside mapped buildings; additional prediction/building-validity exclusions were zero. The metrics therefore do not represent all reference-burn cells in the crop or the full parent map.
 
-Within this restricted domain, strong recall of 0.939791 coexisted with lower precision of 0.675320 and 863 false positives. The simulation captured most included reference-burn cells but also predicted burning outside the included reference footprint. Accuracy of 0.992808 was influenced by the large negative population and should be read alongside precision, recall, F1, and Jaccard. Although recall exceeded the manuscript’s target of 0.80, F1 of 0.785902 remained below the 0.80 target and does not constitute a pass. ROC/AUC was not reported for this categorical final-footprint comparison; the per-cell probability ROC AUC values in Tables 13 and 14 address a separate evaluation.
+Within this restricted domain, recall remained 0.939791 in both scenarios, while precision increased descriptively from 0.675320 to 0.779757. The new case had 507 false positives compared with 863 in the original, a net reduction of 356, with TP and FN totals unchanged. F1 increased by 0.066425, from 0.785902 to 0.852327, and Jaccard increased from 0.647313 to 0.742656. This is better agreement with the same approximate reference on the stated domain, not evidence of generalization, physical validity, or an isolated wind-feature effect. Both accuracy values, 0.992808 and 0.995426, are influenced by the large negative population and must be read alongside the other metrics and exclusions.
+
+The original F1 remained below the manuscript’s 0.80 target; the new F1 numerically exceeded it, and recall exceeded 0.80 in both cases. These development-case outcomes do not establish held-out target attainment or thesis acceptance. ROC/AUC was not reported for either categorical final-footprint comparison; the per-cell probability ROC AUC values in Tables 13 and 14 address a different target and evaluation population.
 
 **Simulation-RF (Set C) Compared With the CA-Only Baseline**
 No matched CA-only baseline has been identified in the supplied evidence. A direct comparison requires compatible reference, common-valid evaluation domain, crop, ignition, wind, stopping policy, and metric definitions. The CA-only scores reported in the LR section do not establish these conditions for the RF’s 135,992-cell domain and are not transferred into Table 21.
@@ -609,26 +620,29 @@ No matched CA-only baseline has been identified in the supplied evidence. A dire
 
 ##### *Availability of a Matched CA-Only Comparison for Simulation-RF (Set C)*
 
-| Variant                                                            |            F1 |        Recall |     Precision | AUC-ROC       |       Jaccard | Predicted cells |
-| :----------------------------------------------------------------- | ------------: | ------------: | ------------: | :------------ | ------------: | :-------------- |
-| CA only: Not established on the RF evaluation domain               | Not available | Not available | Not available | Not available | Not available | Not available   |
-| Simulation-RF, refined cropped Set C, accepted F01 development run |      0.785902 |      0.939791 |      0.675320 | Not reported  |      0.647313 | 2,658           |
+| Variant                                                    |            F1 |        Recall |     Precision | AUC-ROC       |       Jaccard | Predicted cells |
+| :--------------------------------------------------------- | ------------: | ------------: | ------------: | :------------ | ------------: | :-------------- |
+| CA only: Not established on the RF evaluation domain       | Not available | Not available | Not available | Not available | Not available | Not available   |
+| Simulation-RF, refined cropped Set C, F01 original 315°   |      0.785902 |      0.939791 |      0.675320 | Not reported  |      0.647313 | 2,658           |
+| Simulation-RF, refined cropped Set C, F01 NASA-source 49° |      0.852327 |      0.939791 |      0.779757 | Not reported  |      0.742656 | 2,302           |
 
-Table 21 records the pending direct comparison rather than a measured advantage over CA only. The RF row retains the 135,992-cell domain and the exclusion of 1,402 of the crop’s 3,312 reference-burn cells, or 42.33%. Its scores cannot be compared directly with the LR section’s baseline without matched evidence, and no improvement percentage is calculated.
+Table 21 records the pending direct comparison rather than a measured advantage over CA only. Both RF rows retain the same 135,992-cell domain and the exclusion of 1,402 of the crop’s 3,312 reference-burn cells, or 42.33%. Their scores cannot be compared directly with the LR section’s baseline without matched evidence, and no improvement percentage is calculated.
 
 ## **5.7 Visualizations of Model Performance**
 
-Visual assessment of the accepted F01 development case remains pending verification and integration of its three-panel RF figure. The planned panels compare the provided approximate burned-area reference, the accepted RF + CA final extinguished footprint, and their spatial differences within the reported evaluation domain. The 135,992-cell metric domain and the exclusion of 1,402 reference-burn cells (42.33%) remain unchanged by any visual zoom. No RF figure is presented here pending its verified output and evidence handback.
+The retained Phase 16A package contains two verified 2,400 × 1,050 PNG captures, new-versus-reference.png and original-versus-new.png, reviewed with the score report and independently checked during package closeout (D-156–D-157). The first compares the provided approximate burned-area reference, the NASA-source 49° RF + CA final extinguished footprint, and TP/FP/FN/TN differences within the evaluation domain. The second compares the original 315° and new footprints and shows their overlap within the same eligible mapped-building domain. Their qualified captions identify F01 as single-seed development evidence and distinguish excluded cells from true negatives.
 
-![1793507755584](image/Chapt4&6/1793507755584.png)
+The captures are preserved in the local phase16_evidence/p16a-closeout-20261102-r1 score package (D-160); integration of these verified captures into the manuscript remains pending, and no image files are added here. Visual zoom does not change the 135,992-cell metric domain or the exclusion of 1,402/3,312 reference-burn cells (42.33%). Run-to-run overlap, if shown, describes agreement between simulations rather than accuracy against the reference. The legacy image below remains an unverified placeholder and is not adopted as evidence for either F01 scenario.
 
-Figure X: Stage C Simulation Compared With The Ground Truth
+1793507755584
+
+Figure X: Legacy Stage C placeholder; provenance and correspondence to the F01 scenarios remain unverified.
 
 ## **5.8 Limitations of the RF Results**
 
-The evidence supports descriptive spatial agreement for one development case and documents integration of the accepted calibrated RF with the CA probability path. F01 had previously been used for calibration and development and remains excluded from final-test eligibility. Its footprint agreement is therefore development engineering evidence and cannot be treated as held-out accuracy.
+The evidence supports descriptive spatial agreement for two wind scenarios of the same development case and documents integration of the accepted calibrated RF with the CA probability path. F01 had previously been used for calibration and development and remains excluded from final-test eligibility. Its footprint agreement is therefore development engineering evidence and cannot be treated as held-out accuracy.
 
-The synthetic next-update labels, in-sample calibration diagnostics, incompletely characterized reference, restricted evaluation domain, and single development run limit the conclusions. The reported evidence establishes neither temporal validation nor physical fire-spread validity, and it does not establish statistical independence. The untested final-test assignment leaves held-out performance unresolved. Differences from the LR and CA-only results reported earlier do not establish superiority because an adopted matched comparison is not available in this evidence scope. Further claims about generalization, calibration benefit, or comparative performance require separately authorized evaluation and supporting evidence.
+The synthetic next-update labels, in-sample calibration diagnostics, incompletely characterized reference, restricted evaluation domain, and two scenarios using a single seed (42) on one development case limit the conclusions. In both scenarios, 1,402 of 3,312 reference-burn cells (42.33%) remain outside the 135,992-cell evaluation domain; higher F1 does not remove that coverage limitation. No stochastic uncertainty estimate or independent-event validation follows from these two outcomes. The inferred NASA true-north interpretation, adopted HR=11/BFP 11:31 selection, screenshot-year disagreement, unresolved DSWD timing discrepancy, nearby query location, and owner-identified Santa Maria status remain qualified as described in Section 5.5. Source/HEAD differences and the original run JSON records’ lack of an independent external pin also remain evidence limitations (D-156–D-157). The reported evidence establishes neither temporal validation nor physical fire-spread validity, and it does not establish statistical independence. The untested final-test assignment leaves held-out performance unresolved. Differences from the LR and CA-only results reported earlier do not establish superiority because an adopted matched comparison is not available in this evidence scope. Further claims about generalization, calibration benefit, or comparative performance require separately authorized evaluation and supporting evidence. Phase 16B remains parked pending its prior-use, overlap, and protocol gates; synthetic final-test evaluation remains separately restricted.
 
 # **CHAPTER 6** **CONCLUSION & RECOMMENDATION**
 
