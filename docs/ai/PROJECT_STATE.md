@@ -4,9 +4,9 @@
 
 - **Purpose:** Navigation only; source/inputs/artifacts/raw records are evidence.
 - **Scope:** RF work/shared coordination. `Thesis_LR/**` is LR side owned/read-only.
-- **Last updated:** 2026-11-08 (Asia/Manila), caller implementation handback D-339.
+- **Last updated:** 2026-11-11 (Asia/Manila), Frozen Route A RF/LR benchmark accepted D-397.
 - **Snapshot:** `734b42a`, `codex/rf-airbase-simulation`; prior edits preserved; work uncommitted.
-- **Current handoff:** D-339 source hashes/preservation match; RF warning-name mismatch needs review.
+- **Current handoff:** D-397 accepts the frozen RF/LR benchmark. CA-only design review is next.
 - **Historical index:** Tables retain October 12 evidence, not current execution status.
 - **Staleness rule:** Recheck changed source, input/artifact hashes, configuration, dependencies or approvals.
 - **Size policy:** Keep this file below 16 KiB. Durable methodology belongs in `DECISIONS.md`.
@@ -25,9 +25,9 @@
 - **Adopted:** INFERRED NASA true-49 converts to constant grid-from 48.825208, ignition pixel centre/six decimals. F01 is owner-identified Santa Maria.
 - **Timing:** D-171 owner confirms Airbase=Sitio Sangi Interior,Brgy.Pajo via BFP1328H row. DSWD86min/StaMaria212min retained; BFP1328≠DSWD1332; historical HR11 basis preserved.
 - **Plan:** D-198/D-200 both frozen models in RF CA; RF/noGate, LR/.40, clocks1/.5/2. New StaMaria892; historical894/v3 preserved. ISPRS415=Tan;319=Patac.
-- **Next:** Validator static review of caller/binding/tests, including RF warning policy; tests NOT RUN.
+- **Next:** Prepare a matched CA-only design for both incidents before implementation or execution.
 - **Pending:** Manuscript/viewer review; A/B, matched CA and LR side handoff qualified. 16B prior-use/overlap/protocol and synthetic final test gated.
-- **Boundaries:** D-332/D-327/D-308/D-297/D-291/D-283/D-274/D-270/D-263/D-254/D-250/D-241 consumed; only D-338 source edits; no tests/bindings/production/Git operations.
+- **Boundaries:** D-366 and earlier execution approvals consumed. Preserve pilot outputs and evidence.
 <!-- END CODEX DIGEST -->
 
 ## Current verified state

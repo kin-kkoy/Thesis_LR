@@ -1480,7 +1480,7 @@ def test_recovery_allows_only_six_exact_r2_cases(incident, arm, seed):
 
 @pytest.mark.parametrize("mutation", ["r3", "scenario", "seed", "ignition", "cap", "wind", "root"])
 def test_recovery_rejects_revision_scenario_and_control_changes(mutation):
-    config = shared_config("airbase", "rf")
+    config = shared_config("airbase", "lr" if mutation == "r3" else "rf")
     run = config["phase15"]["run_id"][:-2] + "r2"
     config["phase15"].update(run_id=run, scenario_id=run + "-snapshots")
     if mutation == "r3": config["phase15"].update(run_id=run[:-1] + "3", scenario_id=run[:-1] + "3-snapshots")
@@ -1492,6 +1492,31 @@ def test_recovery_rejects_revision_scenario_and_control_changes(mutation):
     else: config["output"]["output_dir"] = "output/recovery"
     with pytest.raises(ValueError):
         o._phase15_normalize(config)
+
+
+def test_only_airbase_rf_seed42_r3_normalizes_without_mutating_disk_config():
+    config = shared_config("airbase", "rf", seed=42)
+    run = "p16-dswd-shared-v1-airbase-rf-s42-r3"
+    config["phase15"].update(run_id=run, scenario_id=run + "-snapshots")
+    before = deepcopy(config)
+    active = o._phase15_normalize(config)
+    assert active["phase15"]["run_id"] == run
+    assert active["phase15"]["scenario_id"] == run + "-snapshots"
+    assert active["snapshot_basis"] == config["snapshot_basis"]
+    assert config == before and config["phase15"]["enabled"] is False
+
+
+@pytest.mark.parametrize("incident,arm,seed", [
+    ("airbase", "rf", 43), ("airbase", "lr", 42), ("santa_maria", "rf", 42),
+])
+def test_r3_rejects_every_non_airbase_rf42_case(incident, arm, seed):
+    config = shared_config(incident, arm, seed=seed)
+    run = f"p16-dswd-shared-v1-{incident.replace('_', '-')}-{arm}-s{seed}-r3"
+    config["phase15"].update(run_id=run, scenario_id=run + "-snapshots")
+    before = deepcopy(config)
+    with pytest.raises(ValueError):
+        o._phase15_normalize(config)
+    assert config == before and config["phase15"]["enabled"] is False
 
 
 @pytest.mark.parametrize("arm,seed", RECOVERY_CASES)
@@ -1506,6 +1531,49 @@ def test_recovery_yaml_only_changes_identity_and_comments(arm, seed):
     assert recovery["phase15"]["enabled"] is False
     assert recovery["phase15"]["authorization_reference"] == "p16-dswd-shared-ca-v1-execution-r1"
     assert o._phase15_normalize(recovery)["snapshot_basis"] == original["snapshot_basis"]
+
+
+def test_airbase_rf42_r3_yaml_only_changes_identity_and_comments():
+    folder = Path(o.__file__).parent / "config/phase16_dswd_shared_ca_exec_v1"
+    old = o._phase15_yaml((folder / "p16-dswd-shared-v1-airbase-rf-s42-r2.yaml").read_bytes())
+    new_path = folder / "p16-dswd-shared-v1-airbase-rf-s42-r3.yaml"
+    new = o._phase15_yaml(new_path.read_bytes())
+    expected = deepcopy(old)
+    run = "p16-dswd-shared-v1-airbase-rf-s42-r3"
+    expected["phase15"].update(run_id=run, scenario_id=run + "-snapshots")
+    assert o._phase15_json_bytes(new) == o._phase15_json_bytes(expected)
+    assert new["phase15"]["enabled"] is False
+    assert new["phase15"]["authorization_reference"] == "p16-dswd-shared-ca-v1-execution-r1"
+    assert o._phase15_normalize(new)["snapshot_basis"] == old["snapshot_basis"]
+
+
+def test_launcher_pins_and_selects_r3_yaml_identity():
+    text = (Path(o.__file__).parent / "run_dswd_shared_ca_v1.ps1").read_text(encoding="utf-8")
+    run = "p16-dswd-shared-v1-airbase-rf-s42-r3"
+    digest = "4139ba55d8b79c892e320f6457fdc43d04da58de3c353b699c61a635ebd1a11d"
+    assert text.count(f'"{run}": "{digest}"') == 2
+    assert "\"p16-dswd-shared-v1-airbase-rf-s42-r2\"" not in text
+    source_digest = "29108d593a6d1d6a0977342dddde9ff1d20456aa4311a1257b5a33eb4a5453b6"
+    assert text.count(source_digest) == 2
+    assert "38e3cb58144df53a91a7f85d1f8ea3eb279730a9220935d63b0bb873fc2b2809" not in text
+    comparator = text.split("## BEGIN HELD PROCESS STRUCTURAL COMPARATOR", 1)[1].split(
+        "## END HELD PROCESS STRUCTURAL COMPARATOR", 1)[0]
+    assert "[StringComparer]::Ordinal.Equals" in comparator and "[System.Array]" in comparator
+    assert "[BitConverter]::GetBytes([double]$Left)" in comparator
+    assert "function Test-StructuralJsonEqual" in comparator
+    assert "Test-StructuralJsonEqual $report.process_binding $s.binding" not in text
+    assert "binding=$s.binding" in text
+    assert "$admissionBytes=Read-Bytes (Join-Path $root 'admission-input.json') 65536" in text
+    assert "$finalAdmission=[ordered]@{filename='admission-input.json';bytes=$admissionBytes.Length" in text
+    assert "$admissionBinding=ConvertFrom-Json -InputObject $utf8.GetString($admissionBytes)" in text
+    assert "Test-StructuralJsonEqual $admissionBinding $report.process_binding" in text
+    assert text.index("if (-not(Equal-Receipt $s.identityReceipt") < text.index(
+        "$admissionBinding=ConvertFrom-Json -InputObject $utf8.GetString($admissionBytes)")
+    assert "ConvertTo-Json $report.process_binding" not in text
+    contract = text.split("# BEGIN DSWD CALLER CONTRACT", 1)[1].split(
+        "# END DSWD CALLER CONTRACT", 1)[0]
+    assert f'"{run}"' in contract
+    assert '"p16-dswd-shared-v1-airbase-rf-s42-r2"' not in contract
 
 
 @pytest.mark.parametrize("arm", ["rf", "lr"])
@@ -1806,8 +1874,10 @@ def actual_caller_contract(monkeypatch, tmp_path):
 @pytest.fixture(params=["rf", "lr"])
 def caller_case(actual_caller_contract, monkeypatch, tmp_path, request):
     config = shared_config("airbase", request.param)
-    run = config["phase15"]["run_id"][:-2] + "r2"
-    config["phase15"].update(run_id=run, scenario_id=run + "-snapshots")
+    revision = "r3" if request.param == "rf" else "r2"
+    run = config["phase15"]["run_id"][:-2] + revision
+    config["phase15"].update(run_id=run, scenario_id=run + "-snapshots",
+                             authorization_reference="p16-dswd-shared-ca-v1-execution-r1")
     calls, callbacks = [], []
     real_factory = inference_guard.make_inference_guard
     def factory(code, *, arm):
@@ -1938,7 +2008,6 @@ def caller_binding_case(monkeypatch, tmp_path):
     for name in ("dswd_inference_guard.py", "dswd_snapshot_results.py"):
         (code / name).write_text("# synthetic source\n", encoding="utf-8")
     caller = code / "run_dswd_shared_ca_v1.ps1"
-    caller.write_bytes((Path(o.__file__).parent / caller.name).read_bytes())
     monkeypatch.setattr(o, "PHASE15_CODE_DIR", code)
     monkeypatch.setattr(o, "_phase15_source", lambda: {"files": {}, "head": "synthetic", "dirty": True})
     monkeypatch.setattr(o, "_phase15_runtime", lambda: {"scope": "synthetic"})
@@ -1949,6 +2018,7 @@ def caller_binding_case(monkeypatch, tmp_path):
 @pytest.mark.parametrize("arm", ["rf", "lr"])
 def test_complete_caller_binding_drift_includes_text_outside_python(caller_binding_case, arm):
     f = caller_binding_case
+    f.caller.write_bytes((Path(o.__file__).parent / f.caller.name).read_bytes())
     active = shared_config("airbase", arm)
     active["phase15"]["enabled"] = True
     first = o._phase15_binding(active, f.code / "execution.yaml", "a" * 64)
@@ -1969,9 +2039,9 @@ def test_caller_binding_rejects_missing_or_reparse(caller_binding_case, monkeypa
     active = shared_config("airbase", arm)
     active["phase15"]["enabled"] = True
     if failure == "missing":
-        f.caller.unlink()
         error = FileNotFoundError
     else:
+        f.caller.write_bytes((Path(o.__file__).parent / f.caller.name).read_bytes())
         real = Path.lstat
         def lstat(path, *args, **kwargs):
             if path == f.caller:
@@ -2002,7 +2072,6 @@ def test_stale_caller_binding_cannot_reach_protected_startup(shared_native_fixtu
 
 def test_legacy_binding_never_requires_the_shared_caller(caller_binding_case, monkeypatch):
     f = caller_binding_case
-    f.caller.unlink()
     legacy = snapshot_config("santa_maria")
     legacy["phase15"]["enabled"] = True
     binding = o._phase15_binding(legacy, f.code / "legacy.yaml", "a" * 64)
@@ -2014,7 +2083,7 @@ def test_legacy_binding_never_requires_the_shared_caller(caller_binding_case, mo
 def test_actual_caller_allows_source_matched_repeated_production_warnings(caller_case, monkeypatch, repeat):
     import warnings
     r = caller_case
-    estimator = "CalibratedClassifierCV" if r.options["arm"] == "rf" else "LogisticRegression"
+    estimator = "RandomForestClassifier" if r.options["arm"] == "rf" else "LogisticRegression"
     class StubEstimator:
         classes_ = np.asarray([0, 1], dtype=np.int64)
         feature_names_in_ = np.asarray(CANONICAL_FEATURE_NAMES)
@@ -2034,19 +2103,39 @@ def test_actual_caller_allows_source_matched_repeated_production_warnings(caller
     monkeypatch.setattr(o, "run_simulation", startup)
     r.invoke()
     assert len(calls) == 1 and len(r.state["warnings"]) == 2 * repeat
-    assert all(w["accepted"] and w["arm"] == r.options["arm"] for w in r.state["warnings"])
+    expected_message = ("X does not have valid feature names, but " + estimator
+                       + " was fitted with feature names")
+    assert all(w["accepted"] and w["arm"] == r.options["arm"]
+               and w["message"] == expected_message for w in r.state["warnings"])
 
 
 def test_actual_caller_retains_and_rejects_unexpected_warning(caller_case, monkeypatch):
     import warnings
     r = caller_case
     def startup(config, **kwargs):
-        warnings.warn("synthetic unexpected warning", UserWarning)
+        if r.options["arm"] == "rf":
+            class StubEstimator:
+                classes_ = np.asarray([0, 1], dtype=np.int64)
+                feature_names_in_ = np.asarray(CANONICAL_FEATURE_NAMES)
+                def predict_proba(self, X):
+                    warnings.warn_explicit(
+                        "X does not have valid feature names, but CalibratedClassifierCV was fitted with feature names",
+                        UserWarning,
+                        str(r.contract.namespace["SITE"] / "sklearn/utils/validation.py"),
+                        2691)
+                    return np.tile([0.75, 0.25], (len(X), 1))
+            r.contract.features.predict_positive_probability(
+                StubEstimator(), np.zeros((1, 11), dtype=np.float32))
+        else:
+            warnings.warn("synthetic unexpected warning", UserWarning)
     monkeypatch.setattr(o, "run_simulation", startup)
     with pytest.raises(RuntimeError, match="Unexpected production warning"):
         r.invoke()
     assert r.state["dispatch_attempts"] == 1
     assert r.state["dispatch_completions"] == 0
     assert len(r.state["warnings"]) == 1 and not r.state["warnings"][0]["accepted"]
-    assert r.state["warnings"][0]["message"] == "synthetic unexpected warning"
+    expected_message = (
+        "X does not have valid feature names, but CalibratedClassifierCV was fitted with feature names"
+        if r.options["arm"] == "rf" else "synthetic unexpected warning")
+    assert r.state["warnings"][0]["message"] == expected_message
     assert sys.getprofile() is None

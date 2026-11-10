@@ -182,6 +182,119 @@ function Equal-Receipt($a,$b) {
     return ($a.filename -ceq $b.filename -and (Is-Integer $a.bytes) -and
         $a.bytes -eq $b.bytes -and $a.sha256 -ceq $b.sha256)
 }
+## BEGIN HELD PROCESS STRUCTURAL COMPARATOR
+function Test-StructuralJsonEqual($Left,$Right) {
+    if ($null -eq $Left -or $null -eq $Right) {
+        return ($null -eq $Left -and $null -eq $Right)
+    }
+    $leftObject=($Left -is [System.Collections.IDictionary]) -or
+        ($Left -is [System.Management.Automation.PSCustomObject])
+    $rightObject=($Right -is [System.Collections.IDictionary]) -or
+        ($Right -is [System.Management.Automation.PSCustomObject])
+    if ($leftObject -or $rightObject) {
+        if (-not ($leftObject -and $rightObject)) {return $false}
+        if ($Left -is [System.Collections.IDictionary]) {
+            $leftKeys=@($Left.Keys | ForEach-Object {[string]$_})
+        } else {
+            $leftKeys=@($Left.PSObject.Properties | ForEach-Object {[string]$_.Name})
+        }
+        if ($Right -is [System.Collections.IDictionary]) {
+            $rightKeys=@($Right.Keys | ForEach-Object {[string]$_})
+        } else {
+            $rightKeys=@($Right.PSObject.Properties | ForEach-Object {[string]$_.Name})
+        }
+        if ($leftKeys.Count -ne $rightKeys.Count) {return $false}
+        foreach ($key in $leftKeys) {
+            $rightKeyFound=$false
+            foreach ($rightKey in $rightKeys) {
+                if ([StringComparer]::Ordinal.Equals($rightKey,$key)) {
+                    $rightKeyFound=$true;break
+                }
+            }
+            if (-not $rightKeyFound) {return $false}
+            $leftFound=$false;$rightFound=$false
+            if ($Left -is [System.Collections.IDictionary]) {
+                foreach ($entry in $Left.GetEnumerator()) {
+                    if ([StringComparer]::Ordinal.Equals([string]$entry.Key,$key)) {
+                        $leftValue=$entry.Value;$leftFound=$true;break
+                    }
+                }
+            } else {
+                foreach ($property in $Left.PSObject.Properties) {
+                    if ([StringComparer]::Ordinal.Equals([string]$property.Name,$key)) {
+                        $leftValue=$property.Value;$leftFound=$true;break
+                    }
+                }
+            }
+            if ($Right -is [System.Collections.IDictionary]) {
+                foreach ($entry in $Right.GetEnumerator()) {
+                    if ([StringComparer]::Ordinal.Equals([string]$entry.Key,$key)) {
+                        $rightValue=$entry.Value;$rightFound=$true;break
+                    }
+                }
+            } else {
+                foreach ($property in $Right.PSObject.Properties) {
+                    if ([StringComparer]::Ordinal.Equals([string]$property.Name,$key)) {
+                        $rightValue=$property.Value;$rightFound=$true;break
+                    }
+                }
+            }
+            if (-not ($leftFound -and $rightFound)) {return $false}
+            if (-not (Test-StructuralJsonEqual $leftValue $rightValue)) {return $false}
+        }
+        return $true
+    }
+    $leftArray=$Left -is [System.Array]
+    $rightArray=$Right -is [System.Array]
+    if ($leftArray -or $rightArray) {
+        if (-not ($leftArray -and $rightArray) -or $Left.Length -ne $Right.Length) {return $false}
+        for ($i=0;$i -lt $Left.Length;$i++) {
+            if (-not (Test-StructuralJsonEqual $Left[$i] $Right[$i])) {return $false}
+        }
+        return $true
+    }
+    $leftCode=[System.Type]::GetTypeCode($Left.GetType())
+    $rightCode=[System.Type]::GetTypeCode($Right.GetType())
+    $integerCodes=@([System.TypeCode]::SByte,[System.TypeCode]::Byte,
+        [System.TypeCode]::Int16,[System.TypeCode]::UInt16,
+        [System.TypeCode]::Int32,[System.TypeCode]::UInt32,
+        [System.TypeCode]::Int64,[System.TypeCode]::UInt64)
+    $floatingCodes=@([System.TypeCode]::Single,[System.TypeCode]::Double)
+    $leftInteger=$integerCodes -contains $leftCode
+    $rightInteger=$integerCodes -contains $rightCode
+    if ($leftInteger -or $rightInteger) {
+        if (-not ($leftInteger -and $rightInteger)) {return $false}
+        $invariant=[Globalization.CultureInfo]::InvariantCulture
+        return [string]::Equals([Convert]::ToString($Left,$invariant),
+            [Convert]::ToString($Right,$invariant),[StringComparison]::Ordinal)
+    }
+    $leftFloating=$floatingCodes -contains $leftCode
+    $rightFloating=$floatingCodes -contains $rightCode
+    if ($leftFloating -or $rightFloating) {
+        if (-not ($leftFloating -and $rightFloating) -or $leftCode -ne $rightCode) {return $false}
+        if ($leftCode -eq [System.TypeCode]::Double) {
+            if ([double]::IsNaN($Left) -or [double]::IsInfinity($Left) -or
+                [double]::IsNaN($Right) -or [double]::IsInfinity($Right)) {return $false}
+            return ([BitConverter]::ToInt64([BitConverter]::GetBytes([double]$Left),0) -eq
+                [BitConverter]::ToInt64([BitConverter]::GetBytes([double]$Right),0))
+        }
+        if ([single]::IsNaN($Left) -or [single]::IsInfinity($Left) -or
+            [single]::IsNaN($Right) -or [single]::IsInfinity($Right)) {return $false}
+        return ([BitConverter]::ToInt32([BitConverter]::GetBytes([single]$Left),0) -eq
+            [BitConverter]::ToInt32([BitConverter]::GetBytes([single]$Right),0))
+    }
+    if ($leftCode -eq [System.TypeCode]::Decimal -or $rightCode -eq [System.TypeCode]::Decimal) {
+        if ($leftCode -ne [System.TypeCode]::Decimal -or $rightCode -ne [System.TypeCode]::Decimal) {return $false}
+        return ([decimal]$Left -eq [decimal]$Right)
+    }
+    if ($Left.GetType() -ne $Right.GetType()) {return $false}
+    if ($Left -is [string]) {
+        return [string]::Equals($Left,$Right,[StringComparison]::Ordinal)
+    }
+    if ($Left -is [bool]) {return ($Left -eq $Right)}
+    return $Left.Equals($Right)
+}
+## END HELD PROCESS STRUCTURAL COMPARATOR
 $configPins=ConvertFrom-Json @'
 {
   "p16-dswd-shared-v1-airbase-rf-s43-r1": "404a90489188a1d8f4810676b0f3e533cbc36ee47dbb4f5fe8787affd39af53d",
@@ -198,7 +311,7 @@ $configPins=ConvertFrom-Json @'
   "p16-dswd-shared-v1-santa-maria-lr-s44-r1": "ee87ee0fe4c8e43428eb44ee65f58c371e94b4a87793858f67602841cb69353a",
   "p16-dswd-shared-v1-santa-maria-lr-s45-r1": "0e3f3a2a01cb1684c122549c260175e00783753bf814f573ea23effd1cc1e32b",
   "p16-dswd-shared-v1-santa-maria-lr-s46-r1": "82cde436239cfad909c01f1f4317bfe5781f113ea8ebd5def64b38a11fea2971",
-  "p16-dswd-shared-v1-airbase-rf-s42-r2": "47fe1b0b688582c6ba0bac0972e44068c698cb4433d10ef7f6d097786b565599",
+  "p16-dswd-shared-v1-airbase-rf-s42-r3": "4139ba55d8b79c892e320f6457fdc43d04da58de3c353b699c61a635ebd1a11d",
   "p16-dswd-shared-v1-airbase-lr-s42-r2": "423641e5fc71718899d9dec953d27daf46ca0d4294838103cb8028553e347378",
   "p16-dswd-shared-v1-airbase-lr-s43-r2": "4a1ebf6403a3202983e8e0d87dc8c357ffab1b8043f83c6daf2ef9146a2f15b0",
   "p16-dswd-shared-v1-airbase-lr-s44-r2": "f2f5a3f5ac3f79b6c184763eaf5df457f98bc5f2ac2994a68ce334f37ba2fd54",
@@ -207,7 +320,7 @@ $configPins=ConvertFrom-Json @'
 }
 '@
 $selection=$configPins.PSObject.Properties[$RunId]
-if ($null -eq $selection -or $RunId -cnotmatch ('-'+$Arm+'-s[0-9]+-r[12]$')) {throw 'Unselected trajectory/arm.'}
+if ($null -eq $selection -or $RunId -cnotmatch ('-'+$Arm+'-s[0-9]+-r[123]$')) {throw 'Unselected trajectory/arm.'}
 $configSha=[string]$selection.Value
 $configPath=Join-Path $code ('config\phase16_dswd_shared_ca_exec_v1\'+$RunId+'.yaml')
 $body=@'
@@ -239,7 +352,7 @@ binding, runtime, config_pre, config_post, caller_pre, caller_post = None, {}, N
 stage, error, post_error, complete = "BOOTSTRAP", None, None, False
 started = time.monotonic()
 PINS = {
-    "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/orchestrator.py": "38e3cb58144df53a91a7f85d1f8ea3eb279730a9220935d63b0bb873fc2b2809",
+    "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/orchestrator.py": "29108d593a6d1d6a0977342dddde9ff1d20456aa4311a1257b5a33eb4a5453b6",
     "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/dswd_inference_guard.py": "2e69f5a50adc1ca6f69cde0f8bca7758554786bc6ddc3b62feb584b0152f7578",
     "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/modules/feature_pipeline.py": "b404e82cac952f3111defedf857ecf0b7891214afe4f0876a3bf7617680daeb1",
     "C:/Users/gibgib/Thesis-Cellular-Automata/.venv/Lib/site-packages/sklearn/calibration.py": "4c295444ea50cdd672682cc72e07110abb68c3ce81e02998cec9372449864f35",
@@ -262,7 +375,7 @@ CONFIG_PINS = {
     "p16-dswd-shared-v1-santa-maria-lr-s44-r1": "ee87ee0fe4c8e43428eb44ee65f58c371e94b4a87793858f67602841cb69353a",
     "p16-dswd-shared-v1-santa-maria-lr-s45-r1": "0e3f3a2a01cb1684c122549c260175e00783753bf814f573ea23effd1cc1e32b",
     "p16-dswd-shared-v1-santa-maria-lr-s46-r1": "82cde436239cfad909c01f1f4317bfe5781f113ea8ebd5def64b38a11fea2971",
-    "p16-dswd-shared-v1-airbase-rf-s42-r2": "47fe1b0b688582c6ba0bac0972e44068c698cb4433d10ef7f6d097786b565599",
+    "p16-dswd-shared-v1-airbase-rf-s42-r3": "4139ba55d8b79c892e320f6457fdc43d04da58de3c353b699c61a635ebd1a11d",
     "p16-dswd-shared-v1-airbase-lr-s42-r2": "423641e5fc71718899d9dec953d27daf46ca0d4294838103cb8028553e347378",
     "p16-dswd-shared-v1-airbase-lr-s43-r2": "4a1ebf6403a3202983e8e0d87dc8c357ffab1b8043f83c6daf2ef9146a2f15b0",
     "p16-dswd-shared-v1-airbase-lr-s44-r2": "f2f5a3f5ac3f79b6c184763eaf5df457f98bc5f2ac2994a68ce334f37ba2fd54",
@@ -424,7 +537,7 @@ def source_phase(target):
 
 # BEGIN DSWD CALLER CONTRACT
 SELECTED_RUNS = frozenset(
-    ["p16-dswd-shared-v1-airbase-rf-s42-r2"]
+    ["p16-dswd-shared-v1-airbase-rf-s42-r3"]
     + [f"p16-dswd-shared-v1-airbase-lr-s{s}-r2" for s in range(42, 47)]
     + [f"p16-dswd-shared-v1-airbase-rf-s{s}-r1" for s in range(43, 47)]
     + [f"p16-dswd-shared-v1-santa-maria-{a}-s{s}-r1"
@@ -492,7 +605,7 @@ def selected_dispatch(runner, guard, features, config, config_path, *, run_id, a
                 helper_seen = True
                 break
             frame = frame.f_back
-        estimator = "CalibratedClassifierCV" if actual_arm == "rf" else "LogisticRegression"
+        estimator = "RandomForestClassifier" if actual_arm == "rf" else "LogisticRegression"
         expected = "X does not have valid feature names, but " + estimator + " was fitted with feature names"
         require(category is UserWarning and str(message) == expected
                 and lex(filename) == lex(SITE / "sklearn/utils/validation.py")
@@ -762,7 +875,7 @@ try {
     foreach ($name in @('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS')) {
         $info.EnvironmentVariables[$name]='1'
     }
-    $info.EnvironmentVariables['PATH']=(Join-Path $repo '.venv\Scripts')+';C:\Windows\System32'
+    $info.EnvironmentVariables['PATH']=(Join-Path $repo '.venv\Scripts')+';C:\Windows\System32;C:\Program Files\Git\cmd'
     $s.process=[Diagnostics.Process]::new();$s.process.StartInfo=$info
     if (-not $s.process.Start()) {throw 'Process.Start false.'}
     $s.started=$true;$null=$s.process.Handle
@@ -899,11 +1012,17 @@ try {
     $finalReceipts['caller.json']=[ordered]@{filename='caller.json';bytes=$reportBytes.Length;sha256=(Hash-Bytes $reportBytes)}
     $finalReceipts['python-status.json']=[ordered]@{filename='python-status.json';bytes=$childBytes.Length;sha256=(Hash-Bytes $childBytes)}
     $finalReceipts['worker-identity.json']=Receipt 'worker-identity.json'
-    $finalAdmission=Receipt 'admission-input.json'
+    $admissionBytes=Read-Bytes (Join-Path $root 'admission-input.json') 65536
+    $finalAdmission=[ordered]@{filename='admission-input.json';bytes=$admissionBytes.Length
+        sha256=(Hash-Bytes $admissionBytes)}
     if (-not(Equal-Receipt $s.identityReceipt $finalReceipts['worker-identity.json']) -or
         -not(Equal-Receipt $s.admissionReceipt $finalAdmission) -or
         -not(Equal-Receipt $child.report_receipt $finalReceipts['caller.json']) -or
         -not(Equal-Receipt $report.admission_receipt $finalAdmission)) {throw 'Receipt reconciliation.'}
+    $admissionBinding=ConvertFrom-Json -InputObject $utf8.GetString($admissionBytes)
+    if (-not (Test-StructuralJsonEqual $admissionBinding $report.process_binding)) {
+        throw 'Admission/child process binding reconciliation.'
+    }
     $finishes=@($utf8.GetString($captureBytes['stdout.log']) -split "\r?\n" | Where-Object {$_ -clike 'DSWD_FINISHED *'})
     if ($finishes.Count -ne 1) {throw 'Missing/duplicate child completion record.'}
     $finish=ConvertFrom-Json -InputObject $finishes[0].Substring(14)
@@ -936,11 +1055,9 @@ try {
         $bp.run.run_id -cne $RunId -or $bp.configuration.disk_sha256 -cne $configSha -or
         $bp.source.files.PSObject.Properties['Thesis_RF/Code/run_dswd_shared_ca_v1.ps1'].Value -cne $ReviewedLauncherSha256 -or
         $bp.run.destination -cne ((Join-Path $code ('output\phase15\'+$RunId)).Replace('\','/'))) {throw 'Binding reconciliation.'}
-    if ((ConvertTo-Json $report.process_binding -Depth 30 -Compress) -cne
-        (ConvertTo-Json $s.binding -Depth 30 -Compress)) {throw 'Held process binding reconciliation.'}
     $expectedPins=ConvertFrom-Json @'
 {
-  "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/orchestrator.py": "38e3cb58144df53a91a7f85d1f8ea3eb279730a9220935d63b0bb873fc2b2809",
+  "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/orchestrator.py": "29108d593a6d1d6a0977342dddde9ff1d20456aa4311a1257b5a33eb4a5453b6",
   "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/dswd_inference_guard.py": "2e69f5a50adc1ca6f69cde0f8bca7758554786bc6ddc3b62feb584b0152f7578",
   "C:/Users/gibgib/Thesis-Cellular-Automata/Thesis_RF/Code/modules/feature_pipeline.py": "b404e82cac952f3111defedf857ecf0b7891214afe4f0876a3bf7617680daeb1",
   "C:/Users/gibgib/Thesis-Cellular-Automata/.venv/Lib/site-packages/sklearn/calibration.py": "4c295444ea50cdd672682cc72e07110abb68c3ce81e02998cec9372449864f35",
@@ -973,7 +1090,7 @@ try {
     $observations=@($st.warnings)
     if ($warningLines.Count -ne $observations.Count -or $child.warning_count -ne $observations.Count -or
         $observations.Count -gt 8192) {throw 'Warning capture accounting.'}
-    $estimator=if ($Arm -ceq 'rf') {'CalibratedClassifierCV'} else {'LogisticRegression'}
+    $estimator=if ($Arm -ceq 'rf') {'RandomForestClassifier'} else {'LogisticRegression'}
     $warningMessage='X does not have valid feature names, but '+$estimator+' was fitted with feature names'
     for ($i=0;$i -lt $warningLines.Count;$i++) {
         if (-not $warningLines[$i].StartsWith('DSWD_WARNING ')) {throw 'Unexpected raw stderr.'}

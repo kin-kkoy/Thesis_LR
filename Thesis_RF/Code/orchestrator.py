@@ -913,6 +913,9 @@ def _phase16_shared_normalize(config):
     proposed = run_id[:-2] + "r2"
     if proposed in recovery and p["run_id"] == proposed:
         run_id = proposed
+    recovery_r3 = "p16-dswd-shared-v1-airbase-rf-s42-r3"
+    if incident == "airbase" and arm == "rf" and seed == 42 and p["run_id"] == recovery_r3:
+        run_id = recovery_r3
     scenario = run_id + "-snapshots"
     if (type(seed) is not int or seed not in protocol["seeds"]
             or type(sim["max_timesteps"]) is not int or sim["max_timesteps"] != item["max_updates"]
