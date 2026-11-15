@@ -1,0 +1,320 @@
+{
+  "candidate_inputs": {
+    "expected_grid": {
+      "crs": "EPSG:32651",
+      "shape": [
+        5489,
+        6896
+      ],
+      "transform": [
+        3,
+        0,
+        598558.7784,
+        0,
+        -3,
+        1144374.7699,
+        0,
+        0,
+        1
+      ]
+    },
+    "interpretation_policy": "embedded_tiff_only.v1",
+    "mask_seed_policy": "candidate_common_environment_receiving_atomic_seeds.v1",
+    "reader_capability": {
+      "controls_verified": true,
+      "environment_options": {
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+        "GDAL_PAM_ENABLED": "NO"
+      },
+      "open_options": {
+        "GEOREF_SOURCES": "INTERNAL"
+      },
+      "policy_id": "embedded_tiff_only.v1",
+      "runtime": {
+        "gdal": "3.12.1",
+        "rasterio": "1.5.0"
+      },
+      "verification_reference": "Owner-adopted bounded mixed-dtype reader milestone; source tests/test_candidate_reader_capability.py SHA-256 14456daddc4453b34e58d79a1a6b5b491e2559526393510c5805ed16a050f597",
+      "window_verification_reference": "Parent-reported native synthetic test test_installed_native_reader_window_matches_identified_synthetic_tiffs; source SHA-256 dde4cfb9fa8ba540c6e6b799eaef54edbdc72d06b135bb19e6cc4665caee6ffe; qualified validator report SHA-256 526fff81a669f48d12220304fde8923a61edf8ceb542f87ce14df7c94ba29938",
+      "windowed_reads_verified": true
+    }
+  },
+  "d397_benchmark": {
+    "alignment": {
+      "airbase": {
+        "domain_cells": 215553,
+        "domain_mask_sha256": "4a6dea5c7b60a2c3f952c59bed78060dad55f240f0e19f316a257bdf97285f7e",
+        "included_positive_mask_sha256": "2d924ffbfb1302eb0cf309f0fb979a875ad7368866d59142675b5f5f9b80524c",
+        "reference_positive_included": 178,
+        "report_sha256": "1a6e804bec01a96a9cbc279f607bd3fdf65550abe220f6e479349f4b22e099ea"
+      },
+      "santa_maria": {
+        "domain_cells": 135992,
+        "domain_mask_sha256": "263385dcdc19d6602572e1eb19de282ec70bdde194756c53237dd24909379f69",
+        "included_positive_mask_sha256": "aecc271764878684ce9c85cc8aa1de6d0e8c9034b02a03e1e19627e7601dd2b8",
+        "reference_positive_included": 1910,
+        "report_sha256": "da40821ec30106407339611ab99ab9661cae5737413ea178c555f13936b65cce"
+      }
+    },
+    "arms": [
+      "rf",
+      "lr"
+    ],
+    "artifact_path": "output/phase16_route_a_scoring_20261111_v1/scores.json",
+    "artifact_sha256": "b610ac827e79ba3f1a2e0d6b6f63a6aed692e2011c5317c405990840f77b5073",
+    "binding_ledger_sha256": "aa97e663acdd96a6ee486bf1041f36e28404d11e7d90b0271b40628cd02f8310",
+    "decision": "D-397",
+    "design": "shared_rf_ca_v1",
+    "primary_requested_update": {
+      "airbase": 86,
+      "santa_maria": 212
+    },
+    "schema_version": "route_a_scoring_candidate.v1"
+  },
+  "environment": {
+    "buildings_file": "stack_buildings.tif",
+    "input_sha256": {
+      "buildings": "da53c3e63b661471b3366fc68249793c6a5a84e0d63bcc96492f60baaf4b83c7",
+      "materials": "21f5c98c7936b4be6e368e7c8c0472a3c045b9c85b1abcb0a0e3fc8c1be0336a",
+      "proximity": "1b12936cd8bc78d1e638fd31ddf1241bd753cb040cc9db556c623b8193de14b5",
+      "slope": "dd61a0da016cd9c0d21d957ffedebd7ce871ef94f9084d5d4feb90e7e32b8482"
+    },
+    "materials_file": "stack_materials.tif",
+    "nodata_value": -9999,
+    "proximity_file": "stack_proximity.tif",
+    "raster_dir": "processedData/raster/raster",
+    "slope_file": "stack_slope_final.tif"
+  },
+  "incidents": {
+    "airbase": {
+      "crop_origin": [
+        820,
+        1989
+      ],
+      "crop_transform": [
+        3,
+        0,
+        604525.7784,
+        0,
+        -3,
+        1141914.7699
+      ],
+      "horizons": [
+        {
+          "assumed_minutes_per_update": 2,
+          "clock_role": "sensitivity",
+          "requested_update": 43
+        },
+        {
+          "assumed_minutes_per_update": 1,
+          "clock_role": "primary",
+          "requested_update": 86
+        },
+        {
+          "assumed_minutes_per_update": 0.5,
+          "clock_role": "sensitivity",
+          "requested_update": 172
+        }
+      ],
+      "ignition_local_row_col": [
+        [
+          512,
+          512
+        ]
+      ],
+      "incident_id": "airbase_sanggi_20250124",
+      "max_updates": 172,
+      "route_a_alignment": "airbase",
+      "shape": [
+        1024,
+        1024
+      ],
+      "wind": {
+        "direction_deg": 60.826537,
+        "speed_kmh": 10.6
+      }
+    },
+    "santa_maria": {
+      "crop_origin": [
+        256,
+        2176
+      ],
+      "crop_transform": [
+        3,
+        0,
+        605086.7784,
+        0,
+        -3,
+        1143606.7699
+      ],
+      "horizons": [
+        {
+          "assumed_minutes_per_update": 2,
+          "clock_role": "sensitivity",
+          "requested_update": 106
+        },
+        {
+          "assumed_minutes_per_update": 1,
+          "clock_role": "primary",
+          "requested_update": 212
+        },
+        {
+          "assumed_minutes_per_update": 0.5,
+          "clock_role": "sensitivity",
+          "requested_update": 424
+        }
+      ],
+      "ignition_local_row_col": [
+        [
+          636,
+          554
+        ]
+      ],
+      "incident_id": "santa_maria_pusok_20231212",
+      "max_updates": 424,
+      "route_a_alignment": "santa_maria",
+      "shape": [
+        1024,
+        1024
+      ],
+      "wind": {
+        "direction_deg": 48.825208,
+        "speed_kmh": 17.7
+      }
+    }
+  },
+  "phase17": {
+    "enabled": true,
+    "execution_authorized": true,
+    "ignition_rule": {
+      "base_ignition_prob": 0.12,
+      "building_weight": 0.1,
+      "law": "p_effective = clip(p_base * wind_weighted_score_t, 0, 1); seeded full-grid Bernoulli U < p_effective",
+      "material_weight": 0.35,
+      "proximity_weight": 0.2,
+      "schema_version": "d014_model_free_multiplicative.v1",
+      "slope_weight": 0.2,
+      "wind_weight": 0.2
+    },
+    "output_policy": {
+      "active": "censor at each requested horizon; active is not suppression or fire-out",
+      "capture": "after completed update; references are excluded from simulation inputs",
+      "destination": "exclusive per-trajectory directory; no resume or overwrite",
+      "failure": "invalidate every snapshot in the failed trajectory and preserve partial files",
+      "inactive": "carry later requested snapshots forward from absorbing inactive state"
+    },
+    "output_root": "output/phase17_dswd_ca_only_v1",
+    "resource_monitor": {
+      "authorization_reference": "PHASE17-RES-01",
+      "limits": {
+        "max_process_rss_bytes": 4294967296,
+        "max_wall_seconds": 1800,
+        "min_free_output_bytes": 2147483648,
+        "min_system_available_bytes": 2147483648,
+        "sample_interval_seconds": 1
+      },
+      "schema_version": "phase17_resource_monitor.v1"
+    },
+    "rng": {
+      "bit_generator": "PCG64",
+      "draw_policy": "existing FireAutomata full-grid draw once per transition",
+      "generator": "numpy.random.default_rng"
+    },
+    "schema_version": "phase17_dswd_ca_only.v1",
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "snapshot_schema": "phase17_dswd_ca_only_snapshots.v1",
+    "timers": {
+      "T_3_to_4": 1,
+      "T_4_to_5": 1
+    },
+    "trajectories": [
+      {
+        "incident": "airbase",
+        "run_id": "p17-dswd-ca-only-v1-airbase-s42-r1",
+        "seed": 42
+      },
+      {
+        "incident": "airbase",
+        "run_id": "p17-dswd-ca-only-v1-airbase-s43-r1",
+        "seed": 43
+      },
+      {
+        "incident": "airbase",
+        "run_id": "p17-dswd-ca-only-v1-airbase-s44-r1",
+        "seed": 44
+      },
+      {
+        "incident": "airbase",
+        "run_id": "p17-dswd-ca-only-v1-airbase-s45-r1",
+        "seed": 45
+      },
+      {
+        "incident": "airbase",
+        "run_id": "p17-dswd-ca-only-v1-airbase-s46-r1",
+        "seed": 46
+      },
+      {
+        "incident": "santa_maria",
+        "run_id": "p17-dswd-ca-only-v1-santa-maria-s42-r1",
+        "seed": 42
+      },
+      {
+        "incident": "santa_maria",
+        "run_id": "p17-dswd-ca-only-v1-santa-maria-s43-r1",
+        "seed": 43
+      },
+      {
+        "incident": "santa_maria",
+        "run_id": "p17-dswd-ca-only-v1-santa-maria-s44-r1",
+        "seed": 44
+      },
+      {
+        "incident": "santa_maria",
+        "run_id": "p17-dswd-ca-only-v1-santa-maria-s45-r1",
+        "seed": 45
+      },
+      {
+        "incident": "santa_maria",
+        "run_id": "p17-dswd-ca-only-v1-santa-maria-s46-r1",
+        "seed": 46
+      }
+    ],
+    "trajectory_count": 10
+  },
+  "scoring": {
+    "contrasts": [
+      "rf_minus_ca",
+      "lr_minus_ca"
+    ],
+    "dispersion": "sample SD, n-1",
+    "group_keys": [
+      "incident",
+      "arm",
+      "requested_update"
+    ],
+    "join_keys": [
+      "incident",
+      "seed",
+      "requested_update"
+    ],
+    "minimum_valid_seeds": 5,
+    "reference_paths": {
+      "airbase": "dataFiles/stack_ground_truth_airbase.tif",
+      "santa_maria": "processedData/raster/raster/stack_ground_truth.tif"
+    },
+    "references_are_outside_simulation_path": true,
+    "required_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ]
+  }
+}
